@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Stateful task base class.
+ * @brief Declaration of base class AIStatefulTask.
  *
  * Copyright (C) 2010 - 2013, 2017  Carlo Wood.
  *
@@ -38,70 +38,16 @@
 
 #include "utils/AIRefCount.h"
 #include "threadsafe/aithreadsafe.h"
-#include "threadsafe/Condition.h"
 #include "debug.h"
 #include <list>
 #include <chrono>
 #include <boost/signals2.hpp>
 
 class AIConditionBase;
-class AIStatefulTask;
-
-class AIEngine
-{
-  private:
-    struct QueueElementComp;
-    class QueueElement {
-      private:
-        boost::intrusive_ptr<AIStatefulTask> mStatefulTask;
-
-      public:
-        QueueElement(AIStatefulTask* stateful_task) : mStatefulTask(stateful_task) { }
-        friend bool operator==(QueueElement const& e1, QueueElement const& e2) { return e1.mStatefulTask == e2.mStatefulTask; }
-        friend bool operator!=(QueueElement const& e1, QueueElement const& e2) { return e1.mStatefulTask != e2.mStatefulTask; }
-        friend struct QueueElementComp;
-
-        AIStatefulTask const& stateful_task(void) const { return *mStatefulTask; }
-        AIStatefulTask& stateful_task(void) { return *mStatefulTask; }
-    };
-    struct QueueElementComp {
-      inline bool operator()(QueueElement const& e1, QueueElement const& e2) const;
-    };
-
-  public:
-    typedef std::list<QueueElement> queued_type;
-    struct engine_state_st {
-      queued_type list;
-      bool waiting;
-      engine_state_st(void) : waiting(false) { }
-    };
-
-    typedef std::chrono::steady_clock clock_type;
-    typedef clock_type::duration duration_type;
-
-  private:
-    typedef aithreadsafe::Wrapper<engine_state_st, aithreadsafe::policy::Primitive<aithreadsafe::Condition>> engine_state_type;
-    engine_state_type mEngineState;
-    char const* mName;
-    static duration_type sMaxDuration;
-
-  public:
-    AIEngine(char const* name) : mName(name) { }
-
-    void add(AIStatefulTask* stateful_task);
-
-    void mainloop(void);
-    void threadloop(void);
-    void wake_up(void);
-    void flush(void);
-
-    char const* name(void) const { return mName; }
-
-    static void setMaxDuration(float max_duration);
-};
+class AIEngine;
 
 extern AIEngine gMainThreadEngine;
-extern AIEngine gStatefulTaskThreadEngine;
+extern AIEngine gAuxiliaryThreadEngine;
 
 class AIStatefulTask : public AIRefCount
 {
@@ -163,7 +109,10 @@ class AIStatefulTask : public AIRefCount
     // Mutex that is locked while calling *_impl() functions and the call back.
     std::mutex mRunMutex;
 
-    AIEngine::clock_type::rep mSleep;   //!< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
+    typedef std::chrono::steady_clock clock_type;
+    typedef clock_type::duration duration_type;
+
+    clock_type::rep mSleep;   //!< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
 
     // Callback facilities.
     // From within an other stateful task:
@@ -204,7 +153,7 @@ class AIStatefulTask : public AIRefCount
     bool mSMDebug;                      // Print debug output only when true.
 #endif
   private:
-    AIEngine::duration_type mDuration;  // Total time spent running in the main thread.
+    duration_type mDuration;  // Total time spent running in the main thread.
 
   public:
     AIStatefulTask(DEBUG_ONLY(bool debug)) : mCallback(nullptr), mDefaultEngine(nullptr), mYieldEngine(nullptr),
@@ -215,7 +164,7 @@ class AIStatefulTask : public AIRefCount
 #ifdef CWDEBUG
     mSMDebug(debug),
 #endif
-    mDuration(AIEngine::duration_type::zero())
+    mDuration(duration_type::zero())
     { }
 
   protected:
@@ -301,8 +250,8 @@ class AIStatefulTask : public AIRefCount
     char const* event_str(event_type event);
 #endif
 
-    void add(AIEngine::duration_type delta) { mDuration += delta; }
-    AIEngine::duration_type getDuration(void) const { return mDuration; }
+    void add(duration_type delta) { mDuration += delta; }
+    duration_type getDuration(void) const { return mDuration; }
 
   protected:
     virtual void initialize_impl(void) = 0;
@@ -317,7 +266,7 @@ class AIStatefulTask : public AIRefCount
     void multiplex(event_type event);           // Called from AIEngine to step through the states (and from reset() to kick start the task).
     state_type begin_loop(base_state_type base_state);  // Called from multiplex() at the start of a loop.
     void callback(void);                        // Called when the task finished.
-    bool sleep(AIEngine::clock_type::time_point current_time)   // Count frames if necessary and return true when the task is still sleeping.
+    bool sleep(clock_type::time_point current_time)   // Count frames if necessary and return true when the task is still sleeping.
     {
       if (mSleep == 0)
         return false;
@@ -330,11 +279,6 @@ class AIStatefulTask : public AIRefCount
 
     friend class AIEngine;                      // Calls multiplex() and force_killed().
 };
-
-bool AIEngine::QueueElementComp::operator()(QueueElement const& e1, QueueElement const& e2) const
-{
-  return e1.mStatefulTask->getDuration() < e2.mStatefulTask->getDuration();
-}
 
 #ifdef CWDEBUG
 NAMESPACE_DEBUG_CHANNELS_START

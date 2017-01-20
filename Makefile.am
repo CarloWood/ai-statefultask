@@ -5,12 +5,16 @@ noinst_LTLIBRARIES = libstatefultask.la
 libstatefultask_la_SOURCES = \
 	AIStatefulTask.cxx \
 	AIStatefulTask.h \
+	AIEngine.cxx \
+	AIEngine.h \
 	AIStatefulTaskThread.cxx \
 	AIStatefulTaskThread.h \
 	AITimer.cxx \
 	AITimer.h \
 	AICondition.cxx \
 	AICondition.h \
+	AIAuxiliaryThread.h \
+	AIAuxiliaryThread.cxx \
 	AIStatefulTaskMutex.h
 
 libstatefultask_la_CXXFLAGS = @LIBCWD_FLAGS@
