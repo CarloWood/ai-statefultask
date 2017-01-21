@@ -45,13 +45,13 @@ char const* AITimer::state_str_impl(state_type run_state) const
   return "UNKNOWN STATE";
 }
 
-void AITimer::initialize_impl(void)
+void AITimer::initialize_impl()
 {
   ASSERT(!mFrameTimer.isRunning());
   set_state(AITimer_start);
 }
 
-void AITimer::expired(void)
+void AITimer::expired()
 {
   advance_state(AITimer_expired);
 }
@@ -74,7 +74,7 @@ void AITimer::multiplex_impl(state_type run_state)
   }
 }
 
-void AITimer::abort_impl(void)
+void AITimer::abort_impl()
 {
   mFrameTimer.cancel();
 }

@@ -47,11 +47,11 @@ class AIStatefulTaskThreadBase::Thread : public AIThread {
 #endif
       mImpl(impl) { }
   protected:
-    /*virtual*/ void run(void)
+    /*virtual*/ void run()
     {
       mNeedCleanup = mImpl->impl().thread_done(mImpl->impl().run());
     }
-    /*virtual*/ void terminated(void)
+    /*virtual*/ void terminated()
     {
       mStatus = STOPPED;
       if (mNeedCleanup)
@@ -84,7 +84,7 @@ char const* AIStatefulTaskThreadBase::state_str_impl(state_type run_state) const
   return "UNKNOWN STATE";
 }
 
-void AIStatefulTaskThreadBase::initialize_impl(void)
+void AIStatefulTaskThreadBase::initialize_impl()
 {
   mThread = nullptr;
   mAbort = false;
@@ -126,7 +126,7 @@ void AIStatefulTaskThreadBase::multiplex_impl(state_type run_state)
   }
 }
 
-void AIStatefulTaskThreadBase::abort_impl(void)
+void AIStatefulTaskThreadBase::abort_impl()
 {
   if (mThread)
   {

@@ -45,16 +45,16 @@ class HelloWorldThread : public AIThreadImpl {
 
   public:
     // Constructor.
-    HelloWorldThread(void) : AIThreadImpl("HelloWorldThread"),          // MAIN THREAD
+    HelloWorldThread() : AIThreadImpl("HelloWorldThread"),              // MAIN THREAD
         mStdErr(false), mSuccess(false) { }
 
     // Some initialization function (if needed).
     void init(bool err) { mStdErr = err; }                              // MAIN THREAD
     // Read back output.
-    bool successful(void) const { return mSuccess; }
+    bool successful() const { return mSuccess; }
 
     // Mandatory signature.
-    /*virtual*/ bool run(void)                                          // NEW THREAD
+    /*virtual*/ bool run()                                              // NEW THREAD
     {
       if (mStdErr)
         std::cerr << "Hello world" << std::endl;
@@ -88,7 +88,7 @@ class HelloWorld : public AIStatefulTask {
     /*virtual*/ ~HelloWorld() { }
 
     // Handle initializing the object.
-    /*virtual*/ void initialize_impl(void);
+    /*virtual*/ void initialize_impl();
 
     // Handle run_state.
     /*virtual*/ void multiplex_impl(state_type run_state);
@@ -107,7 +107,7 @@ class HelloWorld : public AIStatefulTask {
 
 // The actual implementation of this task starts here!
 
-void HelloWorld::initialize_impl(void)
+void HelloWorld::initialize_impl()
 {
   mHelloWorld->thread_impl().init(mErr);        // Initialize the thread object.
   set_state(HelloWorld_start);
@@ -146,7 +146,7 @@ class AIThreadImpl {
     AIThreadSafeSimpleDC<AIStatefulTaskThreadBase*> mStatefulTaskThread;
 
   public:
-    virtual bool run(void) = 0;
+    virtual bool run() = 0;
     bool thread_done(bool result);
     bool stateful_task_done(AIThread* threadp);
 
@@ -156,7 +156,7 @@ class AIThreadImpl {
   protected:
     AIThreadImpl(char const* name = "AIStatefulTaskThreadBase::Thread") : mName(name) { }
   public:
-    char const* getName(void) const { return mName; }
+    char const* getName() const { return mName; }
 #endif
 
   protected:
@@ -189,19 +189,19 @@ class AIStatefulTaskThreadBase : public AIStatefulTask {
 
   private:
     // Handle initializing the object.
-    /*virtual*/ void initialize_impl(void);
+    /*virtual*/ void initialize_impl();
 
     // Handle mRunState.
     /*virtual*/ void multiplex_impl(state_type run_state);
 
     // Handle aborting from current bs_run state.
-    /*virtual*/ void abort_impl(void);
+    /*virtual*/ void abort_impl();
 
     // Implemenation of state_str for run states.
     /*virtual*/ char const* state_str_impl(state_type run_state) const;
 
     // Returns a reference to the implementation code that needs to be run in the thread.
-    virtual AIThreadImpl& impl(void) = 0;
+    virtual AIThreadImpl& impl() = 0;
 
   private:
     Thread* mThread;            // The thread that the code is run in.
@@ -230,8 +230,8 @@ class AIStatefulTaskThread : public AIStatefulTaskThreadBase {
       }
 
     // Accessor.
-    THREAD_IMPL& thread_impl(void) { return mThreadImpl; }
+    THREAD_IMPL& thread_impl() { return mThreadImpl; }
 
   protected:
-    /*virtual*/ AIThreadImpl& impl(void) { return mThreadImpl; }
+    /*virtual*/ AIThreadImpl& impl() { return mThreadImpl; }
 };

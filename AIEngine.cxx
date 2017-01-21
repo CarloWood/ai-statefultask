@@ -49,7 +49,7 @@ void AIEngine::add(AIStatefulTask* stateful_task)
 }
 
 // MAIN-THREAD
-void AIEngine::mainloop(void)
+void AIEngine::mainloop()
 {
   queued_type::iterator queued_element, end;
   {
@@ -90,7 +90,7 @@ void AIEngine::mainloop(void)
   }
 }
 
-void AIEngine::flush(void)
+void AIEngine::flush()
 {
   engine_state_type::wat engine_state_w(mEngineState);
   DoutEntering(dc::statefultask, "AIEngine::flush [" << mName << "]: calling force_killed() on " << engine_state_w->list.size() << " stateful tasks.");
@@ -117,7 +117,7 @@ AIEngine gMainThreadEngine("gMainThreadEngine");
 AIEngine gAuxiliaryThreadEngine("gAuxiliaryThreadEngine");
 
 // Auxiliary Thread main loop.
-void AIEngine::threadloop(void)
+void AIEngine::threadloop()
 {
   queued_type::iterator queued_element, end;
   {
@@ -152,7 +152,7 @@ void AIEngine::threadloop(void)
   while (queued_element != end);
 }
 
-void AIEngine::wake_up(void)
+void AIEngine::wake_up()
 {
   engine_state_type::wat engine_state_w(mEngineState);
   if (engine_state_w->waiting)

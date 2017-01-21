@@ -36,7 +36,7 @@
 #include "AIStatefulTask.h"
 
 // Constructor and destructor need "AIStatefulTask.h" for member mWaitingStatefulTasks.
-AIConditionBase::AIConditionBase(void)
+AIConditionBase::AIConditionBase()
 {
 }
 

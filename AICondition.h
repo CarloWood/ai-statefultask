@@ -81,11 +81,11 @@ class AIStatefulTask;
 class AIConditionBase
 {
   public:
-    AIConditionBase(void);
+    AIConditionBase();
     virtual ~AIConditionBase();
 
     void signal(int n = 1);                                             // Call this when the condition was met to release n tasks.
-    void broadcast(void) { signal(mWaitingStatefulTasks.size()); }      // Release all blocked tasks.
+    void broadcast() { signal(mWaitingStatefulTasks.size()); }          // Release all blocked tasks.
 
   private:
     // These functions are called by AIStatefulTask.
@@ -94,7 +94,7 @@ class AIConditionBase
     void remove(AIStatefulTask* stateful_task);
 
   protected:
-    virtual AIRecursiveMutex& mutex(void) = 0;
+    virtual AIRecursiveMutex& mutex() = 0;
 
   protected:
     typedef std::deque<boost::intrusive_ptr<AIStatefulTask> > queue_type;
@@ -105,5 +105,5 @@ template<typename T>
 class AICondition : public aithreadsafe::Wrapper<T, aithreadsafe::policy::Primitive<AIRecursiveMutex>>, public AIConditionBase
 {
   protected:
-    /*virtual*/ AIRecursiveMutex& mutex(void) { return this->mMutex; }
+    /*virtual*/ AIRecursiveMutex& mutex() { return this->mMutex; }
 };

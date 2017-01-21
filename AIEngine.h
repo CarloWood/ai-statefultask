@@ -58,8 +58,8 @@ class AIEngine
         friend bool operator!=(QueueElement const& e1, QueueElement const& e2) { return e1.mStatefulTask != e2.mStatefulTask; }
         friend struct QueueElementComp;
 
-        AIStatefulTask const& stateful_task(void) const { return *mStatefulTask; }
-        AIStatefulTask& stateful_task(void) { return *mStatefulTask; }
+        AIStatefulTask const& stateful_task() const { return *mStatefulTask; }
+        AIStatefulTask& stateful_task() { return *mStatefulTask; }
     };
     struct QueueElementComp {
       inline bool operator()(QueueElement const& e1, QueueElement const& e2) const;
@@ -70,7 +70,7 @@ class AIEngine
     struct engine_state_st {
       queued_type list;
       bool waiting;
-      engine_state_st(void) : waiting(false) { }
+      engine_state_st() : waiting(false) { }
     };
 
     typedef AIStatefulTask::clock_type clock_type;
@@ -87,12 +87,12 @@ class AIEngine
 
     void add(AIStatefulTask* stateful_task);
 
-    void mainloop(void);
-    void threadloop(void);
-    void wake_up(void);
-    void flush(void);
+    void mainloop();
+    void threadloop();
+    void wake_up();
+    void flush();
 
-    char const* name(void) const { return mName; }
+    char const* name() const { return mName; }
 
     static void setMaxDuration(float max_duration);
 };

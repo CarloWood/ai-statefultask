@@ -145,16 +145,16 @@ class HelloWorld : public AIStatefulTask {
     // The following virtual functions must be implemented:
 
     // Handle initializing the object.
-    /*virtual*/ void initialize_impl(void);
+    /*virtual*/ void initialize_impl();
 
     // Handle mRunState.
     /*virtual*/ void multiplex_impl(state_type run_state);
 
     // Handle aborting from current bs_multiplex state (the default AIStatefulTask::abort_impl() does nothing).
-    /*virtual*/ void abort_impl(void);
+    /*virtual*/ void abort_impl();
 
     // Handle cleaning up from initialization (or post abort) state (the default AIStatefulTask::finish_impl() does nothing).
-    /*virtual*/ void finish_impl(void);
+    /*virtual*/ void finish_impl();
 
     // Return human readable string for run_state.
     /*virtual*/ char const* state_str_impl(state_type run_state) const;
@@ -787,7 +787,7 @@ void AIStatefulTask::run(callback_type::signal_type::slot_type const& slot, AIEn
   reset();
 }
 
-void AIStatefulTask::callback(void)
+void AIStatefulTask::callback()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::callback() [" << (void*)this << "]");
 
@@ -827,13 +827,13 @@ void AIStatefulTask::callback(void)
   }
 }
 
-void AIStatefulTask::force_killed(void)
+void AIStatefulTask::force_killed()
 {
   multiplex_state_type::wat state_w(mState);
   state_w->base_state = bs_killed;
 }
 
-void AIStatefulTask::kill(void)
+void AIStatefulTask::kill()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::kill() [" << (void*)this << "]");
 #ifdef DEBUG
@@ -972,7 +972,7 @@ void AIStatefulTask::advance_state(state_type new_state)
   }
 }
 
-void AIStatefulTask::idle(void)
+void AIStatefulTask::idle()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::idle() [" << (void*)this << "]");
 #ifdef DEBUG
@@ -1035,7 +1035,7 @@ void AIStatefulTask::wait(AIConditionBase& condition)
   mSleep = 0;
 }
 
-void AIStatefulTask::cont(void)
+void AIStatefulTask::cont()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::cont() [" << (void*)this << "]");
   {
@@ -1064,7 +1064,7 @@ void AIStatefulTask::cont(void)
 
 // This function is very much like cont(), except that it has no effect when we are not in a blocked state.
 // Returns true if the stateful task was unblocked, false if it was already unblocked.
-bool AIStatefulTask::signalled(void)
+bool AIStatefulTask::signalled()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signalled() [" << (void*)this << "]");
   {
@@ -1096,7 +1096,7 @@ bool AIStatefulTask::signalled(void)
   return true;
 }
 
-void AIStatefulTask::abort(void)
+void AIStatefulTask::abort()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::abort() [" << (void*)this << "]");
   bool is_waiting = false;
@@ -1134,7 +1134,7 @@ void AIStatefulTask::abort(void)
 #endif
 }
 
-void AIStatefulTask::finish(void)
+void AIStatefulTask::finish()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::finish() [" << (void*)this << "]");
 #ifdef DEBUG
@@ -1153,7 +1153,7 @@ void AIStatefulTask::finish(void)
   sub_state_w->finished = true;
 }
 
-void AIStatefulTask::yield(void)
+void AIStatefulTask::yield()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield() [" << (void*)this << "]");
   multiplex_state_type::rat state_r(mState);

@@ -82,7 +82,7 @@ class AITimer : public AIStatefulTask {
 #ifdef CWDEBUG
       AIStatefulTask(debug),
 #endif
-      mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer(void) [" << (void*)this << "]"); }
+      mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
     /**
      * @brief Set the interval after which the timer should expire.
@@ -98,25 +98,25 @@ class AITimer : public AIStatefulTask {
      *
      * @returns expiration interval in seconds.
      */
-    double getInterval(void) const { return mInterval; }
+    double getInterval() const { return mInterval; }
 
   protected:
     // Call finish() (or abort()), not delete.
     /*virtual*/ ~AITimer() { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); mFrameTimer.cancel(); }
 
     // Handle initializing the object.
-    /*virtual*/ void initialize_impl(void);
+    /*virtual*/ void initialize_impl();
 
     // Handle mRunState.
     /*virtual*/ void multiplex_impl(state_type run_state);
 
     // Handle aborting from current bs_run state.
-    /*virtual*/ void abort_impl(void);
+    /*virtual*/ void abort_impl();
 
     // Implemenation of state_str for run states.
     /*virtual*/ char const* state_str_impl(state_type run_state) const;
 
   private:
     // This is the callback for mFrameTimer.
-    void expired(void);
+    void expired();
 };

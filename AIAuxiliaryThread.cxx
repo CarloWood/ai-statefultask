@@ -29,7 +29,7 @@ namespace {
 SingletonInstance<AIAuxiliaryThread> dummy __attribute__ ((__unused__));
 }
 
-void AIAuxiliaryThread::mainloop(void)
+void AIAuxiliaryThread::mainloop()
 {
   AIAuxiliaryThread& auxiliary_thread(instance());
   while(*keep_running_type::crat(auxiliary_thread.m_keep_running))
@@ -39,7 +39,7 @@ void AIAuxiliaryThread::mainloop(void)
   *stopped_type::wat(auxiliary_thread.m_stopped) = true;
 }
 
-void AIAuxiliaryThread::start(void)
+void AIAuxiliaryThread::start()
 {
   AIAuxiliaryThread& auxiliary_thread(instance());
   {
@@ -53,7 +53,7 @@ void AIAuxiliaryThread::start(void)
   auxiliary_thread.m_handle.swap(new_thread_handle);
 }
 
-void AIAuxiliaryThread::stop(void)
+void AIAuxiliaryThread::stop()
 {
   AIAuxiliaryThread& auxiliary_thread(instance());
   {

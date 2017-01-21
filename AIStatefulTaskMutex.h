@@ -64,7 +64,7 @@ class AIStatefulTaskMutex
       assert(*lock_count_w > 0 && m_owner == owner);
       --*lock_count_w;
     }
-    bool is_locked(void) const
+    bool is_locked() const
     {
       lock_count_crat lock_count_w(m_lock_count);
       return *lock_count_w > 0;

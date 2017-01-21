@@ -79,7 +79,7 @@ class AIStatefulTask : public AIRefCount
     struct multiplex_state_st {
       base_state_type base_state;
       AIEngine* current_engine;         // Current engine.
-      multiplex_state_st(void) : base_state(bs_reset), current_engine(nullptr) { }
+      multiplex_state_st() : base_state(bs_reset), current_engine(nullptr) { }
     };
     struct sub_state_st {
       state_type run_state;
@@ -183,19 +183,19 @@ class AIStatefulTask : public AIRefCount
     // These functions may be called directly after creation, or from within finish_impl(), or from the call back function.
     void run(AIStatefulTask* parent, state_type new_parent_state, bool abort_parent = true, bool on_abort_signal_parent = true, AIEngine* default_engine = &gMainThreadEngine);
     void run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine = &gMainThreadEngine);
-    void run(void) { run(nullptr, 0, false, true, mDefaultEngine); }
+    void run() { run(nullptr, 0, false, true, mDefaultEngine); }
 
     // This function may only be called from the call back function (and cancels a call to run() from finish_impl()).
-    void kill(void);
+    void kill();
 
   protected:
     // This function can be called from initialize_impl() and multiplex_impl() (both called from within multiplex()).
     void set_state(state_type new_state);       // Run this state the NEXT loop.
     // These functions can only be called from within multiplex_impl().
-    void idle(void);                            // Go idle unless cont() or advance_state() were called since the start of the current loop, or until they are called.
+    void idle();                                // Go idle unless cont() or advance_state() were called since the start of the current loop, or until they are called.
     void wait(AIConditionBase& condition);      // The same as idle(), but wake up when AICondition<T>::signal() is called.
-    void finish(void);                          // Mark that the task finished and schedule the call back.
-    void yield(void);                           // Yield to give CPU to other tasks, but do not go idle.
+    void finish();                              // Mark that the task finished and schedule the call back.
+    void yield();                               // Yield to give CPU to other tasks, but do not go idle.
     void yield(AIEngine* engine);               // Yield to give CPU to other tasks, but do not go idle. Continue running from engine 'engine'.
     void yield_frame(unsigned int frames);      // Run from the main-thread engine after at least 'frames' frames have passed.
     void yield_ms(unsigned int ms);             // Run from the main-thread engine after roughly 'ms' miliseconds have passed.
@@ -205,35 +205,35 @@ class AIStatefulTask : public AIRefCount
     // This function can be called from multiplex_imp(), but also by a child task and
     // therefore by any thread. The child task should use an boost::intrusive_ptr<AIStatefulTask>
     // to access this task.
-    void abort(void);                           // Abort the task (unsuccessful finish).
+    void abort();                               // Abort the task (unsuccessful finish).
 
     // These are the only three functions that can be called by any thread at any moment.
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
-    void cont(void);                            // Guarantee at least one full run of multiplex() after this function is called. Cancels the last call to idle().
+    void cont();                                // Guarantee at least one full run of multiplex() after this function is called. Cancels the last call to idle().
     void advance_state(state_type new_state);   // Guarantee at least one full run of multiplex() after this function is called
     // iff new_state is larger than the last state that was processed.
-    bool signalled(void);                       // Call cont() iff this task is still blocked after a call to wait(). Returns false if it already unblocked.
+    bool signalled();                           // Call cont() iff this task is still blocked after a call to wait(). Returns false if it already unblocked.
 
   public:
     // Accessors.
 
     // Return true if the derived class is running (also when we are idle).
-    bool running(void) const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
+    bool running() const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
     // Return true if the derived class is running and idle.
-    bool waiting(void) const
+    bool waiting() const
     {
       multiplex_state_type::crat state_r(mState);
       return state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle;
     }
     // Return true if the derived class is running and idle or already being aborted.
-    bool waiting_or_aborting(void) const
+    bool waiting_or_aborting() const
     {
       multiplex_state_type::crat state_r(mState);
       return state_r->base_state == bs_abort || ( state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle);
     }
     // Return true if are added to the engine.
     bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
-    bool aborted(void) const { return sub_state_type::crat(mSubState)->aborted; }
+    bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
 
     // Use some safebool idiom (http://www.artima.com/cppsource/safebool.html) rather than operator bool.
     typedef state_type AIStatefulTask::* bool_type;
@@ -251,21 +251,21 @@ class AIStatefulTask : public AIRefCount
 #endif
 
     void add(duration_type delta) { mDuration += delta; }
-    duration_type getDuration(void) const { return mDuration; }
+    duration_type getDuration() const { return mDuration; }
 
   protected:
-    virtual void initialize_impl(void) = 0;
+    virtual void initialize_impl() = 0;
     virtual void multiplex_impl(state_type run_state) = 0;
-    virtual void abort_impl(void) { }
-    virtual void finish_impl(void) { }
+    virtual void abort_impl() { }
+    virtual void finish_impl() { }
     virtual char const* state_str_impl(state_type run_state) const = 0;
-    virtual void force_killed(void);            // Called from AIEngine::flush().
+    virtual void force_killed();                // Called from AIEngine::flush().
 
   private:
-    void reset(void);                           // Called from run() to (re)initialize a (re)start.
+    void reset();                               // Called from run() to (re)initialize a (re)start.
     void multiplex(event_type event);           // Called from AIEngine to step through the states (and from reset() to kick start the task).
     state_type begin_loop(base_state_type base_state);  // Called from multiplex() at the start of a loop.
-    void callback(void);                        // Called when the task finished.
+    void callback();                            // Called when the task finished.
     bool sleep(clock_type::time_point current_time)   // Count frames if necessary and return true when the task is still sleeping.
     {
       if (mSleep == 0)
