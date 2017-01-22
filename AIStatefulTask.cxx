@@ -622,10 +622,10 @@ void AIStatefulTask::multiplex(event_type event)
           state_w->current_engine = nullptr;
         }
 
-#ifdef DEBUG
         // Mark that we stop running the loop.
         tl_running_task = nullptr;
 
+#ifdef DEBUG
         if (destruct)
         {
           // We're about to call unref(). Make sure we call that in balance with ref()!
@@ -966,10 +966,8 @@ void AIStatefulTask::advance_state(state_type new_state)
     }
 #endif
   }
-  if (tl_running_task != this)
-  {
+  if (!tl_running_task)
     multiplex(schedule_run);
-  }
 }
 
 void AIStatefulTask::idle()
@@ -1056,10 +1054,8 @@ void AIStatefulTask::cont()
     mDebugContPending = true;
 #endif
   }
-  if (tl_running_task != this)
-  {
+  if (!tl_running_task)
     multiplex(schedule_run);
-  }
 }
 
 // This function is very much like cont(), except that it has no effect when we are not in a blocked state.
@@ -1089,10 +1085,8 @@ bool AIStatefulTask::signalled()
     mDebugContPending = true;
 #endif
   }
-  if (tl_running_task != this)
-  {
+  if (!tl_running_task)
     multiplex(schedule_run);
-  }
   return true;
 }
 
@@ -1117,10 +1111,8 @@ void AIStatefulTask::abort()
     // Schedule a new run when this task is waiting.
     is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle;
   }
-  if (is_waiting && tl_running_task != this)
-  {
+  if (is_waiting && !tl_running_task)
     multiplex(insert_abort);
-  }
   // Block until the current run finished.
   if (!mRunMutex.try_lock())
   {
