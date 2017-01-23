@@ -315,7 +315,7 @@ void AIStatefulTask::multiplex(event_type event)
     // If another thread is already running multiplex() then it will pick up
     // our need to run (by us having set need_run), so there is no need to run
     // ourselves.
-    ASSERT(tl_running_task != this);    // We may never enter recursively!
+    ASSERT(!mMultiplexMutex.owns_lock());    // We may never enter recursively!
     if (!mMultiplexMutex.try_lock())
     {
       Dout(dc::statefultask(mSMDebug), "Leaving because it is already being run [" << (void*)this << "]");
@@ -622,10 +622,10 @@ void AIStatefulTask::multiplex(event_type event)
           state_w->current_engine = nullptr;
         }
 
-        // Mark that we stop running the loop.
-        tl_running_task = nullptr;
-
 #ifdef DEBUG
+        // Mark that we stop running the loop.
+        mThreadId = std::thread::id();
+
         if (destruct)
         {
           // We're about to call unref(). Make sure we call that in balance with ref()!
@@ -687,9 +687,9 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
 #endif
   sub_state_w->advance_state = 0;
 
-  // Mark that we're running the loop.
-  tl_running_task = this;
 #ifdef DEBUG
+  // Mark that we're running the loop.
+  mThreadId = std::this_thread::get_id();
   // This point marks handling cont().
   mDebugShouldRun |= mDebugContPending;
   mDebugContPending = false;
@@ -842,7 +842,7 @@ void AIStatefulTask::kill()
     // kill() may only be called from the call back function.
     ASSERT(state_r->base_state == bs_callback);
     // May only be called by the thread that is holding mMultiplexMutex.
-    ASSERT(tl_running_task == this);
+    ASSERT(mThreadId == std::this_thread::get_id());
   }
 #endif
   sub_state_type::wat sub_state_w(mSubState);
@@ -896,7 +896,7 @@ void AIStatefulTask::set_state(state_type new_state)
     // set_state() may only be called from initialize_impl() or multiplex_impl().
     ASSERT(state_r->base_state == bs_initialize || state_r->base_state == bs_multiplex);
     // May only be called by the thread that is holding mMultiplexMutex. If this fails, you probably called set_state() by accident instead of advance_state().
-    ASSERT(tl_running_task == this);
+    ASSERT(mThreadId == std::this_thread::get_id());
   }
 #endif
   sub_state_type::wat sub_state_w(mSubState);
@@ -966,7 +966,7 @@ void AIStatefulTask::advance_state(state_type new_state)
     }
 #endif
   }
-  if (!tl_running_task)
+  if (!mMultiplexMutex.owns_lock())
     multiplex(schedule_run);
 }
 
@@ -979,7 +979,7 @@ void AIStatefulTask::idle()
     // idle() may only be called from initialize_impl() or multiplex_impl().
     ASSERT(state_r->base_state == bs_multiplex || state_r->base_state == bs_initialize);
     // May only be called by the thread that is holding mMultiplexMutex.
-    ASSERT(tl_running_task == this);
+    ASSERT(mThreadId == std::this_thread::get_id());
   }
   // idle() following set_state() cancels the reason to run because of the call to set_state.
   mDebugSetStatePending = false;
@@ -1009,7 +1009,7 @@ void AIStatefulTask::wait(AIConditionBase& condition)
     // wait() may only be called multiplex_impl().
     ASSERT(state_r->base_state == bs_multiplex);
     // May only be called by the thread that is holding mMultiplexMutex.
-    ASSERT(tl_running_task == this);
+    ASSERT(mThreadId == std::this_thread::get_id());
   }
   // wait() following set_state() cancels the reason to run because of the call to set_state.
   mDebugSetStatePending = false;
@@ -1038,6 +1038,15 @@ void AIStatefulTask::cont()
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::cont() [" << (void*)this << "]");
   {
     sub_state_type::wat sub_state_w(mSubState);
+    // Calling cont() on non-idle task run by self is an error.
+    // This means must mean that (before finishing a state with a call to idle())
+    // a function was called that caused this cont() to be called.
+    // Although any other thread can call cont() on us at any time, that
+    // still would be a race condition: a little later and the cont() would
+    // have had effect (so that would also be an error, except we can't know
+    // it in that case). The call to cont() that got us here should be
+    // replaced with advance_state().
+    ASSERT(sub_state_w->idle || !mMultiplexMutex.owns_lock());
     // Void last call to idle(), if any.
     sub_state_w->idle = false;
     // No longer say we woke up when signalled() is called.
@@ -1054,7 +1063,7 @@ void AIStatefulTask::cont()
     mDebugContPending = true;
 #endif
   }
-  if (!tl_running_task)
+  if (!mMultiplexMutex.owns_lock())
     multiplex(schedule_run);
 }
 
@@ -1085,7 +1094,7 @@ bool AIStatefulTask::signalled()
     mDebugContPending = true;
 #endif
   }
-  if (!tl_running_task)
+  if (!mMultiplexMutex.owns_lock())
     multiplex(schedule_run);
   return true;
 }
@@ -1111,7 +1120,7 @@ void AIStatefulTask::abort()
     // Schedule a new run when this task is waiting.
     is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle;
   }
-  if (is_waiting && !tl_running_task)
+  if (is_waiting && !mMultiplexMutex.owns_lock())
     multiplex(insert_abort);
   // Block until the current run finished.
   if (!mRunMutex.try_lock())
@@ -1135,7 +1144,7 @@ void AIStatefulTask::finish()
     // finish() may only be called from multiplex_impl().
     ASSERT(state_r->base_state == bs_multiplex);
     // May only be called by the thread that is holding mMultiplexMutex.
-    ASSERT(tl_running_task == this);
+    ASSERT(mThreadId == std::this_thread::get_id());
   }
 #endif
   sub_state_type::wat sub_state_w(mSubState);
@@ -1152,7 +1161,7 @@ void AIStatefulTask::yield()
   // yield() may only be called from multiplex_impl().
   ASSERT(state_r->base_state == bs_multiplex);
   // May only be called by the thread that is holding mMultiplexMutex.
-  ASSERT(tl_running_task == this);
+  ASSERT(mThreadId == std::this_thread::get_id());
   // Set mYieldEngine to the best non-NUL value.
   mYieldEngine = state_r->current_engine ? state_r->current_engine : (mDefaultEngine ? mDefaultEngine : &gAuxiliaryThreadEngine);
 }
@@ -1167,7 +1176,7 @@ void AIStatefulTask::yield(AIEngine* engine)
     // yield() may only be called from multiplex_impl().
     ASSERT(state_r->base_state == bs_multiplex);
     // May only be called by the thread that is holding mMultiplexMutex.
-    ASSERT(tl_running_task == this);
+    ASSERT(mThreadId == std::this_thread::get_id());
   }
 #endif
   mYieldEngine = engine;
@@ -1215,10 +1224,6 @@ char const* AIStatefulTask::state_str(base_state_type state)
   ASSERT(false);
   return "UNKNOWN BASE STATE";
 }
-
-// If a thread is *inside* AIStatefulTask::multiplex then this pointer points
-// the corresponding AIStatefulTask object. Otherwise this is nullptr.
-thread_local AIStatefulTask const* AIStatefulTask::tl_running_task;
 
 #ifdef CWDEBUG
 NAMESPACE_DEBUG_CHANNELS_START
