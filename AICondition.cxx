@@ -47,7 +47,7 @@ AIConditionBase::~AIConditionBase()
 void AIConditionBase::wait(AIStatefulTask* stateful_task)
 {
   // The condition must be locked before calling AIStatefulTask::wait().
-  ASSERT(mutex().owns_lock());
+  ASSERT(mutex().self_locked());
   // Add the new task at the end.
   mWaitingStatefulTasks.push_back(stateful_task);
 }
@@ -77,7 +77,7 @@ void AIConditionBase::remove(AIStatefulTask* stateful_task)
 void AIConditionBase::signal(int n)
 {
   // The condition must be locked before calling AICondition::signal or AICondition::broadcast.
-  ASSERT(mutex().owns_lock());
+  ASSERT(mutex().self_locked());
   // Signal n tasks.
   while (n > 0 && !mWaitingStatefulTasks.empty())
   {

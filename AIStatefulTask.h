@@ -38,7 +38,7 @@
 
 #include "utils/AIRefCount.h"
 #include "threadsafe/aithreadsafe.h"
-#include "threadsafe/AIRecursiveMutex.h"
+#include "threadsafe/AIMutex.h"
 #include "debug.h"
 #include <list>
 #include <chrono>
@@ -106,7 +106,7 @@ class AIStatefulTask : public AIRefCount
 
   private:
     // Mutex protecting everything below and making sure only one thread runs the task at a time.
-    AIRecursiveMutex mMultiplexMutex;
+    AIMutex mMultiplexMutex;
     // Mutex that is locked while calling *_impl() functions and the call back.
     std::mutex mRunMutex;
 
@@ -143,7 +143,7 @@ class AIStatefulTask : public AIRefCount
     base_state_type mDebugLastState;    // The previous state that multiplex() had a normal run with.
     bool mDebugShouldRun;               // Set if we found evidence that we should indeed call multiplex_impl().
     bool mDebugAborted;                 // True when abort() was called.
-    bool mDebugContPending;             // True while cont() was called by not handled yet.
+    bool mDebugContPending;             // True while cont() was called but not handled yet.
     bool mDebugSetStatePending;         // True while set_state() was called by not handled yet.
     bool mDebugAdvanceStatePending;     // True while advance_state() was called by not handled yet.
     bool mDebugRefCalled;               // True when ref() is called (or will be called within the critial area of mMultiplexMutex).
@@ -153,7 +153,7 @@ class AIStatefulTask : public AIRefCount
     bool mSMDebug;                      // Print debug output only when true.
 #endif
   private:
-    duration_type mDuration;  // Total time spent running in the main thread.
+    duration_type mDuration;            // Total time spent running in the main thread.
 
   public:
     AIStatefulTask(DEBUG_ONLY(bool debug)) : mCallback(nullptr), mDefaultEngine(nullptr), mYieldEngine(nullptr),
@@ -231,7 +231,7 @@ class AIStatefulTask : public AIRefCount
       multiplex_state_type::crat state_r(mState);
       return state_r->base_state == bs_abort || ( state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle);
     }
-    // Return true if are added to the engine.
+    // Return true if we are added to the current engine.
     bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
     bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
 

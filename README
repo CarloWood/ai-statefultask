@@ -1,0 +1,228 @@
+This file describes the design specs of AIStatefulTask.
+
+The main idea behind a task (a class derived from AIStatefulTask),
+is that can be look at one at a time and be understood: a typical
+task will do certain things in a certain order, and wait inbetween
+for subsequent information or events before it can continue.
+How it then continues might depend on that information or
+the particular event.
+
+A task is only losely coupled to threads: theoretically each
+time the execution of the task is suspended, for whatever reason,
+it may switch thread before continuing its execution.
+
+This is not important to the task itself, as only one thread
+at a time will be executing a given task, it can be viewed as
+single threaded as long as the data that it deals with is
+only handled by the task. If data is also accesses outside
+the task then it should be protected against concurrent access
+as usual, just it should have been when the task would have
+been executed by a single thread.
+
+
+(Non-)executing threads
+-----------------------
+
+A task has two major modes that play an important role:
+
+1) The task is "executing".
+2) The task is "not executing".
+
+A task is "executing" when some thread has locked the
+AIStatefulTask::mMultiplexMutex mutex. The thread
+that did this might be executing multiple tasks at
+the same time: it is possible and allowed to run
+or activate a running task from within a task, which
+in turn might start executing right away.
+
+From the perspective of a thread, it is important
+to know if it is the one that is executing a task,
+or that some other thread is. We call the thread
+that obtained the mutex the "executing thread",
+and all other threads "non-executing threads".
+
+Hence, if a task is not executing then ALL threads
+are non-executing threads.
+
+If a task is executing that one thread is the
+executing thread, and all other threads are
+the non-executing threads.
+
+Control functions
+-----------------
+
+A running task can be controlled by calling
+member functions of the AIStatefulTask base class.
+There are thirteen such member functions.
+Three member functions may be called from
+both, executing and non-executing threads (aka,
+from anywhere at any time). They are therefore
+public functions:
+
+1) cont()
+2) advance_state(new_state)
+3) signalled()
+
+One function may only be called by
+a child task (and therefore by any thread),
+or from multiplex_impl by the executing-thread:
+
+4) abort()
+
+The rest may only be called by the executing
+thread (aka, from within multiplex_impl()).
+These functions are therefore protected:
+
+5) set_state(new_state)
+6) idle()
+7) wait(condition)
+8) finish()
+9) yield()
+10) yield(engine)
+11) yield_frame(frames)
+12) yield_ms(ms)
+13) yield_if_not(engine)
+
+A task executes code that belongs to a given "state"
+and (possibly) keeps doing so until any of the protected
+functions, abort() or advance_state(new_state) is called,
+provided that new_state is larger than the current state
+(otherwise the call to advance_state had no effect).
+
+Hence, every state MUST (eventually, and rather sooner than
+later) call one of the protected functions, or a task could
+go into a tight loop using 100% cpu.
+
+Moreover, an executing thread that calls abort(), idle(),
+wait(), finish(), yield_if_not() when that returned true, or any
+of the other yield functions, should immediately stop
+executing and leave multiplex_impl() (aka, those functions
+should be followed by a break).
+
+Since the effect of any of the yield functions, yield_if_not
+when that returns true, is basically the same, we can consider
+just 'yield' for the remainder of this analysis. If yield_if_not
+returns false however, then nothing changed and we can simply
+continue to execute code in the task, now having the guarantee
+that we run in a specific engine.
+
+The following details the effect that a call to each
+member function should have, starting with the protected
+member functions:
+
+A call to set_state() has no effect, except that the NEXT
+invokation of multiplex_impl will be with the state that
+was LAST passed to set_state(), UNLESS advance_state()
+is called after the last call to set_state() with a state
+that is larger than the state of the last call to set_state.
+
+For example, any of the following sequence of calls
+will cause the task to continue running with state 2
+[or any state larger than 2 when advance_state() is called
+ with a value larger than 2 after the break by a non-executing
+ thread]:
+
+  set_state(1);
+  set_state(2);
+  break;       
+
+  set_state(1);
+  advance_state(3);
+  set_state(2);
+  break;
+
+  set_state(1);
+  advance_state(2);
+  break;
+
+  set_state(2);
+  advance_state(1);
+  break;
+
+In the above, advance_state() may be called by the executing
+thread or by a non-executing thread (chronologically inserted
+at that point).
+
+A call to abort() and finish() will cause a task
+to not call multiplex_impl() again at all after leaving
+it (except when finish_impl() calls run() again, in
+which case the task is restarted from the beginning).
+
+A call to yield() has basically no effect on a task,
+except that it's execution is delayed a bit. Most notably,
+other running tasks will get the chance to execute
+before this task is continued. In order to avoid 100%
+cpu usage by such a task, other tasks should almost
+immediately cause a call to advance_state() with a state
+larger than the current state, or execution should
+otherwise be changed due to reentry (ie, a counter).
+It is the responsiblity of the coder to make sure that this
+is the case.
+
+A call to idle() suspends the execution of a task until a
+non-executing thread calls cont() or advance_state().
+If cont() is called, or advance_state() with a state less than
+or equal the current state, then the task will continue
+with the current state (ie, set by the last call to set_state).
+If advance_state() is called with a state larger than the
+current state then that state will be executed.
+Note that if cont() is called on a task that is not idle(), then
+the call to cont() has no effect.
+Hence, advance_state() can be seen as the atomic equivalent of:
+
+  void advance_state(state new_state) {
+    if (new_state > current_state)
+      set_state(new_state);
+    cont();
+  }
+
+A call to wait(condition) is equivalent to a call to idle(),
+with the additional feature that a call to signalled() will
+continue the task if the task wasn't already continued before.
+In other words, calling signalled() on a task that is not wait()-ing
+has no effect (signalled() returns false in that case).
+
+Thus, the following chronological calls (by any thread) have
+the effect as described in the comments:
+
+  idle(); // Go idle.
+  cont(); // Continue.
+  cont(); // Ignored.
+  signalled(); // Ignored.
+
+  idle(); // Go idle.
+  signalled(); // Ignored.
+
+  wait(condition); // Go idle.
+  cont(); // Continue.
+  signalled(); // Ignored.
+
+  wait(condition); // Go idle.
+  signalled(); // Continue.
+  cont(); // Ignored.
+
+Finally we'll describe the effect of calling the public functions
+in detail:
+
+A call to cont() causes a task to start running if it
+was idle at that moment, either by a call to idle() or
+a call to wait().
+If cont() is called while a task is not idle, it is
+ignored (what else?) BUT... in some cases we want the
+NEXT call to idle() to be ignored; this to solve a race
+condition when a non-executing thread is calling cont().
+This:
+
+  idle();       // Executing thread.
+  cont();       // Non-executing thread.
+
+Should have the same effect as:
+
+  cont();       // Non-executing thread.
+  idle();       // Executing thread.
+
+Provided that the task was already executing at the
+moment that cont() was being called (or advance_state(),
+or signalled when wait() was called last instead of
+idle()).
+

@@ -34,7 +34,7 @@
 #pragma once
 
 #include "threadsafe/aithreadsafe.h"
-#include "threadsafe/AIRecursiveMutex.h"
+#include "threadsafe/AIMutex.h"
 #include <deque>
 #include <boost/intrusive_ptr.hpp>
 
@@ -94,7 +94,7 @@ class AIConditionBase
     void remove(AIStatefulTask* stateful_task);
 
   protected:
-    virtual AIRecursiveMutex& mutex() = 0;
+    virtual AIMutex& mutex() = 0;
 
   protected:
     typedef std::deque<boost::intrusive_ptr<AIStatefulTask> > queue_type;
@@ -102,8 +102,8 @@ class AIConditionBase
 };
 
 template<typename T>
-class AICondition : public aithreadsafe::Wrapper<T, aithreadsafe::policy::Primitive<AIRecursiveMutex>>, public AIConditionBase
+class AICondition : public aithreadsafe::Wrapper<T, aithreadsafe::policy::Primitive<AIMutex>>, public AIConditionBase
 {
   protected:
-    /*virtual*/ AIRecursiveMutex& mutex() { return this->mMutex; }
+    /*virtual*/ AIMutex& mutex() { return this->mMutex; }
 };

@@ -315,7 +315,7 @@ void AIStatefulTask::multiplex(event_type event)
     // If another thread is already running multiplex() then it will pick up
     // our need to run (by us having set need_run), so there is no need to run
     // ourselves.
-    ASSERT(!mMultiplexMutex.owns_lock());    // We may never enter recursively!
+    ASSERT(!mMultiplexMutex.self_locked());    // We may never enter recursively!
     if (!mMultiplexMutex.try_lock())
     {
       Dout(dc::statefultask(mSMDebug), "Leaving because it is already being run [" << (void*)this << "]");
@@ -966,7 +966,7 @@ void AIStatefulTask::advance_state(state_type new_state)
     }
 #endif
   }
-  if (!mMultiplexMutex.owns_lock())
+  if (!mMultiplexMutex.self_locked())
     multiplex(schedule_run);
 }
 
@@ -1046,7 +1046,7 @@ void AIStatefulTask::cont()
     // have had effect (so that would also be an error, except we can't know
     // it in that case). The call to cont() that got us here should be
     // replaced with advance_state().
-    ASSERT(sub_state_w->idle || !mMultiplexMutex.owns_lock());
+    ASSERT(sub_state_w->idle || !mMultiplexMutex.self_locked());
     // Void last call to idle(), if any.
     sub_state_w->idle = false;
     // No longer say we woke up when signalled() is called.
@@ -1063,7 +1063,7 @@ void AIStatefulTask::cont()
     mDebugContPending = true;
 #endif
   }
-  if (!mMultiplexMutex.owns_lock())
+  if (!mMultiplexMutex.self_locked())
     multiplex(schedule_run);
 }
 
@@ -1094,7 +1094,7 @@ bool AIStatefulTask::signalled()
     mDebugContPending = true;
 #endif
   }
-  if (!mMultiplexMutex.owns_lock())
+  if (!mMultiplexMutex.self_locked())
     multiplex(schedule_run);
   return true;
 }
@@ -1120,7 +1120,7 @@ void AIStatefulTask::abort()
     // Schedule a new run when this task is waiting.
     is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle;
   }
-  if (is_waiting && !mMultiplexMutex.owns_lock())
+  if (is_waiting && !mMultiplexMutex.self_locked())
     multiplex(insert_abort);
   // Block until the current run finished.
   if (!mRunMutex.try_lock())
