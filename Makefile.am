@@ -17,8 +17,8 @@ libstatefultask_la_SOURCES = \
 	AIAuxiliaryThread.cxx \
 	AIStatefulTaskMutex.h
 
-libstatefultask_la_CXXFLAGS = @LIBCWD_FLAGS@
-libstatefultask_la_LIBADD = @LIBCWD_LIBS@
+libstatefultask_la_CXXFLAGS = @LIBCWD_R_FLAGS@
+libstatefultask_la_LIBADD = @LIBCWD_R_LIBS@
 
 # --------------- Maintainer's Section
 
