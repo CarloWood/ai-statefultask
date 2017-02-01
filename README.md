@@ -56,8 +56,8 @@ bin_PROGRAMS = foobar
 would also define
 
 <pre>
-foobar_CXXFLAGS = @LIBCWD_FLAGS@
-foobar_LDADD = ../statefultask/statefultask.la ../threadsafe/threadsafe.la ../utils/libutils.la ../cwd/libcwd.la @LIBCWD_LIBS@
+foobar_CXXFLAGS = @LIBCWD_R_FLAGS@
+foobar_LDADD = ../statefultask/statefultask.la ../threadsafe/threadsafe.la ../utils/libutils_r.la ../cwd/libcwd_r.la @LIBCWD_R_LIBS@
 </pre>
 
 or whatever the path to `statefultask` etc. is, to link with the required submodules,
