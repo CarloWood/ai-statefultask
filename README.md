@@ -56,11 +56,12 @@ bin_PROGRAMS = foobar
 would also define
 
 <pre>
+foobar_CXXFLAGS = @LIBCWD_R_FLAGS@
 foobar_LDADD = ../statefultask/statefultask.la ../threadsafe/threadsafe.la ../utils/libutils_r.la ../cwds/libcwds_r.la
 </pre>
 
 or whatever the path to `statefultask` etc. is, to link with the required submodules,
-libraries, and assuming you'd also use the [cwds](https://github.com/CarloWood/cwds) submodule.
+libraries, and assuming you also use the [cwds](https://github.com/CarloWood/cwds) submodule.
 
 Finally, run
 
