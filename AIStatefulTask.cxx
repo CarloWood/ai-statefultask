@@ -525,7 +525,7 @@ void AIStatefulTask::multiplex(event_type event)
                 // If the state is bs_multiplex we only need to run again when need_run was set again in the meantime or when this task isn't idle.
                 need_new_run = sub_state_r->need_run || !sub_state_r->idle;
                 // If this fails then the run state didn't change and neither idle() nor yield() was called.
-                assert(!(need_new_run && !sub_state_r->skip_idle && !mYieldEngine && sub_state_r->run_state == run_state));
+                ASSERT(!(need_new_run && !sub_state_r->skip_idle && !mYieldEngine && sub_state_r->run_state == run_state));
               }
               break;
             case bs_abort:
