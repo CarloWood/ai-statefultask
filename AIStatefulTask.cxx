@@ -924,7 +924,7 @@ void AIStatefulTask::advance_state(state_type new_state)
     // Ignore call to advance_state when the currently queued state is already greater or equal to the requested state.
     if (sub_state_w->advance_state >= new_state)
     {
-      Dout(dc::statefultask(mSMDebug), "Ignored, because " << state_str_impl(sub_state_w->advance_state) << " >= " << state_str_impl(new_state) << ".");
+      Dout(dc::statefultask(mSMDebug), "Ignored, because " << state_str_impl(new_state) << " <= " << state_str_impl(sub_state_w->advance_state) << " (next state).");
       return;
     }
     // Ignore call to advance_state when the current state is greater than the requested state: the new state would be
@@ -933,7 +933,7 @@ void AIStatefulTask::advance_state(state_type new_state)
     // the state change is and should be being ignored: the task would start running it's current state (again).
     if (sub_state_w->run_state > new_state)
     {
-      Dout(dc::statefultask(mSMDebug), "Ignored, because " << state_str_impl(sub_state_w->run_state) << " > " << state_str_impl(new_state) << " (current state).");
+      Dout(dc::statefultask(mSMDebug), "Ignored, because " << state_str_impl(new_state) << " < " << state_str_impl(sub_state_w->run_state) << " (current state).");
       return;
     }
     // Increment state.
