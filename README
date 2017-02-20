@@ -204,8 +204,9 @@ the call to cont() has no (immediate, see below) effect.
 Hence, advance_state() can be seen as the atomic equivalent of:
 
   void advance_state(state new_state) {
-    if (new_state > current_state)
-      set_state(new_state);
+    if (new_state < current_state)
+      return;
+    set_state(new_state);
     cont();
   }
 
@@ -266,3 +267,55 @@ moment that cont() was being called (or advance_state(),
 or signalled when wait() was called last instead of
 idle()).
 
+-----------------------------------------------------------------------------
+
+Lets combine the internal state of a running task with the
+fact that it is executing or not; and that it is idle
+or non-idle.
+
+running: The task was initialized (AFTER initialize_impl()) and did not
+         call finish() or abort() yet (BEFORE finish() or abort()).
+         When a task enters multiplex_impl() it is guaranteed to be
+         running.
+
+idle:    A task is guaranteed to be idle immediately AFTER a call to
+         idle() or wait() provided that call wasn't ignored and no
+         unignored call to advance_state() happened since it was set to
+         idle inside idle() or wait(), nor a call to cont() nor a call
+         to signalled() in the case of wait(); a call to idle() or
+         wait() will be ignored when, since the last call to set_state()
+         or begin_loop(), at least one call to advance_state() occurred
+         that wasn't ignored. A call to advance_state() is ignored when
+         the new state is less than the current state or less than or
+         equal the next state (which is the last non-ignored state of
+         advance_state()). Here begin_loop() is an internal function that
+         is called somewhere before entering any of the _impl functions,
+         thus also multiplex_impl().
+         Since idle() and wait() are not public, it is hence guaranteed
+         that a task is non-idle directly after entering multiplex_impl().
+
+waiting: running and idle.
+
+aborted: abort() was called. This is guaranteed to be true immediately
+         after returning from abort() unless finish() was called
+         before already. Note that if finish() is called immediately
+         after (or was already called, but didn't lock the mutex yet)
+         then that call to finish() has no effect: the task will be
+         aborted. This looks like a race condition, but the reason is
+         that when finish() is called after a call to abort() then
+         abort() was called from the outside while the task was
+         executing and it might have used information from an object
+         that was already in an inconsistent (failing) state, too,
+         before calling finish().
+         The state remains aborted until after we returned abort_impl
+         and before calling finish_impl.
+
+aborting: This state is reached after returning from initialize_impl()
+         or multiplex_impl() and we are aborted. Or when abort() is
+         called from the outside while the task is idle (in which
+         case we are in the state aborting directly after the call to
+         abort()).
+
+successfully finished: After a call to finish() and not aborted. Note
+         that even if a call abort() happens after this, we'll stay
+         in this state (the call to abort() will be ignored).

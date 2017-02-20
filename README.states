@@ -1,0 +1,44 @@
+run() --> reset()
+
+reset() (aborted = false, finished = false, reset = true, idle = false, blocked = nullptr, need_run = true) --> multiplex(initial_run)
+        (left alone: run_state, advance_state, need_run, skip_idle)
+
+multiplex(initial_run)  multiplex(schedule_run)  multiplex(normal_run)  multiplex(insert_abort)
+
+begin_loop(bs_reset)  begin_loop(bs_initialize)  begin_loop(bs_multiplex)  begin_loop(bs_abort)  begin_loop(bs_finish)  begin_loop(bs_callback)  begin_loop(bs_killed)
+
+callback()
+
+kill() (set 'reset' to false)
+
+initialize_impl()
+
+multiplex_impl()
+
+abort_impl()
+
+finish_impl()
+
+force_killed() (virtual; default sets base_state to bs_killed).
+
+set_state() (sets run_state, advance_state = 0)
+
+advance_state() (depends on advance_state and run_state), (sets advance_state)
+
+idle() (depends on skip_idle)
+
+wait()
+
+cont()
+
+signalled()
+
+abort()
+
+finish()
+
+yield()
+
+
+
+

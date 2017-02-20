@@ -61,7 +61,7 @@ class AIStatefulTaskMutex
     void unlock(AIStatefulTask const* owner)
     {
       lock_count_wat lock_count_w(m_lock_count);
-      assert(*lock_count_w > 0 && m_owner == owner);
+      ASSERT(*lock_count_w > 0 && m_owner == owner);
       --*lock_count_w;
     }
     bool is_locked() const

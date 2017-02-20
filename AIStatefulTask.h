@@ -36,6 +36,13 @@
 
 #pragma once
 
+#ifdef CW_DEBUG_MONTECARLO
+#include "montecarlo_test.h"
+#define _MonteCarloProbe(...) do { montecarlo::probe(montecarlo::AIStatefulTask_h + __LINE__, __VA_ARGS__); } while(0)
+#else
+#define _MonteCarloProbe(...) do { } while(0)
+#endif
+
 #include "utils/AIRefCount.h"
 #include "threadsafe/aithreadsafe.h"
 #include "threadsafe/AIMutex.h"
@@ -92,6 +99,9 @@ class AIStatefulTask : public AIRefCount
       bool skip_idle;
       bool aborted;
       bool finished;
+#ifdef CW_DEBUG_MONTECARLO
+      sub_state_st() : run_state(-1), advance_state(-1), blocked(nullptr), reset(false), need_run(false), idle(false), skip_idle(false), aborted(false), finished(false) { }
+#endif
     };
 
   private:
@@ -165,7 +175,7 @@ class AIStatefulTask : public AIRefCount
     mSMDebug(debug),
 #endif
     mDuration(duration_type::zero())
-    { }
+    { _MonteCarloProbe("After construction", calculate_hash()); }
 
   protected:
     // The user should call finish() (or abort(), or kill() from the call back when finish_impl() calls run()),
@@ -248,6 +258,11 @@ class AIStatefulTask : public AIRefCount
     char const* state_str(base_state_type state);
 #ifdef CWDEBUG
     char const* event_str(event_type event);
+#endif
+#ifdef CW_DEBUG_MONTECARLO
+    size_t calculate_hash(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const;
+    size_t calculate_hash(multiplex_state_type::crat const& state_r) const { return calculate_hash(state_r, sub_state_type::crat(mSubState)); }
+    size_t calculate_hash() const { multiplex_state_type::crat state_r(mState); return calculate_hash(state_r, sub_state_type::crat(mSubState)); }
 #endif
 
     void add(duration_type delta) { mDuration += delta; }
