@@ -17,6 +17,10 @@ libstatefultask_la_SOURCES = \
 	AIAuxiliaryThread.cxx \
 	AIStatefulTaskMutex.h
 
+if CW_DEBUG_MONTECARLO
+libstatefultask_la_SOURCES += montecarlo_test.cxx montecarlo_test.h
+endif
+
 libstatefultask_la_CXXFLAGS = @LIBCWD_R_FLAGS@
 libstatefultask_la_LIBADD = @LIBCWD_R_LIBS@
 
