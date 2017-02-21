@@ -24,6 +24,7 @@
 #include "sys.h"
 #include "AIAuxiliaryThread.h"
 #include "AIEngine.h"
+#include "debug.h"
 
 namespace {
 SingletonInstance<AIAuxiliaryThread> dummy __attribute__ ((__unused__));
@@ -31,6 +32,9 @@ SingletonInstance<AIAuxiliaryThread> dummy __attribute__ ((__unused__));
 
 void AIAuxiliaryThread::mainloop()
 {
+  // Start of a new thread. Turn on debug output.
+  Debug(NAMESPACE_DEBUG::init_thread());
+  DoutEntering(dc::statefultask, "AIAuxiliaryThread::mainloop()");
   AIAuxiliaryThread& auxiliary_thread(instance());
   while(*keep_running_type::crat(auxiliary_thread.m_keep_running))
   {
@@ -41,6 +45,7 @@ void AIAuxiliaryThread::mainloop()
 
 void AIAuxiliaryThread::start()
 {
+  DoutEntering(dc::statefultask, "AIAuxiliaryThread::start()");
   AIAuxiliaryThread& auxiliary_thread(instance());
   {
     stopped_type::wat stopped_w(auxiliary_thread.m_stopped);
@@ -55,6 +60,7 @@ void AIAuxiliaryThread::start()
 
 void AIAuxiliaryThread::stop()
 {
+  DoutEntering(dc::statefultask, "AIAuxiliaryThread::stop()");
   AIAuxiliaryThread& auxiliary_thread(instance());
   {
     keep_running_type::wat keep_running_w(auxiliary_thread.m_keep_running);
