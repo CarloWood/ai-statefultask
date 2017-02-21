@@ -30,7 +30,7 @@ class AIAuxiliaryThread : public Singleton<AIAuxiliaryThread> {
     friend_Instance;
   private:
     // MAIN-THREAD
-    AIAuxiliaryThread() : m_keep_running(false), m_stopped(false) { }
+    AIAuxiliaryThread() : m_keep_running(false), m_stopped(true) { }
     ~AIAuxiliaryThread() { }
     AIAuxiliaryThread(AIAuxiliaryThread const&) : Singleton<AIAuxiliaryThread>() { }
 
