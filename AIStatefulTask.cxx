@@ -540,8 +540,13 @@ void AIStatefulTask::multiplex(event_type event)
                 // Continue in bs_multiplex.
                 // If the state is bs_multiplex we only need to run again when need_run was set again in the meantime or when this task isn't idle.
                 need_new_run = sub_state_r->need_run || !sub_state_r->idle;
-                // If this fails then the run state didn't change and neither idle() nor yield() was called.
-                ASSERT(!(need_new_run && !sub_state_r->skip_idle && !mYieldEngine && sub_state_r->run_state == run_state));
+                // If this fails then the run state didn't change and neither idle() nor yield() was called (sub_state_r->idle is false).
+                // Or, another thread called cont() or signalled() immediately after we called idle(). That is a race condition and that
+                // other thread should have called advance_state() instead.
+                ASSERT(!(need_new_run && !mYieldEngine && sub_state_r->run_state == run_state &&
+                       !(sub_state_r->skip_idle ||      // advance_state was called.
+                         sub_state_r->aborted ||        // abort was called.
+                         sub_state_r->finished)));      // finish was called.
               }
               break;
             case bs_abort:
@@ -1087,7 +1092,7 @@ void AIStatefulTask::cont()
   {
     sub_state_type::wat sub_state_w(mSubState);
     // Calling cont() on non-idle task run by self is an error.
-    // This means must mean that (before finishing a state with a call to idle())
+    // Asserting here means that (before finishing a state with a call to idle())
     // a function was called that caused this cont() to be called.
     // Although any other thread can call cont() on us at any time, that
     // still would be a race condition: a little later and the cont() would
