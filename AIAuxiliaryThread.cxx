@@ -38,7 +38,7 @@ void AIAuxiliaryThread::mainloop()
   AIAuxiliaryThread& auxiliary_thread(instance());
   while(*keep_running_type::crat(auxiliary_thread.m_keep_running))
   {
-    gAuxiliaryThreadEngine.threadloop();
+    gAuxiliaryThreadEngine.mainloop();
   }
   *stopped_type::wat(auxiliary_thread.m_stopped) = true;
 }

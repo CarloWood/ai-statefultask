@@ -37,38 +37,60 @@
 #include "sys.h"
 #include "AIEngine.h"
 
+AIEngine gMainThreadEngine("gMainThreadEngine");
+AIEngine gAuxiliaryThreadEngine("gAuxiliaryThreadEngine");
+
 void AIEngine::add(AIStatefulTask* stateful_task)
 {
   Dout(dc::statefultask(stateful_task->mSMDebug), "Adding stateful task [" << (void*)stateful_task << "] to " << mName);
   engine_state_type::wat engine_state_w(mEngineState);
   engine_state_w->list.push_back(QueueElement(stateful_task));
+  ASSERT(engine_state_w->list.size() < 2);
   if (engine_state_w->waiting)
   {
     engine_state_w.signal();
   }
 }
 
-// MAIN-THREAD
 void AIEngine::mainloop()
 {
+  bool const main_thread = this == &gMainThreadEngine;
   queued_type::iterator queued_element, end;
   {
     engine_state_type::wat engine_state_w(mEngineState);
     end = engine_state_w->list.end();
     queued_element = engine_state_w->list.begin();
+    if (queued_element == end)
+    {
+      // Nothing to do. Wait till something is added to the queue again.
+      if (!main_thread)
+      {
+        engine_state_w->waiting = true;
+        engine_state_w.wait();
+        engine_state_w->waiting = false;
+      }
+      return;
+    }
+    Dout(dc::notice, "AIEngine::mainloop() init, list size = " << engine_state_w->list.size() << "; with this = " << (void*)this);
   }
   duration_type total_duration(duration_type::zero());
-  while (queued_element != end)
+  do
   {
+    Dout(dc::notice, "AIEngine::threadloop(), begin do loop. List size = " << engine_state_type::rat(mEngineState)->list.size() << "; with this = " << (void*)this);
     AIStatefulTask& stateful_task(queued_element->stateful_task());
-    clock_type::time_point start = clock_type::now();
-    if (!stateful_task.sleep(start))
+    if (main_thread)
     {
-      stateful_task.multiplex(AIStatefulTask::normal_run);
+      clock_type::time_point start = clock_type::now();
+      if (!stateful_task.sleep(start))
+      {
+        stateful_task.multiplex(AIStatefulTask::normal_run);
+      }
+      clock_type::duration delta = clock_type::now() - start;
+      stateful_task.add(delta);
+      total_duration += delta;
     }
-    clock_type::duration delta = clock_type::now() - start;
-    stateful_task.add(delta);
-    total_duration += delta;
+    else
+      stateful_task.multiplex(AIStatefulTask::normal_run);
 
     bool active = stateful_task.active(this);   // This locks mState shortly, so it must be called before locking mEngineState because add() locks mEngineState while holding mState.
     engine_state_type::wat engine_state_w(mEngineState);
@@ -81,13 +103,15 @@ void AIEngine::mainloop()
     {
       ++queued_element;
     }
-    if (total_duration >= sMaxDuration)
+    if (main_thread && total_duration >= sMaxDuration)
     {
       Dout(dc::statefultask, "Sorting " << engine_state_w->list.size() << " stateful tasks.");
       engine_state_w->list.sort(QueueElementComp());
       break;
     }
+    Dout(dc::notice, "AIEngine::mainloop(), end do loop.");
   }
+  while (queued_element != end);
 }
 
 void AIEngine::flush()
@@ -111,45 +135,6 @@ void AIEngine::setMaxDuration(float max_duration)
   ASSERT(aithreadid::in_main_thread());
   Dout(dc::statefultask, "(Re)calculating AIEngine::sMaxDuration");
   sMaxDuration = std::chrono::duration_cast<duration_type>(std::chrono::duration<float, std::milli>(max_duration));
-}
-
-AIEngine gMainThreadEngine("gMainThreadEngine");
-AIEngine gAuxiliaryThreadEngine("gAuxiliaryThreadEngine");
-
-// Auxiliary Thread main loop.
-void AIEngine::threadloop()
-{
-  queued_type::iterator queued_element, end;
-  {
-    engine_state_type::wat engine_state_w(mEngineState);
-    end = engine_state_w->list.end();
-    queued_element = engine_state_w->list.begin();
-    if (queued_element == end)
-    {
-      // Nothing to do. Wait till something is added to the queue again.
-      engine_state_w->waiting = true;
-      engine_state_w.wait();
-      engine_state_w->waiting = false;
-      return;
-    }
-  }
-  do
-  {
-    AIStatefulTask& stateful_task(queued_element->stateful_task());
-    stateful_task.multiplex(AIStatefulTask::normal_run);
-    bool active = stateful_task.active(this);           // This locks mState shortly, so it must be called before locking mEngineState because add() locks mEngineState while holding mState.
-    engine_state_type::wat engine_state_w(mEngineState);
-    if (!active)
-    {
-      Dout(dc::statefultask(stateful_task.mSMDebug), "Erasing stateful task [" << (void*)&stateful_task << "] from " << mName);
-      engine_state_w->list.erase(queued_element++);
-    }
-    else
-    {
-      ++queued_element;
-    }
-  }
-  while (queued_element != end);
 }
 
 void AIEngine::wake_up()

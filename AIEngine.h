@@ -88,7 +88,6 @@ class AIEngine
     void add(AIStatefulTask* stateful_task);
 
     void mainloop();
-    void threadloop();
     void wake_up();
     void flush();
 
