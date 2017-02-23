@@ -278,7 +278,7 @@ class AIStatefulTask : public AIRefCount
 
   private:
     void reset();                               // Called from run() to (re)initialize a (re)start.
-    void multiplex(event_type event);           // Called from AIEngine to step through the states (and from reset() to kick start the task).
+    void multiplex(event_type event, AIEngine* engine = nullptr); // Called to step through the states. If event == normal_run then engine is the engine this was called from.
     state_type begin_loop(base_state_type base_state);  // Called from multiplex() at the start of a loop.
     void callback();                            // Called when the task finished.
     bool sleep(clock_type::time_point current_time)   // Count frames if necessary and return true when the task is still sleeping.

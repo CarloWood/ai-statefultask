@@ -306,7 +306,7 @@ char const* AIStatefulTask::event_str(event_type event)
 }
 #endif
 
-void AIStatefulTask::multiplex(event_type event)
+void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 {
   // If this fails then you are using a pointer to a stateful task instead of an boost::intrusive_ptr<AIStatefulTask>.
   ASSERT(event == initial_run || ref_count() > 0);
@@ -321,6 +321,12 @@ void AIStatefulTask::multiplex(event_type event)
   {
     multiplex_state_type::rat state_r(mState);
     MonteCarloProbe("In multiplex(), CA mState", calculate_hash(state_r), event);
+
+    if (event == normal_run && engine != state_r->current_engine)
+    {
+      Dout(dc::statefultask(mSMDebug), "Leaving because current_engine isn't equal to calling engine [" << (void*)this << "]");
+      return;
+    }
 
     // If another thread is already running multiplex() then it will pick up
     // our need to run (by us having set need_run), so there is no need to run
@@ -619,7 +625,7 @@ void AIStatefulTask::multiplex(event_type event)
         // Start a new loop.
         MonteCarloProbe("In multiplex(), locked, CA mState, before begin_loop()", calculate_hash(state_w), event, state_w->base_state);
         run_state = begin_loop((state = state_w->base_state));
-        MonteCarloProbe("In multiplex(), lockec, CA mState, after begin_loop()", calculate_hash(state_w), event, state, run_state);
+        MonteCarloProbe("In multiplex(), locked, CA mState, after begin_loop()", calculate_hash(state_w), event, state, run_state);
         event = normal_run;
       }
       else
@@ -629,10 +635,10 @@ void AIStatefulTask::multiplex(event_type event)
           // Add us to an engine if necessary.
           if (engine != state_w->current_engine)
           {
-            // engine can't be nullptr here: it can only be nullptr if mDefaultEngine is nullptr.
-            engine->add(this);
-            // Mark that we're added to this engine, and at the same time, that we're not added to the previous one.
+            // Mark that we're want to run in this engine, and at the same time, that we're don't want to run in the previous one.
             state_w->current_engine = engine;
+            // Actually add the task to the engine; engine can't be nullptr here: it can only be nullptr if mDefaultEngine is nullptr.
+            engine->add(this);
           }
 #ifdef DEBUG
           // We are leaving the loop, but we're not idle. The task should re-enter the loop again.
