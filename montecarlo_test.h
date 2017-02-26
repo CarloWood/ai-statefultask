@@ -18,6 +18,19 @@ struct TaskState {
   bool skip_idle;
   bool aborted;
   bool finished;
+
+  bool equivalent(TaskState const& task_state) const
+  {
+    return base_state == task_state.base_state &&
+           run_state == task_state.run_state &&
+           advance_state == task_state.advance_state &&
+           blocked == task_state.blocked &&
+           reset == task_state.reset &&
+           idle == task_state.idle &&
+           skip_idle == task_state.skip_idle &&
+           aborted == task_state.aborted &&
+           finished == task_state.finished;
+  }
 };
 
 int const AIStatefulTask_cxx = 0;
