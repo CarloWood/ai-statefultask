@@ -174,8 +174,7 @@ class AIStatefulTask : public AIRefCount
 #ifdef CWDEBUG
     mSMDebug(debug),
 #endif
-    mDuration(duration_type::zero())
-    { _MonteCarloProbe("After construction", calculate_hash()); }
+    mDuration(duration_type::zero()) { }
 
   protected:
     // The user should call finish() (or abort(), or kill() from the call back when finish_impl() calls run()),
@@ -193,7 +192,7 @@ class AIStatefulTask : public AIRefCount
     // These functions may be called directly after creation, or from within finish_impl(), or from the call back function.
     void run(AIStatefulTask* parent, state_type new_parent_state, bool abort_parent = true, bool on_abort_signal_parent = true, AIEngine* default_engine = &gMainThreadEngine);
     void run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine = &gMainThreadEngine);
-    void run() { run(nullptr, 0, false, true, mDefaultEngine); }
+    void run(AIEngine* default_engine = nullptr) { run(nullptr, 0, false, true, default_engine); }
 
     // This function may only be called from the call back function (and cancels a call to run() from finish_impl()).
     void kill();
@@ -254,15 +253,16 @@ class AIStatefulTask : public AIRefCount
       return (sub_state_r->finished && !sub_state_r->aborted) ? &AIStatefulTask::mNewParentState : 0;
     }
 
-    // Return stringified state, for debugging purposes.
-    char const* state_str(base_state_type state);
-#ifdef CWDEBUG
-    char const* event_str(event_type event);
-#endif
 #ifdef CW_DEBUG_MONTECARLO
-    size_t calculate_hash(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const;
-    size_t calculate_hash(multiplex_state_type::crat const& state_r) const { return calculate_hash(state_r, sub_state_type::crat(mSubState)); }
-    size_t calculate_hash() const { multiplex_state_type::crat state_r(mState); return calculate_hash(state_r, sub_state_type::crat(mSubState)); }
+    montecarlo::TaskState task_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const;
+    montecarlo::TaskState task_state(multiplex_state_type::crat const& state_r) const { return task_state(state_r, sub_state_type::crat(mSubState)); }
+    montecarlo::TaskState task_state() const { multiplex_state_type::crat state_r(mState); return task_state(state_r, sub_state_type::crat(mSubState)); }
+#endif
+
+    // Return stringified state, for debugging purposes.
+    static char const* state_str(base_state_type state);
+#ifdef CWDEBUG
+    static char const* event_str(event_type event);
 #endif
 
     void add(duration_type delta) { mDuration += delta; }
