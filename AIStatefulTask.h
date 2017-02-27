@@ -37,11 +37,19 @@
 #pragma once
 
 #ifdef CW_DEBUG_MONTECARLO
-#include "montecarlo_test.h"
-#define _MonteCarloProbe(...) do { montecarlo::probe(montecarlo::AIStatefulTask_h + __LINE__, __VA_ARGS__); } while(0)
-#else
-#define _MonteCarloProbe(...) do { } while(0)
-#endif
+
+namespace montecarlo {
+
+// Constants to indicate what file probe() is called from (multiples of 10000).
+int const AIStatefulTask_cxx = 0;
+int const AIStatefulTask_h = 10000;
+
+} // namespace montecarlo
+
+#define MonteCarloProbeFileState(file_id, task_state, ...) do { probe(file_id + __LINE__, task_state, __VA_ARGS__); } while(0)
+#else  // CW_DEBUG_MONTECARLO
+#define MonteCarloProbeFileState(file_id, task_state, ...) do { } while(0)
+#endif // CW_DEBUG_MONTECARLO
 
 #include "utils/AIRefCount.h"
 #include "threadsafe/aithreadsafe.h"
@@ -100,9 +108,33 @@ class AIStatefulTask : public AIRefCount
       bool aborted;
       bool finished;
 #ifdef CW_DEBUG_MONTECARLO
+      // In order to have reproducible results (otherwise these are initially uninitialized).
       sub_state_st() : run_state(-1), advance_state(-1), blocked(nullptr), reset(false), need_run(false), idle(false), skip_idle(false), aborted(false), finished(false) { }
 #endif
     };
+
+#ifdef CW_DEBUG_MONTECARLO
+  public:
+    struct task_state_st : public multiplex_state_st, public sub_state_st {
+      bool blocked;                     // True iff sub_state_st::blocked is non-null.
+      char const* base_state_str;       // Human readable version of multiplex_state_st::base_state.
+      char const* run_state_str;        // Human readable version of sub_state_st::run_state.
+      char const* advance_state_str;    // Human readable version of sub_state_st::advance_state.
+
+      bool equivalent(task_state_st const& task_state) const
+      {
+        return base_state == task_state.base_state &&
+               run_state == task_state.run_state &&
+               advance_state == task_state.advance_state &&
+               blocked == task_state.blocked &&
+               reset == task_state.reset &&
+               idle == task_state.idle &&
+               skip_idle == task_state.skip_idle &&
+               aborted == task_state.aborted &&
+               finished == task_state.finished;
+      }
+    };
+#endif
 
   private:
     // Base state.
@@ -254,9 +286,12 @@ class AIStatefulTask : public AIRefCount
     }
 
 #ifdef CW_DEBUG_MONTECARLO
-    montecarlo::TaskState task_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const;
-    montecarlo::TaskState task_state(multiplex_state_type::crat const& state_r) const { return task_state(state_r, sub_state_type::crat(mSubState)); }
-    montecarlo::TaskState task_state() const { multiplex_state_type::crat state_r(mState); return task_state(state_r, sub_state_type::crat(mSubState)); }
+    task_state_st copy_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const;
+    task_state_st copy_state(multiplex_state_type::crat const& state_r) const { return copy_state(state_r, sub_state_type::crat(mSubState)); }
+    task_state_st copy_state() const { multiplex_state_type::crat state_r(mState); return copy_state(state_r, sub_state_type::crat(mSubState)); }
+    void probe(int line, task_state_st state, char const* description,
+        int s1 = -1, char const* s1_str = nullptr, int s2 = -1, char const* s2_str = nullptr, int s3 = -1, char const* s3_str = nullptr)
+        { probe_impl(line, state, description, s1, s1_str, s2, s2_str, s3, s3_str); }
 #endif
 
     // Return stringified state, for debugging purposes.
@@ -275,6 +310,9 @@ class AIStatefulTask : public AIRefCount
     virtual void finish_impl() { }
     virtual char const* state_str_impl(state_type run_state) const = 0;
     virtual void force_killed();                // Called from AIEngine::flush().
+#ifdef CW_DEBUG_MONTECARLO
+    virtual void probe_impl(int line, task_state_st state, char const* description, int s1, char const* s1_str, int s2, char const* s2_str, int s3, char const* s3_str) = 0;
+#endif
 
   private:
     void reset();                               // Called from run() to (re)initialize a (re)start.

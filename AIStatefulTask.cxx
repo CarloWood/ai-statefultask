@@ -39,10 +39,7 @@
 #include "AICondition.h"
 
 #ifdef CW_DEBUG_MONTECARLO
-#include "montecarlo_test.h"
-#define MonteCarloProbe(...) do { montecarlo::probe(montecarlo::AIStatefulTask_cxx + __LINE__,  __VA_ARGS__); } while(0)
-#else
-#define MonteCarloProbe(...) do { } while(0)
+#define MonteCarloProbe(...) MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(), __VA_ARGS__)
 #endif
 
 //==================================================================
@@ -310,7 +307,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
   // If this fails then you are using a pointer to a stateful task instead of an boost::intrusive_ptr<AIStatefulTask>.
   ASSERT(event == initial_run || ref_count() > 0);
 
-  MonteCarloProbe("Before multiplex()", task_state(), event, event_str(event));
+  MonteCarloProbe("Before multiplex()", event, event_str(event));
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::multiplex(" << event_str(event) << ") [" << (void*)this << "]");
 
   base_state_type state;
@@ -319,7 +316,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
   // Critical area of mState.
   {
     multiplex_state_type::rat state_r(mState);
-    MonteCarloProbe("In multiplex(), CA mState", task_state(state_r), event, event_str(event));
+    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState", event, event_str(event));
 
     if (event == normal_run && engine != state_r->current_engine)
     {
@@ -339,7 +336,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
     //===========================================
     // Start of critical area of mMultiplexMutex.
-    MonteCarloProbe("In multiplex(), CA mState, locked", task_state(state_r), event, event_str(event));
+    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState, locked", event, event_str(event));
 
     // If another thread already called begin_loop() since we needed a run,
     // then we must not schedule a run because that could lead to running
@@ -354,9 +351,9 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
     // We're at the beginning of multiplex, about to actually run it.
     // Make a copy of the states.
-    MonteCarloProbe("In multiplex(), CA mState, locked, before begin_loop()", task_state(state_r), event, event_str(event), state_r->base_state, state_str(state_r->base_state));
+    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState, locked, before begin_loop()", event, event_str(event), state_r->base_state, state_str(state_r->base_state));
     run_state = begin_loop((state = state_r->base_state));
-    MonteCarloProbe("In multiplex(), CA mState, locked, after begin_loop()", task_state(state_r), event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
+    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState, locked, after begin_loop()", event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
   }
   // End of critical area of mState.
 
@@ -364,7 +361,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
   bool destruct = false;
   do
   {
-    MonteCarloProbe("In multiplex(), locked, begin loop", task_state(), event, event_str(event));
+    MonteCarloProbe("In multiplex(), locked, begin loop", event, event_str(event));
 
     if (event == normal_run)
     {
@@ -484,7 +481,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
     {
       multiplex_state_type::wat state_w(mState);
-      MonteCarloProbe("In multiplex(), locked, CA mState", task_state(state_w), event, event_str(event));
+      MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState", event, event_str(event));
 
       //=================================
       // Start of critical area of mState
@@ -494,7 +491,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       if (event == normal_run || event == insert_abort)
       {
         sub_state_type::rat sub_state_r(mSubState);
-        MonteCarloProbe("In multiplex(), locked, CA mState, CW mSubState", task_state(state_w, sub_state_r), event, event_str(event));
+        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w, sub_state_r), "In multiplex(), locked, CA mState, CW mSubState", event, event_str(event));
 
         if (event == normal_run)
         {
@@ -606,7 +603,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
               "; need_new_run = " << (need_new_run ? "true" : "false") << " [" << (void*)this << "]");
 #endif
       }
-      MonteCarloProbe("In multiplex(), locked, CA mState", task_state(state_w), event, event_str(event));
+      MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState", event, event_str(event));
 
       // Figure out in which engine we should run.
       AIEngine* engine = mYieldEngine ? mYieldEngine : (state_w->current_engine ? state_w->current_engine : mDefaultEngine);
@@ -622,9 +619,9 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       if (keep_looping)
       {
         // Start a new loop.
-        MonteCarloProbe("In multiplex(), locked, CA mState, before begin_loop()", task_state(state_w), event, event_str(event), state_w->base_state, state_str(state_w->base_state));
+        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState, before begin_loop()", event, event_str(event), state_w->base_state, state_str(state_w->base_state));
         run_state = begin_loop((state = state_w->base_state));
-        MonteCarloProbe("In multiplex(), locked, CA mState, after begin_loop()", task_state(state_w), event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
+        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState, after begin_loop()", event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
         event = normal_run;
       }
       else
@@ -671,7 +668,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
         // BEFORE the critical area of mState!
 
         mMultiplexMutex.unlock();
-        MonteCarloProbe("In multiplex(), CA mState", task_state(state_w), event, event_str(event));
+        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), CA mState", event, event_str(event));
       }
 
       // Now it is safe to leave the critical area of mState as the try_lock won't fail anymore.
@@ -685,7 +682,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
   }
   while (keep_looping);
 
-  MonteCarloProbe("After multiplex()", task_state(), event, event_str(event), destruct, destruct ? "destruct" : "no-destruct");
+  MonteCarloProbe("After multiplex()", event, event_str(event), destruct, destruct ? "destruct" : "no-destruct");
 
   if (destruct)
   {
@@ -735,7 +732,7 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
 
 void AIStatefulTask::run(AIStatefulTask* parent, state_type new_parent_state, bool abort_parent, bool on_abort_signal_parent, AIEngine* default_engine)
 {
-  MonteCarloProbe("Before run()", task_state());
+  MonteCarloProbe("Before run()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(" <<
       (void*)parent << ", " <<
       (parent ? parent->state_str_impl(new_parent_state) : "NA") <<
@@ -781,15 +778,15 @@ void AIStatefulTask::run(AIStatefulTask* parent, state_type new_parent_state, bo
   ASSERT(!mParent || mParent->running());
 
   // Start from the beginning.
-  MonteCarloProbe("In run(), before reset()", task_state());
+  MonteCarloProbe("In run(), before reset()");
   reset();
-  MonteCarloProbe("In run(), after reset()", task_state());
-  MonteCarloProbe("After run()", task_state());
+  MonteCarloProbe("In run(), after reset()");
+  MonteCarloProbe("After run()");
 }
 
 void AIStatefulTask::run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine)
 {
-  MonteCarloProbe("Before run()", task_state());
+  MonteCarloProbe("Before run()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(<slot>, default_engine = " << default_engine->name() << ") [" << (void*)this << "]");
 
 #ifdef DEBUG
@@ -820,15 +817,15 @@ void AIStatefulTask::run(callback_type::signal_type::slot_type const& slot, AIEn
   mCallback = new callback_type(slot);
 
   // Start from the beginning.
-  MonteCarloProbe("In run(), before reset()", task_state());
+  MonteCarloProbe("In run(), before reset()");
   reset();
-  MonteCarloProbe("In run(), after reset()", task_state());
-  MonteCarloProbe("After run()", task_state());
+  MonteCarloProbe("In run(), after reset()");
+  MonteCarloProbe("After run()");
 }
 
 void AIStatefulTask::callback()
 {
-  MonteCarloProbe("Before callback()", task_state());
+  MonteCarloProbe("Before callback()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::callback() [" << (void*)this << "]");
 
   bool aborted = sub_state_type::rat(mSubState)->aborted;
@@ -865,19 +862,19 @@ void AIStatefulTask::callback()
     // Not restarted by callback. Allow run() to be called later on.
     mParent = nullptr;
   }
-  MonteCarloProbe("After callback()", task_state());
+  MonteCarloProbe("After callback()");
 }
 
 void AIStatefulTask::force_killed()
 {
-  MonteCarloProbe("Before force_killed()", task_state());
+  MonteCarloProbe("Before force_killed()");
   multiplex_state_type::wat(mState)->base_state = bs_killed;
-  MonteCarloProbe("After force_killed()", task_state());
+  MonteCarloProbe("After force_killed()");
 }
 
 void AIStatefulTask::kill()
 {
-  MonteCarloProbe("Before kill()", task_state());
+  MonteCarloProbe("Before kill()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::kill() [" << (void*)this << "]");
 #ifdef DEBUG
   {
@@ -890,7 +887,7 @@ void AIStatefulTask::kill()
 #endif
   // Void last call to run() (ie from finish_impl()), if any.
   sub_state_type::wat(mSubState)->reset = false;
-  MonteCarloProbe("After kill()", task_state());
+  MonteCarloProbe("After kill()");
 }
 
 void AIStatefulTask::reset()
@@ -932,7 +929,7 @@ void AIStatefulTask::reset()
 
 void AIStatefulTask::set_state(state_type new_state)
 {
-  MonteCarloProbe("Before set_state()", task_state(), new_state, state_str_impl(new_state));
+  MonteCarloProbe("Before set_state()", new_state, state_str_impl(new_state));
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::set_state(" << state_str_impl(new_state) << ") [" << (void*)this << "]");
 #ifdef DEBUG
   {
@@ -960,12 +957,12 @@ void AIStatefulTask::set_state(state_type new_state)
     mDebugSetStatePending = true;
 #endif
   }
-  MonteCarloProbe("After set_state()", task_state(), new_state, state_str_impl(new_state));
+  MonteCarloProbe("After set_state()", new_state, state_str_impl(new_state));
 }
 
 void AIStatefulTask::advance_state(state_type new_state)
 {
-  MonteCarloProbe("Before advance_state()", task_state(), new_state, state_str_impl(new_state));
+  MonteCarloProbe("Before advance_state()", new_state, state_str_impl(new_state));
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::advance_state(" << state_str_impl(new_state) << ") [" << (void*)this << "]");
   {
     sub_state_type::wat sub_state_w(mSubState);
@@ -1016,12 +1013,12 @@ void AIStatefulTask::advance_state(state_type new_state)
   }
   if (!mMultiplexMutex.self_locked())
     multiplex(schedule_run);
-  MonteCarloProbe("After advance_state()", task_state(), new_state, state_str_impl(new_state));
+  MonteCarloProbe("After advance_state()", new_state, state_str_impl(new_state));
 }
 
 void AIStatefulTask::idle()
 {
-  MonteCarloProbe("Before idle()", task_state());
+  MonteCarloProbe("Before idle()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::idle() [" << (void*)this << "]");
 #ifdef DEBUG
   {
@@ -1049,13 +1046,13 @@ void AIStatefulTask::idle()
     // Not sleeping (anymore).
     mSleep = 0;
   }
-  MonteCarloProbe("After idle()", task_state());
+  MonteCarloProbe("After idle()");
 }
 
 // This function is very much like idle().
 void AIStatefulTask::wait(AIConditionBase& condition)
 {
-  MonteCarloProbe("Before wait()", task_state());
+  MonteCarloProbe("Before wait()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << (void*)&condition << ") [" << (void*)this << "]");
 #ifdef DEBUG
   {
@@ -1087,12 +1084,12 @@ void AIStatefulTask::wait(AIConditionBase& condition)
     // Not sleeping (anymore).
     mSleep = 0;
   }
-  MonteCarloProbe("After wait()", task_state());
+  MonteCarloProbe("After wait()");
 }
 
 void AIStatefulTask::cont()
 {
-  MonteCarloProbe("Before cont()", task_state());
+  MonteCarloProbe("Before cont()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::cont() [" << (void*)this << "]");
   {
     sub_state_type::wat sub_state_w(mSubState);
@@ -1123,14 +1120,14 @@ void AIStatefulTask::cont()
   }
   if (!mMultiplexMutex.self_locked())
     multiplex(schedule_run);
-  MonteCarloProbe("After cont()", task_state());
+  MonteCarloProbe("After cont()");
 }
 
 // This function is very much like cont(), except that it has no effect when we are not in a blocked state.
 // Returns true if the stateful task was unblocked, false if it was already unblocked.
 bool AIStatefulTask::signalled()
 {
-  MonteCarloProbe("Before signalled()", task_state());
+  MonteCarloProbe("Before signalled()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signalled() [" << (void*)this << "]");
   {
     sub_state_type::wat sub_state_w(mSubState);
@@ -1156,13 +1153,13 @@ bool AIStatefulTask::signalled()
   }
   if (!mMultiplexMutex.self_locked())
     multiplex(schedule_run);
-  MonteCarloProbe("After signalled()", task_state());
+  MonteCarloProbe("After signalled()");
   return true;
 }
 
 void AIStatefulTask::abort()
 {
-  MonteCarloProbe("Before abort()", task_state());
+  MonteCarloProbe("Before abort()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::abort() [" << (void*)this << "]");
   bool is_waiting = false;
   {
@@ -1182,7 +1179,7 @@ void AIStatefulTask::abort()
     // Schedule a new run when this task is waiting.
     is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle;
   }
-  MonteCarloProbe("In abort(), before multiplex(insert_abort) test", task_state());
+  MonteCarloProbe("In abort(), before multiplex(insert_abort) test");
   if (is_waiting && !mMultiplexMutex.self_locked())
     multiplex(insert_abort);
   // Block until the current run finished.
@@ -1196,12 +1193,12 @@ void AIStatefulTask::abort()
   // When abort() returns, it may never run again.
   mDebugAborted = true;
 #endif
-  MonteCarloProbe("After abort()", task_state());
+  MonteCarloProbe("After abort()");
 }
 
 void AIStatefulTask::finish()
 {
-  MonteCarloProbe("Before abort()", task_state());
+  MonteCarloProbe("Before abort()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::finish() [" << (void*)this << "]");
 #ifdef DEBUG
   {
@@ -1219,7 +1216,7 @@ void AIStatefulTask::finish()
     // Mark that we are finished.
     sub_state_w->finished = true;
   }
-  MonteCarloProbe("After abort()", task_state());
+  MonteCarloProbe("After abort()");
 }
 
 void AIStatefulTask::yield()
@@ -1240,7 +1237,7 @@ void AIStatefulTask::yield()
 
 void AIStatefulTask::yield(AIEngine* engine)
 {
-  MonteCarloProbe("Calling yield()", task_state());
+  MonteCarloProbe("Calling yield()");
   ASSERT(engine);
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield(" << engine->name() << ") [" << (void*)this << "]");
 #ifdef DEBUG
@@ -1299,9 +1296,9 @@ char const* AIStatefulTask::state_str(base_state_type state)
 }
 
 #ifdef CW_DEBUG_MONTECARLO
-montecarlo::TaskState AIStatefulTask::task_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const
+AIStatefulTask::task_state_st AIStatefulTask::copy_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const
 {
-  montecarlo::TaskState task_state;
+  task_state_st task_state;
   task_state.base_state = state_r->base_state;
   task_state.base_state_str = state_str(state_r->base_state);
   task_state.run_state = sub_state_r->run_state;
