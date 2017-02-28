@@ -38,17 +38,9 @@
 
 #ifdef CW_DEBUG_MONTECARLO
 
-namespace montecarlo {
-
-// Constants to indicate what file probe() is called from (multiples of 10000).
-int const AIStatefulTask_cxx = 0;
-int const AIStatefulTask_h = 10000;
-
-} // namespace montecarlo
-
-#define MonteCarloProbeFileState(file_id, task_state, ...) do { probe(file_id + __LINE__, task_state, __VA_ARGS__); } while(0)
+#define MonteCarloProbeFileState(task_state, ...) do { probe(__FILE__, __LINE__, task_state, __VA_ARGS__); } while(0)
 #else  // CW_DEBUG_MONTECARLO
-#define MonteCarloProbeFileState(file_id, task_state, ...) do { } while(0)
+#define MonteCarloProbeFileState(task_state, ...) do { } while(0)
 #endif // CW_DEBUG_MONTECARLO
 
 #include "utils/AIRefCount.h"
@@ -289,9 +281,9 @@ class AIStatefulTask : public AIRefCount
     task_state_st copy_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const;
     task_state_st copy_state(multiplex_state_type::crat const& state_r) const { return copy_state(state_r, sub_state_type::crat(mSubState)); }
     task_state_st copy_state() const { multiplex_state_type::crat state_r(mState); return copy_state(state_r, sub_state_type::crat(mSubState)); }
-    void probe(int line, task_state_st state, char const* description,
+    void probe(char const* file, int line, task_state_st state, char const* description,
         int s1 = -1, char const* s1_str = nullptr, int s2 = -1, char const* s2_str = nullptr, int s3 = -1, char const* s3_str = nullptr)
-        { probe_impl(line, state, description, s1, s1_str, s2, s2_str, s3, s3_str); }
+        { probe_impl(file, line, state, description, s1, s1_str, s2, s2_str, s3, s3_str); }
 #endif
 
     // Return stringified state, for debugging purposes.
@@ -311,7 +303,7 @@ class AIStatefulTask : public AIRefCount
     virtual char const* state_str_impl(state_type run_state) const = 0;
     virtual void force_killed();                // Called from AIEngine::flush().
 #ifdef CW_DEBUG_MONTECARLO
-    virtual void probe_impl(int line, task_state_st state, char const* description, int s1, char const* s1_str, int s2, char const* s2_str, int s3, char const* s3_str) = 0;
+    virtual void probe_impl(char const* file, int line, task_state_st state, char const* description, int s1, char const* s1_str, int s2, char const* s2_str, int s3, char const* s3_str) = 0;
 #endif
 
   private:

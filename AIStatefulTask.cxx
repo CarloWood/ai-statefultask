@@ -39,7 +39,7 @@
 #include "AICondition.h"
 
 #ifdef CW_DEBUG_MONTECARLO
-#define MonteCarloProbe(...) MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(), __VA_ARGS__)
+#define MonteCarloProbe(...) MonteCarloProbeFileState(copy_state(), __VA_ARGS__)
 #endif
 
 //==================================================================
@@ -316,7 +316,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
   // Critical area of mState.
   {
     multiplex_state_type::rat state_r(mState);
-    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState", event, event_str(event));
+    MonteCarloProbeFileState(copy_state(state_r), "In multiplex(), CA mState", event, event_str(event));
 
     if (event == normal_run && engine != state_r->current_engine)
     {
@@ -336,7 +336,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
     //===========================================
     // Start of critical area of mMultiplexMutex.
-    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState, locked", event, event_str(event));
+    MonteCarloProbeFileState(copy_state(state_r), "In multiplex(), CA mState, locked", event, event_str(event));
 
     // If another thread already called begin_loop() since we needed a run,
     // then we must not schedule a run because that could lead to running
@@ -351,9 +351,9 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
     // We're at the beginning of multiplex, about to actually run it.
     // Make a copy of the states.
-    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState, locked, before begin_loop()", event, event_str(event), state_r->base_state, state_str(state_r->base_state));
+    MonteCarloProbeFileState(copy_state(state_r), "In multiplex(), CA mState, locked, before begin_loop()", event, event_str(event), state_r->base_state, state_str(state_r->base_state));
     run_state = begin_loop((state = state_r->base_state));
-    MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_r), "In multiplex(), CA mState, locked, after begin_loop()", event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
+    MonteCarloProbeFileState(copy_state(state_r), "In multiplex(), CA mState, locked, after begin_loop()", event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
   }
   // End of critical area of mState.
 
@@ -481,7 +481,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
     {
       multiplex_state_type::wat state_w(mState);
-      MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState", event, event_str(event));
+      MonteCarloProbeFileState(copy_state(state_w), "In multiplex(), locked, CA mState", event, event_str(event));
 
       //=================================
       // Start of critical area of mState
@@ -491,7 +491,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       if (event == normal_run || event == insert_abort)
       {
         sub_state_type::rat sub_state_r(mSubState);
-        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w, sub_state_r), "In multiplex(), locked, CA mState, CW mSubState", event, event_str(event));
+        MonteCarloProbeFileState(copy_state(state_w, sub_state_r), "In multiplex(), locked, CA mState, CW mSubState", event, event_str(event));
 
         if (event == normal_run)
         {
@@ -603,7 +603,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
               "; need_new_run = " << (need_new_run ? "true" : "false") << " [" << (void*)this << "]");
 #endif
       }
-      MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState", event, event_str(event));
+      MonteCarloProbeFileState(copy_state(state_w), "In multiplex(), locked, CA mState", event, event_str(event));
 
       // Figure out in which engine we should run.
       AIEngine* engine = mYieldEngine ? mYieldEngine : (state_w->current_engine ? state_w->current_engine : mDefaultEngine);
@@ -619,9 +619,9 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       if (keep_looping)
       {
         // Start a new loop.
-        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState, before begin_loop()", event, event_str(event), state_w->base_state, state_str(state_w->base_state));
+        MonteCarloProbeFileState(copy_state(state_w), "In multiplex(), locked, CA mState, before begin_loop()", event, event_str(event), state_w->base_state, state_str(state_w->base_state));
         run_state = begin_loop((state = state_w->base_state));
-        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), locked, CA mState, after begin_loop()", event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
+        MonteCarloProbeFileState(copy_state(state_w), "In multiplex(), locked, CA mState, after begin_loop()", event, event_str(event), state, state_str(state), run_state, state_str_impl(run_state));
         event = normal_run;
       }
       else
@@ -668,7 +668,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
         // BEFORE the critical area of mState!
 
         mMultiplexMutex.unlock();
-        MonteCarloProbeFileState(montecarlo::AIStatefulTask_cxx, copy_state(state_w), "In multiplex(), CA mState", event, event_str(event));
+        MonteCarloProbeFileState(copy_state(state_w), "In multiplex(), CA mState", event, event_str(event));
       }
 
       // Now it is safe to leave the critical area of mState as the try_lock won't fail anymore.
