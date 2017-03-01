@@ -345,6 +345,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
     // we should indeed run, again.
     if (event == schedule_run && !sub_state_type::rat(mSubState)->need_run)
     {
+      mMultiplexMutex.unlock();
       Dout(dc::statefultask(mSMDebug), "Leaving because it was already being run [" << (void*)this << "]");
       return;
     }
@@ -1198,7 +1199,7 @@ void AIStatefulTask::abort()
 
 void AIStatefulTask::finish()
 {
-  MonteCarloProbe("Before abort()");
+  MonteCarloProbe("Before finish()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::finish() [" << (void*)this << "]");
 #ifdef DEBUG
   {
