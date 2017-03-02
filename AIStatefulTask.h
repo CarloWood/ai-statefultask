@@ -114,6 +114,7 @@ class AIStatefulTask : public AIRefCount
       char const* advance_state_str;    // Human readable version of sub_state_st::advance_state.
       bool reset_m_state_locked_at_end_of_probe;
       bool reset_m_sub_state_locked_at_end_of_probe;
+      int inside_probe_impl;            // Count of number of recursions into probe_impl().
 
       bool equivalent(task_state_st const& task_state) const
       {
@@ -190,6 +191,7 @@ class AIStatefulTask : public AIRefCount
 #endif
 #ifdef CW_DEBUG_MONTECARLO
   protected:
+    int m_inside_probe_impl;
     mutable multiplex_state_type::crat const* m_state_locked;
     mutable sub_state_type::crat const* m_sub_state_locked;
 #endif
@@ -206,7 +208,7 @@ class AIStatefulTask : public AIRefCount
     mSMDebug(debug),
 #endif
 #ifdef CW_DEBUG_MONTECARLO
-    m_state_locked(nullptr), m_sub_state_locked(nullptr),
+    m_inside_probe_impl(0), m_state_locked(nullptr), m_sub_state_locked(nullptr),
 #endif
     mDuration(duration_type::zero()) { }
 
@@ -323,7 +325,9 @@ class AIStatefulTask : public AIRefCount
     void probe(char const* file, int line, task_state_st state, char const* description,
         int s1 = -1, char const* s1_str = nullptr, int s2 = -1, char const* s2_str = nullptr, int s3 = -1, char const* s3_str = nullptr)
         {
+          ++m_inside_probe_impl;
           probe_impl(file, line, state, description, s1, s1_str, s2, s2_str, s3, s3_str);
+          --m_inside_probe_impl;
           if (state.reset_m_state_locked_at_end_of_probe)
             m_state_locked = nullptr;
           if (state.reset_m_sub_state_locked_at_end_of_probe)
