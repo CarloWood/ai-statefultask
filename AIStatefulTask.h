@@ -112,6 +112,8 @@ class AIStatefulTask : public AIRefCount
       char const* base_state_str;       // Human readable version of multiplex_state_st::base_state.
       char const* run_state_str;        // Human readable version of sub_state_st::run_state.
       char const* advance_state_str;    // Human readable version of sub_state_st::advance_state.
+      bool reset_m_state_locked_at_end_of_probe;
+      bool reset_m_sub_state_locked_at_end_of_probe;
 
       bool equivalent(task_state_st const& task_state) const
       {
@@ -186,6 +188,11 @@ class AIStatefulTask : public AIRefCount
   protected:
     bool mSMDebug;                      // Print debug output only when true.
 #endif
+#ifdef CW_DEBUG_MONTECARLO
+  protected:
+    mutable multiplex_state_type::crat const* m_state_locked;
+    mutable sub_state_type::crat const* m_sub_state_locked;
+#endif
   private:
     duration_type mDuration;            // Total time spent running in the main thread.
 
@@ -197,6 +204,9 @@ class AIStatefulTask : public AIRefCount
 #endif
 #ifdef CWDEBUG
     mSMDebug(debug),
+#endif
+#ifdef CW_DEBUG_MONTECARLO
+    m_state_locked(nullptr), m_sub_state_locked(nullptr),
 #endif
     mDuration(duration_type::zero()) { }
 
@@ -276,14 +286,49 @@ class AIStatefulTask : public AIRefCount
       sub_state_type::crat sub_state_r(mSubState);
       return (sub_state_r->finished && !sub_state_r->aborted) ? &AIStatefulTask::mNewParentState : 0;
     }
+    // Return true if this thread is executing this task right now (aka, we're inside multiplex() somewhere).
+    bool executing() const { return mMultiplexMutex.self_locked(); }
 
 #ifdef CW_DEBUG_MONTECARLO
-    task_state_st copy_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const;
-    task_state_st copy_state(multiplex_state_type::crat const& state_r) const { return copy_state(state_r, sub_state_type::crat(mSubState)); }
-    task_state_st copy_state() const { multiplex_state_type::crat state_r(mState); return copy_state(state_r, sub_state_type::crat(mSubState)); }
+    task_state_st do_copy_state(multiplex_state_type::crat const& state_r, bool reset_m_state_locked_at_end_of_probe,
+                                sub_state_type::crat const& sub_state_r, bool reset_m_sub_state_locked_at_end_of_probe) const;
+    task_state_st copy_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const
+    {
+      ASSERT(!m_sub_state_locked);
+      ASSERT(!m_state_locked || m_state_locked == &state_r);
+      bool m_state_locked_was_set = m_state_locked;
+      m_state_locked = &state_r;
+      m_sub_state_locked = &sub_state_r;
+      return do_copy_state(state_r, !m_state_locked_was_set, sub_state_r, true);
+    }
+    task_state_st copy_state(multiplex_state_type::crat const& state_r) const
+    {
+      ASSERT(!m_state_locked && !m_sub_state_locked);
+      m_state_locked = &state_r;
+      return do_copy_state(state_r, true, sub_state_type::crat(mSubState), true);
+    }
+    task_state_st copy_state() const
+    {
+      if (m_sub_state_locked)
+        return do_copy_state(*m_state_locked, false, *m_sub_state_locked, false);
+      else if (m_state_locked)
+        return do_copy_state(*m_state_locked, false, sub_state_type::crat(mSubState), true);
+      else
+      {
+        // Make sure mState is locked first.
+        multiplex_state_type::crat state_r(mState);
+        return do_copy_state(state_r, true, sub_state_type::crat(mSubState), true);
+      }
+    }
     void probe(char const* file, int line, task_state_st state, char const* description,
         int s1 = -1, char const* s1_str = nullptr, int s2 = -1, char const* s2_str = nullptr, int s3 = -1, char const* s3_str = nullptr)
-        { probe_impl(file, line, state, description, s1, s1_str, s2, s2_str, s3, s3_str); }
+        {
+          probe_impl(file, line, state, description, s1, s1_str, s2, s2_str, s3, s3_str);
+          if (state.reset_m_state_locked_at_end_of_probe)
+            m_state_locked = nullptr;
+          if (state.reset_m_sub_state_locked_at_end_of_probe)
+            m_sub_state_locked = nullptr;
+        }
 #endif
 
     // Return stringified state, for debugging purposes.
