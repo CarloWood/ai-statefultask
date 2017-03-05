@@ -345,6 +345,8 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
     ASSERT(!mMultiplexMutex.self_locked());    // We may never enter recursively!
     if (!mMultiplexMutex.try_lock())
     {
+      // This just should never happen; a call to run() should always set the base state beyond bs_reset.
+      ASSERT(event != initial_run);
       Dout(dc::statefultask(mSMDebug), "Leaving because it is already being run [" << (void*)this << "]");
       return;
     }

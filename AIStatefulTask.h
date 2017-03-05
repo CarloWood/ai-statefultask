@@ -264,30 +264,39 @@ class AIStatefulTask : public AIRefCount
 
     // Return true if the derived class is running (also when we are idle).
     bool running() const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
+
     // Return true if the derived class is running and idle.
     bool waiting() const
     {
       multiplex_state_type::crat state_r(mState);
       return state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle;
     }
+
     // Return true if the derived class is running and idle or already being aborted.
     bool waiting_or_aborting() const
     {
       multiplex_state_type::crat state_r(mState);
       return state_r->base_state == bs_abort || ( state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle);
     }
+
     // Return true if we are added to the current engine.
     bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
-    bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
 
     // Use some safebool idiom (http://www.artima.com/cppsource/safebool.html) rather than operator bool.
     typedef state_type AIStatefulTask::* bool_type;
-    // Return true if the task successfully finished.
+    // Return true if the task finished.
+    // If this function returns false then the callback (or call to abort() on the parent) is guaranteed to still going to happen.
+    // If this function returns true then the callback might have happened or might still going to happen.
+    // Call aborted() to check if the task finished successfully if this function returns true (or just call that in the callback).
     operator bool_type() const
     {
       sub_state_type::crat sub_state_r(mSubState);
-      return (sub_state_r->finished && !sub_state_r->aborted) ? &AIStatefulTask::mNewParentState : 0;
+      return sub_state_r->finished ? &AIStatefulTask::mNewParentState : 0;
     }
+
+    // Return true if this task was aborted. This value is guaranteed to be valid (only) after the task finished.
+    bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
+
     // Return true if this thread is executing this task right now (aka, we're inside multiplex() somewhere).
     bool executing() const { return mMultiplexMutex.self_locked(); }
 
