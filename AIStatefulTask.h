@@ -38,9 +38,9 @@
 
 #ifdef CW_DEBUG_MONTECARLO
 
-#define MonteCarloProbeFileState(task_state, ...) do { probe(__FILE__, __LINE__, task_state, __VA_ARGS__); } while(0)
+#define MonteCarloProbeFileState(task_state, record_state, ...) do { probe(__FILE__, __LINE__, record_state, task_state, __VA_ARGS__); } while(0)
 #else  // CW_DEBUG_MONTECARLO
-#define MonteCarloProbeFileState(task_state, ...) do { } while(0)
+#define MonteCarloProbeFileState(task_state, record_state, ...) do { } while(0)
 #endif // CW_DEBUG_MONTECARLO
 
 #include "utils/AIRefCount.h"
@@ -331,11 +331,11 @@ class AIStatefulTask : public AIRefCount
         return do_copy_state(state_r, true, sub_state_type::crat(mSubState), true);
       }
     }
-    void probe(char const* file, int line, task_state_st state, char const* description,
+    void probe(char const* file, int line, bool record_state, task_state_st state, char const* description,
         int s1 = -1, char const* s1_str = nullptr, int s2 = -1, char const* s2_str = nullptr, int s3 = -1, char const* s3_str = nullptr)
         {
           ++m_inside_probe_impl;
-          probe_impl(file, line, state, description, s1, s1_str, s2, s2_str, s3, s3_str);
+          probe_impl(file, line, record_state, state, description, s1, s1_str, s2, s2_str, s3, s3_str);
           --m_inside_probe_impl;
           if (state.reset_m_state_locked_at_end_of_probe)
             m_state_locked = nullptr;
@@ -361,7 +361,7 @@ class AIStatefulTask : public AIRefCount
     virtual char const* state_str_impl(state_type run_state) const = 0;
     virtual void force_killed();                // Called from AIEngine::flush().
 #ifdef CW_DEBUG_MONTECARLO
-    virtual void probe_impl(char const* file, int line, task_state_st state, char const* description, int s1, char const* s1_str, int s2, char const* s2_str, int s3, char const* s3_str) = 0;
+    virtual void probe_impl(char const* file, int line, bool record_state, task_state_st state, char const* description, int s1, char const* s1_str, int s2, char const* s2_str, int s3, char const* s3_str) = 0;
 #endif
 
   private:
