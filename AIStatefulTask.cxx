@@ -632,6 +632,8 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       keep_looping = need_new_run && !mYieldEngine && engine == current_engine;
       mYieldEngine = nullptr;
 
+      Dout(dc::statefultask(mSMDebug), (!need_new_run ? "No need to run" : !keep_looping ? "Need to run, adding to engine" : "Need to run, will run right now") << " [" << (void*)this << "]");
+
       if (keep_looping)
       {
         // Start a new loop.
