@@ -966,6 +966,11 @@ void AIStatefulTask::set_state(state_type new_state)
     sub_state_w->run_state = new_state;
     // Void last call to advance_state.
     sub_state_w->advance_state = 0;
+    // Also set need_run to false, which is necessary when advance_state was called by
+    // another thread after we called begin_loop(); otherwise a subsequent call to
+    // idle() would be ignored because multiplex() would think that the advance_state()
+    // happened after this call to set_state().
+    sub_state_w->need_run = false;
     // Void last call to idle(), if any.
     sub_state_w->idle = false;
     // Honor a subsequent call to idle().
