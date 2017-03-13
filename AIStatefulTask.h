@@ -256,7 +256,7 @@ class AIStatefulTask : public AIRefCount
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
     void cont();                                // Guarantee at least one full run of multiplex() after this function is called. Cancels the last call to idle().
     void advance_state(state_type new_state);   // Guarantee at least one full run of multiplex() after this function is called
-    // iff new_state is larger than the last state that was processed.
+                                                // iff new_state is larger than the last state that was processed.
     bool signalled();                           // Call cont() iff this task is still blocked after a call to wait(). Returns false if it already unblocked.
 
   public:

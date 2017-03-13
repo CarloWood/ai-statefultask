@@ -208,7 +208,7 @@ hello_world->run(...);          // One of the run() functions.
 //   with that state.
 // multiplex_impl() may never reentrant (cause itself to be called).
 // multiplex_impl() should end by callling either one of:
-//   idle(), yield*(), finish() [or abort()].
+//   idle(), wait(), yield*(), finish() [or abort()].
 // Leaving multiplex_impl() without calling any of those might result in an
 //   immediate reentry, which could lead to 100% CPU usage unless the state
 //   is changed with set_state().
@@ -237,8 +237,8 @@ hello_world->run(...);          // One of the run() functions.
 //
 // If abort() is called inside its initialize_impl() that initialize_impl()
 //   should return immediately after.
-// if idle(), abort() or finish() are called inside its multiplex_impl() then
-//   that multiplex_impl() should return immediately after.
+// if idle(), wait(), abort() or finish() are called inside its multiplex_impl()
+//   then that multiplex_impl() should return immediately after.
 //
 
 
