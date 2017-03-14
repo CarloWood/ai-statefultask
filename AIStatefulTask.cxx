@@ -1049,16 +1049,17 @@ void AIStatefulTask::cont()
   MonteCarloProbe("After cont()");
 }
 
-// This function is very much like cont(), except that it has no effect when we are not in a blocked state.
+// This function causes the task to do at least one full run of multiplex(), provided we are
+// currently blocked by a call to wait() with the same condition object.
 // Returns true if the stateful task was unblocked, false if it was already unblocked.
-bool AIStatefulTask::signalled()
+bool AIStatefulTask::signalled(AIConditionBase* condition)
 {
   MonteCarloProbe("Before signalled()");
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signalled() [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signalled(" << (void*)condition << ") [" << (void*)this << "]");
   {
     sub_state_type::wat sub_state_w(mSubState);
     // Test if we are blocked or not.
-    if (sub_state_w->blocked)
+    if (sub_state_w->blocked == condition)
     {
       Dout(dc::statefultask(mSMDebug), "Removing stateful task from condition " << (void*)sub_state_w->blocked);
       sub_state_w->blocked->remove(this);

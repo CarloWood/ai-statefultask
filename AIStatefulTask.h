@@ -249,7 +249,8 @@ class AIStatefulTask : public AIRefCount
     // These are the only three functions that can be called by any thread at any moment.
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
     void cont();                                // Guarantee at least one full run of multiplex() after this function is called. Cancels the last call to idle().
-    bool signalled();                           // Call cont() iff this task is still blocked after a call to wait(). Returns false if it already unblocked.
+    bool signalled(AIConditionBase* condition); // Guarantee at least one full run of multiplex() iff this task is still blocked after a call to wait(*condition).
+                                                // Returns false if it already unblocked or is waiting on another condition now.
 
   public:
     // Accessors.

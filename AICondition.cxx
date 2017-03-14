@@ -82,7 +82,7 @@ void AIConditionBase::signal(int n)
   while (n > 0 && !mWaitingStatefulTasks.empty())
   {
     boost::intrusive_ptr<AIStatefulTask> stateful_task = mWaitingStatefulTasks.front();
-    bool success = stateful_task->signalled();
+    bool success = stateful_task->signalled(this);
     // Only tasks that are actually still blocked should be in the queue:
     // they are removed from the queue by calling AICondition::remove whenever
     // they are unblocked for whatever reason...
