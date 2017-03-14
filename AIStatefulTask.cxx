@@ -72,7 +72,7 @@
 //       |         |
 //   Initialize    |    Calls initialize_impl().
 //       |         |
-//       | (idle)  |    Idle until cont() or advance_state() is called.
+//       | (idle)  |    Idle until cont() is called.
 //       |  |  ^   |
 //       v  v  |   |
 //   .-----------. |
@@ -251,8 +251,7 @@ hello_world->run(...);          // One of the run() functions.
 // following functions can be called:
 //
 // - set_state(new_state)       --> Force the state to new_state. This voids any previous call to set_state() or idle().
-// - idle()                     --> If there was no call to advance_state() since the last call to set_state(current_state))
-//                                  then go idle (do nothing until cont() or advance_state() is called). If the current
+// - idle()                     --> Go idle (do nothing until cont() is called). If the current
 //                                  state is not current_state, then multiplex_impl shall be reentered immediately upon return.
 // - finish()                   --> Disables any scheduled runs.
 //                              --> finish_impl --> [optional] kill()
@@ -270,8 +269,7 @@ hello_world->run(...);          // One of the run() functions.
 //
 // while the following functions may be called from anywhere (and any thread):
 //
-// - cont()                     --> schedules a run if there was no call to set_state() or advance_state() since the last call to idle().
-// - advance_state(new_state)   --> sets the state to new_state, if the new_state > current_state, and schedules a run (and voids the last call to idle()).
+// - cont()                     --> schedules a run if there was no call to set_state() since the last call to idle().
 //
 // In the above "scheduling a run" means calling multiplex_impl(), but the same holds for any *_impl()
 // and the call back: Whenever one of those have to be called, thread_safe_impl() is called to
@@ -309,7 +307,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
   if (m_state_locked)
   {
-    // If we get here then that means we get here via a call to cont(), advance_state()
+    // If we get here then that means we get here via a call to cont()
     // or signalled() that was called from probe(). That can only happen in those
     // cases were we might as well not test this (it would hang). Another thread
     // getting here would shortly block and only get the opportunity to continue running
@@ -564,11 +562,9 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
                 // If the state is bs_multiplex we only need to run again when need_run was set again in the meantime or when this task isn't idle.
                 need_new_run = sub_state_r->need_run || !sub_state_r->idle;
                 // If this fails then the run state didn't change and neither idle() nor yield() was called (sub_state_r->idle is false).
-                // Or, another thread called cont() or signalled() immediately after we called idle(). That is a race condition and that
-                // other thread should have called advance_state() instead.
+                // Or, another thread called cont() or signalled() immediately after we called idle(). That is a race condition.
                 ASSERT(!(need_new_run && !mYieldEngine && sub_state_r->run_state == run_state &&
-                       !(sub_state_r->skip_idle ||      // advance_state was called.
-                         sub_state_r->aborted ||        // abort was called.
+                       !(sub_state_r->aborted ||        // abort was called.
                          sub_state_r->finished)));      // finish was called.
               }
               break;
@@ -722,21 +718,6 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
   sub_state_w->skip_idle = false;
   // Mark that we're about to honor all previous run requests.
   sub_state_w->need_run = false;
-  // Honor previous calls to advance_state() (once run_state is initialized).
-  if (base_state == bs_multiplex && sub_state_w->advance_state > sub_state_w->run_state)
-  {
-    Dout(dc::statefultask(mSMDebug), "Copying advance_state to run_state, because it is larger [" << state_str_impl(sub_state_w->advance_state) << " > " << state_str_impl(sub_state_w->run_state) << "]");
-    sub_state_w->run_state = sub_state_w->advance_state;
-  }
-#ifdef DEBUG
-  else
-  {
-    // If advance_state wasn't honored then it isn't a reason to run.
-    // We're running anyway, but that should be because set_state() was called.
-    mDebugAdvanceStatePending = false;
-  }
-#endif
-  sub_state_w->advance_state = 0;
 
 #ifdef DEBUG
   // Mark that we're running the loop.
@@ -744,9 +725,6 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
   // This point marks handling cont().
   mDebugShouldRun |= mDebugContPending;
   mDebugContPending = false;
-  // This point also marks handling advance_state().
-  mDebugShouldRun |= mDebugAdvanceStatePending;
-  mDebugAdvanceStatePending = false;
 #endif
 
   // Make a copy of the state that we're about to run.
@@ -866,7 +844,7 @@ void AIStatefulTask::callback()
       }
       else if (!aborted || mOnAbortSignalParent)
       {
-        mParent->advance_state(mNewParentState);
+        //mParent->advance_state(mNewParentState);
       }
     }
   }
@@ -959,7 +937,7 @@ void AIStatefulTask::set_state(state_type new_state)
     multiplex_state_type::rat state_r(mState);
     // set_state() may only be called from initialize_impl() or multiplex_impl().
     ASSERT(state_r->base_state == bs_initialize || state_r->base_state == bs_multiplex);
-    // May only be called by the thread that is holding mMultiplexMutex. If this fails, you probably called set_state() by accident instead of advance_state().
+    // May only be called by the thread that is holding mMultiplexMutex.
     ASSERT(mThreadId == std::this_thread::get_id());
   }
 #endif
@@ -969,13 +947,6 @@ void AIStatefulTask::set_state(state_type new_state)
     ASSERT(!sub_state_w->blocked);
     // Force current state to the requested state.
     sub_state_w->run_state = new_state;
-    // Void last call to advance_state.
-    sub_state_w->advance_state = 0;
-    // Also set need_run to false, which is necessary when advance_state was called by
-    // another thread after we called begin_loop(); otherwise a subsequent call to
-    // idle() would be ignored because multiplex() would think that the advance_state()
-    // happened after this call to set_state().
-    sub_state_w->need_run = false;
     // Void last call to idle(), if any.
     sub_state_w->idle = false;
     // Honor a subsequent call to idle().
@@ -986,62 +957,6 @@ void AIStatefulTask::set_state(state_type new_state)
 #endif
   }
   MonteCarloProbe("After set_state()");
-}
-
-void AIStatefulTask::advance_state(state_type new_state)
-{
-  MonteCarloProbe("Before advance_state()");
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::advance_state(" << state_str_impl(new_state) << ") [" << (void*)this << "]");
-  {
-    sub_state_type::wat sub_state_w(mSubState);
-    // Ignore call to advance_state when the currently queued state is already greater or equal to the requested state.
-    if (sub_state_w->advance_state >= new_state)
-    {
-      Dout(dc::statefultask(mSMDebug), "Ignored, because " << state_str_impl(new_state) << " <= " << state_str_impl(sub_state_w->advance_state) << " (next state).");
-      return;
-    }
-    // Ignore call to advance_state when the current state is greater than the requested state: the new state would be
-    // ignored in begin_loop(), as is already remarked there: an advanced state that is not honored is not a reason to run.
-    // This call might as well not have happened. Not returning here is a bug because that is effectively a cont(), while
-    // the state change is and should be being ignored: the task would start running it's current state (again).
-    if (sub_state_w->run_state > new_state)
-    {
-      Dout(dc::statefultask(mSMDebug), "Ignored, because " << state_str_impl(new_state) << " < " << state_str_impl(sub_state_w->run_state) << " (current state).");
-      return;
-    }
-    // Increment state.
-    sub_state_w->advance_state = new_state;
-    // Void last call to idle(), if any.
-    sub_state_w->idle = false;
-    // Ignore a call to idle if it occurs before we leave multiplex_impl().
-    sub_state_w->skip_idle = true;
-    // No longer say we woke up when signalled() is called.
-    if (sub_state_w->blocked)
-    {
-      Dout(dc::statefultask(mSMDebug), "Removing stateful task from condition " << (void*)sub_state_w->blocked);
-      sub_state_w->blocked->remove(this);
-      sub_state_w->blocked = nullptr;
-    }
-    // Mark that a re-entry of multiplex() is necessary.
-    sub_state_w->need_run = true;
-#ifdef DEBUG
-    // From this moment on.
-    mDebugAdvanceStatePending = true;
-    // If the new state is equal to the current state, then this should be considered to be a cont()
-    // because also equal states are ignored in begin_loop(). However, unlike a cont() we ignore a call
-    // to idle() when the task is already running in this state (because that is a race condition
-    // and ignoring the idle() is the most logical thing to do then). Hence we treated this as a full
-    // fletched advance_state but need to tell the debug code that it's really also a cont().
-    if (sub_state_w->run_state == new_state)
-    {
-      // From this moment.
-      mDebugContPending = true;
-    }
-#endif
-  }
-  if (!mMultiplexMutex.self_locked())
-    multiplex(schedule_run);
-  MonteCarloProbe("After advance_state()");
 }
 
 void AIStatefulTask::idle()
@@ -1063,12 +978,6 @@ void AIStatefulTask::idle()
     sub_state_type::wat sub_state_w(mSubState);
     // As idle may only be called from within the stateful task, it should never happen that the task is already idle.
     ASSERT(!sub_state_w->idle);
-    // Ignore call to idle() when advance_state() was called since last call to set_state().
-    if (sub_state_w->skip_idle)
-    {
-      Dout(dc::statefultask(mSMDebug), "Ignored, because skip_idle is true (advance_state() was called last).");
-      return;
-    }
     // Mark that we are idle.
     sub_state_w->idle = true;
     // Not sleeping (anymore).
@@ -1097,12 +1006,6 @@ void AIStatefulTask::wait(AIConditionBase& condition)
     sub_state_type::wat sub_state_w(mSubState);
     // As wait() may only be called from within the stateful task, it should never happen that the task is already idle.
     ASSERT(!sub_state_w->idle);
-    // Ignore call to wait() when advance_state() was called since last call to set_state().
-    if (sub_state_w->skip_idle)
-    {
-      Dout(dc::statefultask(mSMDebug), "Ignored, because skip_idle is true (advance_state() was called last).");
-      return;
-    }
     // Register ourselves with the condition object.
     condition.wait(this);
     // Mark that we are idle.
@@ -1127,8 +1030,7 @@ void AIStatefulTask::cont()
     // Although any other thread can call cont() on us at any time, that
     // still would be a race condition: a little later and the cont() would
     // have had effect (so that would also be an error, except we can't know
-    // it in that case). The call to cont() that got us here should be
-    // replaced with advance_state().
+    // it in that case).
     ASSERT(sub_state_w->idle || !mMultiplexMutex.self_locked());
     // Void last call to idle(), if any.
     sub_state_w->idle = false;
@@ -1333,8 +1235,6 @@ AIStatefulTask::task_state_st AIStatefulTask::do_copy_state(
   task_state.base_state_str = state_str(state_r->base_state);
   task_state.run_state = sub_state_r->run_state;
   task_state.run_state_str = state_str_impl(sub_state_r->run_state);
-  task_state.advance_state = sub_state_r->advance_state;
-  task_state.advance_state_str = state_str_impl(sub_state_r->advance_state);
   task_state.blocked = sub_state_r->blocked ? true : false;
   task_state.reset = sub_state_r->reset;
   task_state.need_run = sub_state_r->need_run;

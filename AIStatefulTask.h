@@ -91,7 +91,6 @@ class AIStatefulTask : public AIRefCount
     };
     struct sub_state_st {
       state_type run_state;
-      state_type advance_state;
       AIConditionBase* blocked;
       bool reset;
       bool need_run;
@@ -101,7 +100,7 @@ class AIStatefulTask : public AIRefCount
       bool finished;
 #ifdef CW_DEBUG_MONTECARLO
       // In order to have reproducible results (otherwise these are initially uninitialized).
-      sub_state_st() : run_state(-1), advance_state(-1), blocked(nullptr), reset(false), need_run(false), idle(false), skip_idle(false), aborted(false), finished(false) { }
+      sub_state_st() : run_state(-1), blocked(nullptr), reset(false), need_run(false), idle(false), skip_idle(false), aborted(false), finished(false) { }
 #endif
     };
 
@@ -111,7 +110,6 @@ class AIStatefulTask : public AIRefCount
       bool blocked;                     // True iff sub_state_st::blocked is non-null.
       char const* base_state_str;       // Human readable version of multiplex_state_st::base_state.
       char const* run_state_str;        // Human readable version of sub_state_st::run_state.
-      char const* advance_state_str;    // Human readable version of sub_state_st::advance_state.
       bool reset_m_state_locked_at_end_of_probe;
       bool reset_m_sub_state_locked_at_end_of_probe;
       int inside_probe_impl;            // Count of number of recursions into probe_impl().
@@ -120,7 +118,6 @@ class AIStatefulTask : public AIRefCount
       {
         return base_state == task_state.base_state &&
                run_state == task_state.run_state &&
-               advance_state == task_state.advance_state &&
                blocked == task_state.blocked &&
                reset == task_state.reset &&
                idle == task_state.idle &&
@@ -182,7 +179,6 @@ class AIStatefulTask : public AIRefCount
     bool mDebugAborted;                 // True when abort() was called.
     bool mDebugContPending;             // True while cont() was called but not handled yet.
     bool mDebugSetStatePending;         // True while set_state() was called by not handled yet.
-    bool mDebugAdvanceStatePending;     // True while advance_state() was called by not handled yet.
     bool mDebugRefCalled;               // True when ref() is called (or will be called within the critial area of mMultiplexMutex).
 #endif
 #ifdef CWDEBUG
@@ -202,7 +198,7 @@ class AIStatefulTask : public AIRefCount
     AIStatefulTask(DEBUG_ONLY(bool debug)) : mCallback(nullptr), mDefaultEngine(nullptr), mYieldEngine(nullptr),
 #ifdef DEBUG
     mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugContPending(false),
-    mDebugSetStatePending(false), mDebugAdvanceStatePending(false), mDebugRefCalled(false),
+    mDebugSetStatePending(false), mDebugRefCalled(false),
 #endif
 #ifdef CWDEBUG
     mSMDebug(debug),
@@ -237,7 +233,7 @@ class AIStatefulTask : public AIRefCount
     // This function can be called from initialize_impl() and multiplex_impl() (both called from within multiplex()).
     void set_state(state_type new_state);       // Run this state the NEXT loop.
     // These functions can only be called from within multiplex_impl().
-    void idle();                                // Go idle unless cont() or advance_state() were called since the start of the current loop, or until they are called.
+    void idle();                                // Go idle unless cont() was called since the start of the current loop, or until they are called.
     void wait(AIConditionBase& condition);      // The same as idle(), but wake up when AICondition<T>::signal() is called.
     void finish();                              // Mark that the task finished and schedule the call back.
     void yield();                               // Yield to give CPU to other tasks, but do not go idle.
@@ -255,8 +251,6 @@ class AIStatefulTask : public AIRefCount
     // These are the only three functions that can be called by any thread at any moment.
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
     void cont();                                // Guarantee at least one full run of multiplex() after this function is called. Cancels the last call to idle().
-    void advance_state(state_type new_state);   // Guarantee at least one full run of multiplex() after this function is called
-                                                // iff new_state is larger than the last state that was processed.
     bool signalled();                           // Call cont() iff this task is still blocked after a call to wait(). Returns false if it already unblocked.
 
   public:
