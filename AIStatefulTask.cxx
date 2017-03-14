@@ -714,8 +714,6 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::begin_loop(" << state_str(base_state) << ") [" << (void*)this << "]");
 
   sub_state_type::wat sub_state_w(mSubState);
-  // Honor a subsequent call to idle() (only necessary in bs_multiplex, but it doesn't hurt to reset this flag in other states too).
-  sub_state_w->skip_idle = false;
   // Mark that we're about to honor all previous run requests.
   sub_state_w->need_run = false;
 
@@ -949,8 +947,6 @@ void AIStatefulTask::set_state(state_type new_state)
     sub_state_w->run_state = new_state;
     // Void last call to idle(), if any.
     sub_state_w->idle = false;
-    // Honor a subsequent call to idle().
-    sub_state_w->skip_idle = false;
 #ifdef DEBUG
     // We should run. This can only be cancelled by a call to idle().
     mDebugSetStatePending = true;
@@ -1239,7 +1235,6 @@ AIStatefulTask::task_state_st AIStatefulTask::do_copy_state(
   task_state.reset = sub_state_r->reset;
   task_state.need_run = sub_state_r->need_run;
   task_state.idle = sub_state_r->idle;
-  task_state.skip_idle = sub_state_r->skip_idle;
   task_state.aborted = sub_state_r->aborted;
   task_state.finished = sub_state_r->finished;
   task_state.reset_m_state_locked_at_end_of_probe = reset_m_state_locked_at_end_of_probe;

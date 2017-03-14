@@ -95,12 +95,11 @@ class AIStatefulTask : public AIRefCount
       bool reset;
       bool need_run;
       bool idle;
-      bool skip_idle;
       bool aborted;
       bool finished;
 #ifdef CW_DEBUG_MONTECARLO
       // In order to have reproducible results (otherwise these are initially uninitialized).
-      sub_state_st() : run_state(-1), blocked(nullptr), reset(false), need_run(false), idle(false), skip_idle(false), aborted(false), finished(false) { }
+      sub_state_st() : run_state(-1), blocked(nullptr), reset(false), need_run(false), idle(false), aborted(false), finished(false) { }
 #endif
     };
 
@@ -121,7 +120,6 @@ class AIStatefulTask : public AIRefCount
                blocked == task_state.blocked &&
                reset == task_state.reset &&
                idle == task_state.idle &&
-               skip_idle == task_state.skip_idle &&
                aborted == task_state.aborted &&
                finished == task_state.finished;
       }
