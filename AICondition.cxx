@@ -29,73 +29,20 @@
  *   2017/01/07
  *   - Changed license to Affero GPL.
  *   - Transfered copyright to Carlo Wood.
+ *
+ *   2017/03/17
+ *   - Rewrite.
  */
 
 #include "sys.h"
 #include "AICondition.h"
 #include "AIStatefulTask.h"
 
-// Constructor and destructor need "AIStatefulTask.h" for member mWaitingStatefulTasks.
-AIConditionBase::AIConditionBase()
+void AICondition::signal()
 {
+  m_mutex.lock();
+  m_skip_idle = m_not_idle;
+  m_not_idle = true;
+  m_mutex.unlock();
+  m_task.signalled(this);
 }
-
-AIConditionBase::~AIConditionBase()
-{
-}
-
-void AIConditionBase::wait(AIStatefulTask* stateful_task)
-{
-  // The condition must be locked before calling AIStatefulTask::wait().
-  ASSERT(mutex().self_locked());
-  // Add the new task at the end.
-  mWaitingStatefulTasks.push_back(stateful_task);
-}
-
-void AIConditionBase::remove(AIStatefulTask* stateful_task)
-{
-  mutex().lock();
-  // Remove all occurances of stateful_task from the queue.
-  queue_type::iterator const end = mWaitingStatefulTasks.end();
-  queue_type::iterator last = end;
-  for (queue_type::iterator iter = mWaitingStatefulTasks.begin(); iter != last; ++iter)
-  {
-    if (iter->get() == stateful_task)
-    {
-      if (--last == iter)
-      {
-        break;
-      }
-      iter->swap(*last);
-    }
-  }
-  // This invalidates all iterators involved, including end, but not any iterators to the remaining elements.
-  mWaitingStatefulTasks.erase(last, end);
-  mutex().unlock();
-}
-
-void AIConditionBase::signal(int n)
-{
-  // The condition must be locked before calling AICondition::signal or AICondition::broadcast.
-  ASSERT(mutex().self_locked());
-  // Signal n tasks.
-  while (n > 0 && !mWaitingStatefulTasks.empty())
-  {
-    boost::intrusive_ptr<AIStatefulTask> stateful_task = mWaitingStatefulTasks.front();
-    bool success = stateful_task->signalled(this);
-    // Only tasks that are actually still blocked should be in the queue:
-    // they are removed from the queue by calling AICondition::remove whenever
-    // they are unblocked for whatever reason...
-    ASSERT(success);
-    if (success)
-    {
-      ++n;
-    }
-    else
-    {
-      // We never get here...
-      remove(stateful_task.get());
-    }
-  }
-}
-

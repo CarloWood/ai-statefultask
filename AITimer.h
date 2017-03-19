@@ -68,21 +68,23 @@ class AITimer : public AIStatefulTask {
     // The different states of the stateful task.
     enum timer_state_type {
       AITimer_start = direct_base_type::max_state,
+      AITimer_wait,
       AITimer_expired
     };
   public:
     static state_type const max_state = AITimer_expired + 1;
 
   private:
-    AIFrameTimer mFrameTimer;   //!< The actual timer that this object wraps.
-    double mInterval;           //!< Input variable: interval after which the event will be generated, in seconds.
+    AICondition<bool> mHasExpired;      //!< Set to true after the timer expired.
+    AIFrameTimer mFrameTimer;           //!< The actual timer that this object wraps.
+    double mInterval;                   //!< Input variable: interval after which the event will be generated, in seconds.
 
   public:
     AITimer(CWD_ONLY(bool debug = false)) :
 #ifdef CWDEBUG
       AIStatefulTask(debug),
 #endif
-      mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
+      mHasExpired(false), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
     /**
      * @brief Set the interval after which the timer should expire.

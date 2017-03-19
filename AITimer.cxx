@@ -39,6 +39,7 @@ char const* AITimer::state_str_impl(state_type run_state) const
   switch(run_state)
   {
     AI_CASE_RETURN(AITimer_start);
+    AI_CASE_RETURN(AITimer_wait);
     AI_CASE_RETURN(AITimer_expired);
   }
   ASSERT(false);
@@ -53,7 +54,9 @@ void AITimer::initialize_impl()
 
 void AITimer::expired()
 {
-  advance_state(AITimer_expired);
+  AICondition<bool>::wat has_expired_w(mHasExpired);
+  *has_expired_w = true;
+  mHasExpired.broadcast();
 }
 
 void AITimer::multiplex_impl(state_type run_state)
@@ -63,7 +66,16 @@ void AITimer::multiplex_impl(state_type run_state)
     case AITimer_start:
       {
         mFrameTimer.create(mInterval, boost::bind(&AITimer::expired, this));
-        idle();
+        set_state(AITimer_wait);
+        break;
+      }
+    case AITimer_wait:
+      {
+        AICondition<bool>::rat has_expired_r(mHasExpired);
+        if (*has_expired_r)
+          set_state(AITimer_expired);
+        else
+          wait(mHasExpired);
         break;
       }
     case AITimer_expired:

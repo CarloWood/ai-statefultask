@@ -51,7 +51,7 @@
 #include <chrono>
 #include <boost/signals2.hpp>
 
-class AIConditionBase;
+class AICondition;
 class AIEngine;
 
 extern AIEngine gMainThreadEngine;
@@ -82,6 +82,7 @@ class AIStatefulTask : public AIRefCount
     };
   public:
     static state_type const max_state = bs_killed + 1;
+    enum on_abort_st { abort_parent, signal_parent, do_nothing };
 
   protected:
     struct multiplex_state_st {
@@ -91,15 +92,16 @@ class AIStatefulTask : public AIRefCount
     };
     struct sub_state_st {
       state_type run_state;
-      AIConditionBase* blocked;
+      AICondition* blocked;
       bool reset;
       bool need_run;
-      bool idle;
+      bool wait_called;
       bool aborted;
       bool finished;
+      inline bool idle() const;
 #ifdef CW_DEBUG_MONTECARLO
       // In order to have reproducible results (otherwise these are initially uninitialized).
-      sub_state_st() : run_state(-1), blocked(nullptr), reset(false), need_run(false), idle(false), aborted(false), finished(false) { }
+      sub_state_st() : run_state(-1), blocked(nullptr), reset(false), need_run(false), wait_called(false), aborted(false), finished(false) { }
 #endif
     };
 
@@ -119,7 +121,6 @@ class AIStatefulTask : public AIRefCount
                run_state == task_state.run_state &&
                blocked == task_state.blocked &&
                reset == task_state.reset &&
-               idle == task_state.idle &&
                aborted == task_state.aborted &&
                finished == task_state.finished;
       }
@@ -140,7 +141,7 @@ class AIStatefulTask : public AIRefCount
     // Mutex protecting everything below and making sure only one thread runs the task at a time.
     AIMutex mMultiplexMutex;
     // Mutex that is locked while calling *_impl() functions and the call back.
-    std::mutex mRunMutex;
+    std::recursive_mutex mRunMutex;
 
     typedef std::chrono::steady_clock clock_type;
     typedef clock_type::duration duration_type;
@@ -150,9 +151,8 @@ class AIStatefulTask : public AIRefCount
     // Callback facilities.
     // From within an other stateful task:
     boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
-    state_type mNewParentState;                         // The state at which the parent should continue upon a successful finish.
-    bool mAbortParent;                                  // If true, abort parent on abort(). Otherwise continue as normal.
-    bool mOnAbortSignalParent;                          // If true and mAbortParent is false, change state of parent even on abort.
+    AICondition* mParentCondition;                      // The state at which the parent should continue upon a successful finish.
+    on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
     // From outside a stateful task:
     struct callback_type {
       typedef boost::signals2::signal<void (bool)> signal_type;
@@ -175,7 +175,7 @@ class AIStatefulTask : public AIRefCount
     base_state_type mDebugLastState;    // The previous state that multiplex() had a normal run with.
     bool mDebugShouldRun;               // Set if we found evidence that we should indeed call multiplex_impl().
     bool mDebugAborted;                 // True when abort() was called.
-    bool mDebugContPending;             // True while cont() was called but not handled yet.
+    bool mDebugSignalPending;           // True while wait() was called but didn't get idle because of a pending call to signal() that wasn't handled yet.
     bool mDebugSetStatePending;         // True while set_state() was called by not handled yet.
     bool mDebugRefCalled;               // True when ref() is called (or will be called within the critial area of mMultiplexMutex).
 #endif
@@ -195,7 +195,7 @@ class AIStatefulTask : public AIRefCount
   public:
     AIStatefulTask(DEBUG_ONLY(bool debug)) : mCallback(nullptr), mDefaultEngine(nullptr), mYieldEngine(nullptr),
 #ifdef DEBUG
-    mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugContPending(false),
+    mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
     mDebugSetStatePending(false), mDebugRefCalled(false),
 #endif
 #ifdef CWDEBUG
@@ -220,9 +220,9 @@ class AIStatefulTask : public AIRefCount
 
   public:
     // These functions may be called directly after creation, or from within finish_impl(), or from the call back function.
-    void run(AIStatefulTask* parent, state_type new_parent_state, bool abort_parent = true, bool on_abort_signal_parent = true, AIEngine* default_engine = &gMainThreadEngine);
     void run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine = &gMainThreadEngine);
-    void run(AIEngine* default_engine = nullptr) { run(nullptr, 0, false, true, default_engine); }
+    void run(AIStatefulTask* parent, AICondition* condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
+    void run(AIEngine* default_engine = nullptr) { run(nullptr, nullptr, do_nothing, default_engine); }
 
     // This function may only be called from the call back function (and cancels a call to run() from finish_impl()).
     void kill();
@@ -231,11 +231,10 @@ class AIStatefulTask : public AIRefCount
     // This function can be called from initialize_impl() and multiplex_impl() (both called from within multiplex()).
     void set_state(state_type new_state);       // Run this state the NEXT loop.
     // These functions can only be called from within multiplex_impl().
-    void idle();                                // Go idle unless cont() was called since the start of the current loop, or until they are called.
-    void wait(AIConditionBase& condition);      // The same as idle(), but wake up when AICondition<T>::signal() is called.
+    void wait(AICondition& condition);          // Block if condition wasn't signalled twice or more since the last call to wait().
     void finish();                              // Mark that the task finished and schedule the call back.
-    void yield();                               // Yield to give CPU to other tasks, but do not go idle.
-    void yield(AIEngine* engine);               // Yield to give CPU to other tasks, but do not go idle. Continue running from engine 'engine'.
+    void yield();                               // Yield to give CPU to other tasks, but do not block.
+    void yield(AIEngine* engine);               // Yield to give CPU to other tasks, but do not block. Continue running from engine 'engine'.
     void yield_frame(unsigned int frames);      // Run from the main-thread engine after at least 'frames' frames have passed.
     void yield_ms(unsigned int ms);             // Run from the main-thread engine after roughly 'ms' miliseconds have passed.
     bool yield_if_not(AIEngine* engine);        // Do not really yield, unless the current engine is not 'engine'. Returns true if it switched engine.
@@ -246,37 +245,28 @@ class AIStatefulTask : public AIRefCount
     // to access this task.
     void abort();                               // Abort the task (unsuccessful finish).
 
-    // These are the only three functions that can be called by any thread at any moment.
+    // This is the only function that can be called by any thread at any moment.
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
-    void cont();                                // Guarantee at least one full run of multiplex() after this function is called. Cancels the last call to idle().
-    bool signalled(AIConditionBase* condition); // Guarantee at least one full run of multiplex() iff this task is still blocked after a call to wait(*condition).
+    bool signalled(AICondition* condition);     // Guarantee at least one full run of multiplex() iff this task is still blocked after a call to wait(*condition).
                                                 // Returns false if it already unblocked or is waiting on another condition now.
 
   public:
     // Accessors.
 
-    // Return true if the derived class is running (also when we are idle).
+    // Return true if the derived class is running (also when we are blocked).
     bool running() const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
 
     // Return true if the derived class is running and idle.
-    bool waiting() const
-    {
-      multiplex_state_type::crat state_r(mState);
-      return state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle;
-    }
+    bool waiting() const;
 
     // Return true if the derived class is running and idle or already being aborted.
-    bool waiting_or_aborting() const
-    {
-      multiplex_state_type::crat state_r(mState);
-      return state_r->base_state == bs_abort || ( state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle);
-    }
+    bool waiting_or_aborting() const;
 
     // Return true if we are added to the current engine.
     bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
 
     // Use some safebool idiom (http://www.artima.com/cppsource/safebool.html) rather than operator bool.
-    typedef state_type AIStatefulTask::* bool_type;
+    typedef on_abort_st AIStatefulTask::* bool_type;
     // Return true if the task finished.
     // If this function returns false then the callback (or call to abort() on the parent) is guaranteed to still going to happen.
     // If this function returns true then the callback might have happened or might still going to happen.
@@ -284,7 +274,7 @@ class AIStatefulTask : public AIRefCount
     operator bool_type() const
     {
       sub_state_type::crat sub_state_r(mSubState);
-      return sub_state_r->finished ? &AIStatefulTask::mNewParentState : 0;
+      return sub_state_r->finished ? &AIStatefulTask::mOnAbort : 0;
     }
 
     // Return true if this task was aborted. This value is guaranteed to be valid (only) after the task finished.

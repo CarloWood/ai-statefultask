@@ -108,7 +108,7 @@ void AIEngine::mainloop()
     {
       ++queued_element;
     }
-    if (main_thread && total_duration >= sMaxDuration)
+    if (main_thread && total_duration >= sMaxDuration && engine_state_w->list.size() > 2)
     {
       Dout(dc::statefultask, "Sorting " << engine_state_w->list.size() << " stateful tasks.");
       engine_state_w->list.sort(QueueElementComp());

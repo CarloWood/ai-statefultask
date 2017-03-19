@@ -40,6 +40,8 @@
 
 #ifdef CW_DEBUG_MONTECARLO
 #define MonteCarloProbe(...) MonteCarloProbeFileState(copy_state(), true, __VA_ARGS__)
+#else
+#define MonteCarloProbe(...)
 #endif
 
 //==================================================================
@@ -72,11 +74,11 @@
 //       |         |
 //   Initialize    |    Calls initialize_impl().
 //       |         |
-//       | (idle)  |    Idle until cont() is called.
+//       | (idle)  |    Idle until signalled() is called.
 //       |  |  ^   |
 //       v  v  |   |
 //   .-----------. |
-//   | Multiplex | |    Call multiplex_impl() until idle(), abort() or finish() is called.
+//   | Multiplex | |    Call multiplex_impl() until wait(), abort() or finish() is called.
 //   '-----------' |
 //    |    |       |
 //    v    |       |
@@ -208,7 +210,7 @@ hello_world->run(...);          // One of the run() functions.
 //   with that state.
 // multiplex_impl() may never reentrant (cause itself to be called).
 // multiplex_impl() should end by callling either one of:
-//   idle(), wait(), yield*(), finish() [or abort()].
+//   wait(), yield*(), finish() [or abort()].
 // Leaving multiplex_impl() without calling any of those might result in an
 //   immediate reentry, which could lead to 100% CPU usage unless the state
 //   is changed with set_state().
@@ -218,9 +220,9 @@ hello_world->run(...);          // One of the run() functions.
 //   the call back passed to run() will be called.
 // Upon return from the call back, the task object might be destructed
 //   (see below).
-// If idle() was called, and the state was (still) current_state,
-//   then multiplex_impl() will not be called again until the state is
-//   advanced, or cont() is called.
+// If wait(condition) was called, and the condition.running() returns false,
+//   then multiplex_impl() will not be called again until condition.signal()
+//   is called from outside.
 //
 // If the call back function does not call run(), then the task is
 //   deleted when the last boost::intrusive_ptr<> reference is deleted.
@@ -235,9 +237,7 @@ hello_world->run(...);          // One of the run() functions.
 //   to it is deleted (if any). Note that this is only possible when a
 //   child task is aborted before the parent even runs.
 //
-// If abort() is called inside its initialize_impl() that initialize_impl()
-//   should return immediately after.
-// if idle(), wait(), abort() or finish() are called inside its multiplex_impl()
+// if wait(), abort() or finish() are called inside its multiplex_impl()
 //   then that multiplex_impl() should return immediately after.
 //
 
@@ -250,9 +250,9 @@ hello_world->run(...);          // One of the run() functions.
 // Only from inside multiplex_impl (set_state also from initialize_impl), any of the
 // following functions can be called:
 //
-// - set_state(new_state)       --> Force the state to new_state. This voids any previous call to set_state() or idle().
-// - idle()                     --> Go idle (do nothing until cont() is called). If the current
-//                                  state is not current_state, then multiplex_impl shall be reentered immediately upon return.
+// - set_state(new_state)       --> Force the state to new_state. This voids any previous call to set_state().
+// - wait(condition)            --> Go idle (do nothing until signalled() is called), however if condition.running()
+//                                  returns true, then multiplex_impl shall be reentered immediately upon return.
 // - finish()                   --> Disables any scheduled runs.
 //                              --> finish_impl --> [optional] kill()
 //                              --> call back
@@ -269,7 +269,7 @@ hello_world->run(...);          // One of the run() functions.
 //
 // while the following functions may be called from anywhere (and any thread):
 //
-// - cont()                     --> schedules a run if there was no call to set_state() since the last call to idle().
+// - signalled(condition)       --> if 'condition' matches the condition passed to the last call to wait() then schedule a run.
 //
 // In the above "scheduling a run" means calling multiplex_impl(), but the same holds for any *_impl()
 // and the call back: Whenever one of those have to be called, thread_safe_impl() is called to
@@ -299,6 +299,24 @@ char const* AIStatefulTask::event_str(event_type event)
   return "UNKNOWN EVENT";
 }
 #endif
+
+// inline
+bool AIStatefulTask::sub_state_st::idle() const
+{
+  return blocked && blocked->idle();
+}
+
+bool AIStatefulTask::waiting() const
+{
+  multiplex_state_type::crat state_r(mState);
+  return state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle();
+}
+
+bool AIStatefulTask::waiting_or_aborting() const
+{
+  multiplex_state_type::crat state_r(mState);
+  return state_r->base_state == bs_abort || ( state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle());
+}
 
 void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 {
@@ -381,6 +399,9 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
   do
   {
     MonteCarloProbe("In multiplex(), locked, begin loop", multiplex_inside_loop, "multiplex_inside_loop");
+#ifdef CWDEBUG
+    debug::Mark __mark;
+#endif
 
     if (event == normal_run)
     {
@@ -542,7 +563,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
                 // Start actually running.
                 state_w->base_state = bs_multiplex;
                 // If the state is bs_multiplex we only need to run again when need_run was set again in the meantime or when this task isn't idle.
-                need_new_run = sub_state_r->need_run || !sub_state_r->idle;
+                need_new_run = sub_state_r->need_run || !sub_state_r->idle();
               }
               break;
             case bs_multiplex:
@@ -560,12 +581,12 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
               {
                 // Continue in bs_multiplex.
                 // If the state is bs_multiplex we only need to run again when need_run was set again in the meantime or when this task isn't idle.
-                need_new_run = sub_state_r->need_run || !sub_state_r->idle;
-                // If this fails then the run state didn't change and neither idle() nor yield() was called (sub_state_r->idle is false).
-                // Or, another thread called cont() or signalled() immediately after we called idle(). That is a race condition.
+                need_new_run = sub_state_r->need_run || !sub_state_r->idle();
+                // If this fails then the run state didn't change and neither wait() nor yield() was called.
                 ASSERT(!(need_new_run && !mYieldEngine && sub_state_r->run_state == run_state &&
                        !(sub_state_r->aborted ||        // abort was called.
-                         sub_state_r->finished)));      // finish was called.
+                         sub_state_r->finished ||       // finish was called.
+                         sub_state_r->wait_called)));   // wait was called.
               }
               break;
             case bs_abort:
@@ -603,7 +624,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
           // the last state before the abort is handled. What we really need is to pick up as if the abort
           // was handled directly after returning from the last run. If we're not running anymore, then
           // do nothing as the task already ran and things should be processed normally
-          // (in that case this is just a normal schedule which can't harm because we're can't accidently
+          // (in that case this is just a normal schedule which can't harm because we can't accidently
           // re-run an old run_state).
           if (state_w->base_state == bs_multiplex)      // Still running?
           {
@@ -716,27 +737,27 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
   sub_state_type::wat sub_state_w(mSubState);
   // Mark that we're about to honor all previous run requests.
   sub_state_w->need_run = false;
+  // Mark that we're currently not idle and wait() wasn't called (yet).
+  sub_state_w->wait_called = false;
 
 #ifdef DEBUG
   // Mark that we're running the loop.
   mThreadId = std::this_thread::get_id();
-  // This point marks handling cont().
-  mDebugShouldRun |= mDebugContPending;
-  mDebugContPending = false;
+  // This point marks handling wait() with pending signal().
+  mDebugShouldRun |= mDebugSignalPending;
+  mDebugSignalPending = false;
 #endif
 
   // Make a copy of the state that we're about to run.
   return sub_state_w->run_state;
 }
 
-void AIStatefulTask::run(AIStatefulTask* parent, state_type new_parent_state, bool abort_parent, bool on_abort_signal_parent, AIEngine* default_engine)
+void AIStatefulTask::run(AIStatefulTask* parent, AICondition* condition, on_abort_st on_abort, AIEngine* default_engine)
 {
   MonteCarloProbe("Before run()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(" <<
-      (void*)parent << ", " <<
-      (parent ? parent->state_str_impl(new_parent_state) : "NA") <<
-      ", abort_parent = " << (abort_parent ? "true" : "false") <<
-      ", on_abort_signal_parent = " << (on_abort_signal_parent ? "true" : "false") <<
+      (void*)parent << ", " << (void*)condition <<
+      ", on_abort = " << ((on_abort == abort_parent) ? "abort_parent" : (on_abort == signal_parent) ? "signal_parent" : "do_nothing") <<
       ", default_engine = " << (default_engine ? default_engine->name() : "nullptr") << ") [" << (void*)this << "]");
 
 #ifdef DEBUG
@@ -766,13 +787,12 @@ void AIStatefulTask::run(AIStatefulTask* parent, state_type new_parent_state, bo
       mCallback = nullptr;
     }
 
-    mNewParentState = new_parent_state;
-    mAbortParent = abort_parent;
-    mOnAbortSignalParent = on_abort_signal_parent;
+    mParentCondition = condition;
+    mOnAbort = on_abort;
   }
 
   // If abort_parent is requested then a parent must be provided.
-  ASSERT(!abort_parent || mParent);
+  ASSERT(on_abort == do_nothing || mParent);
   // If a parent is provided, it must be running.
   ASSERT(!mParent || mParent->running());
 
@@ -835,14 +855,14 @@ void AIStatefulTask::callback()
     // call abort again (or change it's state).
     if (mParent->running())
     {
-      if (aborted && mAbortParent)
+      if (aborted && mOnAbort == abort_parent)
       {
         mParent->abort();
         mParent = nullptr;
       }
-      else if (!aborted || mOnAbortSignalParent)
+      else if (!aborted || mOnAbort == signal_parent)
       {
-        //mParent->advance_state(mNewParentState);
+        mParentCondition->signal();
       }
     }
   }
@@ -894,7 +914,7 @@ void AIStatefulTask::reset()
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::reset() [" << (void*)this << "]");
 #ifdef DEBUG
   mDebugAborted = false;
-  mDebugContPending = false;
+  mDebugSignalPending = false;
   mDebugSetStatePending = false;
   mDebugRefCalled = false;
 #endif
@@ -912,8 +932,6 @@ void AIStatefulTask::reset()
     sub_state_w->aborted = sub_state_w->finished = false;
     // Signal that we want to start running from the beginning.
     sub_state_w->reset = true;
-    // Start running.
-    sub_state_w->idle = false;
     // We're not waiting for a condition.
     sub_state_w->blocked = nullptr;
     // Keep running till we reach at least bs_multiplex.
@@ -941,49 +959,19 @@ void AIStatefulTask::set_state(state_type new_state)
 #endif
   {
     sub_state_type::wat sub_state_w(mSubState);
-    // It should never happen that set_state() is called while we're blocked.
-    ASSERT(!sub_state_w->blocked);
+    // It should never happen that set_state() is called while we're idle.
+    ASSERT(!sub_state_w->idle());
     // Force current state to the requested state.
     sub_state_w->run_state = new_state;
-    // Void last call to idle(), if any.
-    sub_state_w->idle = false;
 #ifdef DEBUG
-    // We should run. This can only be cancelled by a call to idle().
+    // We should run. This can only be cancelled by a call to wait().
     mDebugSetStatePending = true;
 #endif
   }
   MonteCarloProbe("After set_state()");
 }
 
-void AIStatefulTask::idle()
-{
-  MonteCarloProbe("Before idle()");
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::idle() [" << (void*)this << "]");
-#ifdef DEBUG
-  {
-    multiplex_state_type::rat state_r(mState);
-    // idle() may only be called from initialize_impl() or multiplex_impl().
-    ASSERT(state_r->base_state == bs_multiplex || state_r->base_state == bs_initialize);
-    // May only be called by the thread that is holding mMultiplexMutex.
-    ASSERT(mThreadId == std::this_thread::get_id());
-  }
-  // idle() following set_state() cancels the reason to run because of the call to set_state.
-  mDebugSetStatePending = false;
-#endif
-  {
-    sub_state_type::wat sub_state_w(mSubState);
-    // As idle may only be called from within the stateful task, it should never happen that the task is already idle.
-    ASSERT(!sub_state_w->idle);
-    // Mark that we are idle.
-    sub_state_w->idle = true;
-    // Not sleeping (anymore).
-    mSleep = 0;
-  }
-  MonteCarloProbe("After idle()");
-}
-
-// This function is very much like idle().
-void AIStatefulTask::wait(AIConditionBase& condition)
+void AIStatefulTask::wait(AICondition& condition)
 {
   MonteCarloProbe("Before wait()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << (void*)&condition << ") [" << (void*)this << "]");
@@ -1001,82 +989,45 @@ void AIStatefulTask::wait(AIConditionBase& condition)
   {
     sub_state_type::wat sub_state_w(mSubState);
     // As wait() may only be called from within the stateful task, it should never happen that the task is already idle.
-    ASSERT(!sub_state_w->idle);
-    // Register ourselves with the condition object.
-    condition.wait(this);
-    // Mark that we are idle.
-    sub_state_w->idle = true;
-    // Mark that we are waiting for a condition.
+    ASSERT(!sub_state_w->idle());
+    // Mark that we are waiting for this condition.
     sub_state_w->blocked = &condition;
+    // Mark that we at least attempted to go idle.
+    sub_state_w->wait_called = true;
+    // Tell the condition object that we in principle want to go idle.
+    condition.wait();
     // Not sleeping (anymore).
     mSleep = 0;
-  }
-  MonteCarloProbe("After wait()");
-}
-
-void AIStatefulTask::cont()
-{
-  MonteCarloProbe("Before cont()");
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::cont() [" << (void*)this << "]");
-  {
-    sub_state_type::wat sub_state_w(mSubState);
-    // Calling cont() on non-idle task run by self is an error.
-    // Asserting here means that (before finishing a state with a call to idle())
-    // a function was called that caused this cont() to be called.
-    // Although any other thread can call cont() on us at any time, that
-    // still would be a race condition: a little later and the cont() would
-    // have had effect (so that would also be an error, except we can't know
-    // it in that case).
-    ASSERT(sub_state_w->idle || !mMultiplexMutex.self_locked());
-    // Void last call to idle(), if any.
-    sub_state_w->idle = false;
-    // No longer say we woke up when signalled() is called.
-    if (sub_state_w->blocked)
-    {
-      Dout(dc::statefultask(mSMDebug), "Removing stateful task from condition " << (void*)sub_state_w->blocked);
-      sub_state_w->blocked->remove(this);
-      sub_state_w->blocked = nullptr;
-    }
-    // Mark that a re-entry of multiplex() is necessary.
-    sub_state_w->need_run = true;
 #ifdef DEBUG
     // From this moment.
-    mDebugContPending = true;
+    mDebugSignalPending = !condition.idle();
 #endif
   }
-  if (!mMultiplexMutex.self_locked())
-    multiplex(schedule_run);
-  MonteCarloProbe("After cont()");
+  MonteCarloProbe("After wait()");
 }
 
 // This function causes the task to do at least one full run of multiplex(), provided we are
 // currently blocked by a call to wait() with the same condition object.
 // Returns true if the stateful task was unblocked, false if it was already unblocked.
-bool AIStatefulTask::signalled(AIConditionBase* condition)
+bool AIStatefulTask::signalled(AICondition* condition)
 {
   MonteCarloProbe("Before signalled()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signalled(" << (void*)condition << ") [" << (void*)this << "]");
   {
     sub_state_type::wat sub_state_w(mSubState);
     // Test if we are blocked or not.
-    if (sub_state_w->blocked == condition)
+    if (sub_state_w->blocked != condition)
     {
-      Dout(dc::statefultask(mSMDebug), "Removing stateful task from condition " << (void*)sub_state_w->blocked);
-      sub_state_w->blocked->remove(this);
-      sub_state_w->blocked = nullptr;
-    }
-    else
-    {
+      Dout(dc::statefultask(mSMDebug), "Ignoring because blocked == " << (void*)sub_state_w->blocked);
       return false;
     }
-    // Void last call to wait().
-    sub_state_w->idle = false;
+#ifdef DEBUG
+    mDebugSignalPending = sub_state_w->wait_called;
+#endif
+    // Unblock this task.
+    sub_state_w->blocked = nullptr;
     // Mark that a re-entry of multiplex() is necessary.
     sub_state_w->need_run = true;
-#ifdef DEBUG
-    // From this moment.
-    mDebugContPending = true;
-#endif
   }
   if (!mMultiplexMutex.self_locked())
     multiplex(schedule_run);
@@ -1097,14 +1048,13 @@ void AIStatefulTask::abort()
     // No longer say we woke up when signalled() is called.
     if (sub_state_w->blocked)
     {
-      Dout(dc::statefultask(mSMDebug), "Removing stateful task from condition " << (void*)sub_state_w->blocked);
-      sub_state_w->blocked->remove(this);
+      Dout(dc::statefultask(mSMDebug), "Removing block on condition " << (void*)sub_state_w->blocked);
       sub_state_w->blocked = nullptr;
     }
     // Mark that a re-entry of multiplex() is necessary.
     sub_state_w->need_run = true;
     // Schedule a new run when this task is waiting.
-    is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle;
+    is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle();
   }
   MonteCarloProbe("In abort(), before multiplex(insert_abort) test");
   if (is_waiting && !mMultiplexMutex.self_locked())
@@ -1139,7 +1089,7 @@ void AIStatefulTask::finish()
   {
     sub_state_type::wat sub_state_w(mSubState);
     // finish() should not be called when idle.
-    ASSERT(!sub_state_w->idle);
+    ASSERT(!sub_state_w->idle());
     // Mark that we are finished.
     sub_state_w->finished = true;
   }
@@ -1235,7 +1185,6 @@ AIStatefulTask::task_state_st AIStatefulTask::do_copy_state(
   task_state.blocked = sub_state_r->blocked ? true : false;
   task_state.reset = sub_state_r->reset;
   task_state.need_run = sub_state_r->need_run;
-  task_state.idle = sub_state_r->idle;
   task_state.aborted = sub_state_r->aborted;
   task_state.finished = sub_state_r->finished;
   task_state.reset_m_state_locked_at_end_of_probe = reset_m_state_locked_at_end_of_probe;
