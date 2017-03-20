@@ -72,53 +72,48 @@ Control functions
 -----------------
 
 A running task can be controlled by calling member
-functions of the AIStatefulTask base class.
-There are thirteen such member functions.
-Three member functions may be called from
-both, executing and non-executing threads (aka,
-from anywhere at any time). They are therefore
-public functions:
+functions of the AIStatefulTask base class. There are
+ten such member functions. One member function may be
+called from both, executing and non-executing threads:
 
-1) cont()
-2) advance_state(new_state)
-3) signalled()
+1) signalled(condition)
+
+This function is not public though; it may only be
+called from AICondition::signal(); but that function
+may be called from any thread at any time ;).
 
 One function may only be called by a child task
 (and therefore by any thread), or from multiplex_impl
 by the executing-thread:
 
-4) abort()
+2) abort()
 
 The rest may only be called by the executing
 thread (aka, from within multiplex_impl()).
 These functions are therefore protected:
 
-5) set_state(new_state)
-6) idle()
-7) wait(condition)
-8) finish()
-9) yield()
-10) yield(engine)
-11) yield_frame(frames)
-12) yield_ms(ms)
-13) yield_if_not(engine)
+3) set_state(new_state)
+4) wait(condition)
+5) finish()
+6) yield()
+7) yield(engine)
+8) yield_frame(frames)
+9) yield_ms(ms)
+10) yield_if_not(engine)
 
 A task executes code that belongs to a given "state"
 and (possibly) keeps doing so (executing that same state)
-until any of the protected functions, abort() or
-advance_state(new_state) is called, provided that new_state
-is larger than the current state (otherwise the call to
-advance_state has no effect).
+until any of the protected functions or abort() is called.
 
 Hence, every state MUST (eventually, and rather sooner than
 later) call one of the protected functions, or a task could
 go into a tight loop using 100% cpu.
 
-Moreover, an executing thread that calls abort(), idle(),
-wait(), finish(), yield_if_not() when that returned true, or any
-of the other yield functions, should immediately stop
-executing and leave multiplex_impl() (aka, those functions
-should be followed by a break).
+Moreover, an executing thread that calls abort(), wait(condition),
+finish(), yield_if_not() when that returned true, or any of
+the other yield functions, should immediately stop executing and
+leave multiplex_impl() (aka, those functions should be followed
+by a break).
 
 Since the effect of any of the yield functions, though yield_if_not
 only when that returns true, is basically the same, we can consider
@@ -136,36 +131,7 @@ set_state
 
 A call to set_state() has no effect, except that the NEXT
 invokation of multiplex_impl will be with the state that
-was LAST passed to set_state(), UNLESS advance_state()
-is called after the last call to set_state() with a state
-that is larger than the state of the last call to set_state.
-
-For example, any of the following sequence of calls
-will cause the task to continue running with state 2
-[or any state larger than 2 when advance_state() is called
- with a value larger than 2 after the break by a non-executing
- thread]:
-
-  set_state(1);
-  set_state(2);
-  break;       
-
-  set_state(1);
-  advance_state(3);
-  set_state(2);
-  break;
-
-  set_state(1);
-  advance_state(2);
-  break;
-
-  set_state(2);
-  advance_state(1);
-  break;
-
-In the above, advance_state() may be called by the executing
-thread or by a non-executing thread (chronologically inserted
-at that point).
+was passed to the LAST call to set_state().
 
 abort and finish
 ----------------
@@ -181,91 +147,47 @@ yield
 A call to yield() has basically no effect on a task,
 except that its execution is delayed a bit. Most notably,
 other running tasks will get the chance to execute
-before this task is continued. In order to avoid 100%
-cpu usage by such a task, other tasks should almost
-immediately cause a call to advance_state() with a state
-larger than the current state, or execution should
-otherwise be changed due to reentry (ie, a counter).
-It is the responsiblity of the coder to make sure that this
-is the case.
-
-idle
-----
-
-A call to idle() suspends the execution of a task until a
-non-executing thread calls cont() or advance_state().
-If cont() is called, or advance_state() with a state less than
-or equal the current state, then the task will continue
-with the current state (ie, set by the last call to set_state).
-If advance_state() is called with a state larger than the
-current state then that state will be executed.
-Note that if cont() is called on a task that is not idle(), then
-the call to cont() has no (immediate, see below) effect.
-Hence, advance_state() can be seen as the atomic equivalent of:
-
-  void advance_state(state new_state) {
-    if (new_state < current_state)
-      return;
-    set_state(new_state);
-    cont();
-  }
+before this task is continued. Note that if a state
+calls yield() without calling first set_state() then this
+might cause 100% CPU usage despite the call to yield()
+because the task will rapidly execute again and then
+call yield() over and over.
 
 wait
 ----
 
-A call to wait(condition) is equivalent to a call to idle(),
-with the additional feature that a call to signalled() will
-continue the task if the task wasn't already continued before.
-In other words, calling signalled() on a task that is not wait()-ing
-has no effect (signalled() returns false in that case).
+A call to wait(condition) will cause a task to go idle,
+until the condition is signalled by calling condition.signal()
+from the outside. Theoretically this can happen arbitrarily,
+so the task should just test a condition and if not yet met
+call wait(condition) again; for example:
 
-Thus, the following chronological calls (by any thread) have
-the effect as described in the comments:
+  case WaitingForChildTask:
+    if (!child_task)
+    {
+      wait(condition);
+      break;
+    }
+    set_state(ChildFinished);
+    break;
 
-  idle(); // Go idle.
-  cont(); // Continue.
-  cont(); // Ignored.
-  signalled(); // Ignored.
+As in this code it doesn't matter if the task wakes up
+"randomly"; it will not do anything until child_task returns
+true.
 
-  idle(); // Go idle.
-  signalled(); // Ignored.
+However, it should be taken care of that whenever child_task
+might have changed (from false to true) due to some change,
+then condition.signal() must be called.
 
-  wait(condition); // Go idle.
-  cont(); // Continue.
-  signalled(); // Ignored.
-
-  wait(condition); // Go idle.
-  signalled(); // Continue.
-  cont(); // Ignored.
-
-
-Finally we'll describe the effect of calling the public functions
+Finally we'll describe the effect of calling condition.signal()
 in detail:
 
-cont
-----
-
-A call to cont() causes a task to start running if it
-was idle at that moment, either by a call to idle() or
-a call to wait().
-If cont() is called while a task is not idle, it is
-ignored (what else?) BUT... in some cases we want the
-NEXT call to idle() to be ignored; this to solve a race
-condition when a non-executing thread is calling cont().
-This:
-
-  idle();       // Executing thread.
-  cont();       // Non-executing thread.
-
-Should have the same effect as:
-
-  cont();       // Non-executing thread.
-  idle();       // Executing thread.
-
-Provided that the task was already executing at the
-moment that cont() was being called (or advance_state(),
-or signalled when wait() was called last instead of
-idle()).
+When condition.signal() is called, the condition is marked as
+non-idle and signalled(condition) is called on the corresponding
+task. If that task is waiting on that condition then it is woken
+up. If it is not waiting then it is guaranteed that the task will
+do at least one re-entry of multiplex_impl (even if wait(condition)
+is called before it leaves the current loop).
 
 -----------------------------------------------------------------------------
 
@@ -278,23 +200,21 @@ running: The task was initialized (AFTER initialize_impl()) and did not
          When a task enters multiplex_impl() it is guaranteed to be
          running.
 
-idle:    A task is guaranteed to be idle immediately AFTER a call to
-         idle() or wait() provided that call wasn't ignored and no
-         unignored call to advance_state() happened since it was set to
-         idle inside idle() or wait(), nor a call to cont() nor a call
-         to signalled() in the case of wait(); a call to idle() or
-         wait() will be ignored when, since the last call to set_state()
-         or begin_loop(), at least one call to advance_state() occurred
-         that wasn't ignored. A call to advance_state() is ignored when
-         the new state is less than the current state or less than or
-         equal the next state (which is the last non-ignored state of
-         advance_state()). Here begin_loop() is an internal function that
-         is called somewhere before entering any of the _impl functions,
-         thus also multiplex_impl().
-         Since idle() and wait() are not public, it is hence guaranteed
-         that a task is non-idle directly after entering multiplex_impl().
+idle:    A task is idle immediately after a call to wait(condition)
+         provided that condition.idle() will return true; which is
+         the case if there was only one call to condition.signal()
+         since the previous call to wait(condition).
+         As soon as condition.signal() is called, the task is again
+         non-idle, EVEN though condition.idle() will still return
+         true. This is because condition.idle() returns the idle
+         state directly after calling wait(condition), but a subsequent
+         call to condition.signal() will call signalled(condition)
+         on the task which schedules a new run.
 
-waiting: running and idle.
+waiting: running and idle since the last call to wait(); if already
+         having been woken up due to a call to signalled(condition)
+         then we're still waiting until we actually re-entered
+         begin_loop().
 
 aborted: abort() was called. This is guaranteed to be true immediately
          after returning from abort() unless finish() was called
@@ -317,5 +237,5 @@ aborting: This state is reached after returning from initialize_impl()
          abort()).
 
 successfully finished: After a call to finish() and not aborted. Note
-         that even if a call abort() happens after this, we'll stay
+         that even if a call to abort() happens after this, we'll stay
          in this state (the call to abort() will be ignored).
