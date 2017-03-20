@@ -38,6 +38,7 @@
 
 #include <mutex>
 #include "debug.h"
+#include <boost/intrusive_ptr.hpp>
 
 class AIStatefulTask;
 
@@ -79,18 +80,18 @@ class AIStatefulTask;
 class AICondition
 {
   private:
-    AIStatefulTask& m_task;     // Reference to the owning task.
-    std::mutex m_mutex;         // Mutex protecting m_not_idle and m_skip_idle.
+    boost::intrusive_ptr<AIStatefulTask> m_task;        // Pointer to the owning task.
+    std::mutex m_mutex;                                 // Mutex protecting m_not_idle and m_skip_idle.
     bool m_not_idle;
     bool m_skip_idle;
-    bool m_idle;                // A copy of !m_not_idle made when wait() was last called.
+    bool m_idle;                                        // A copy of !m_not_idle made when wait() was last called.
 
   public:
     // Call this to wake up the task iff it is (still) waiting on this condition.
     void signal();
 
   public:
-    AICondition(AIStatefulTask& owner) : m_task(owner), m_not_idle(true), m_skip_idle(false), m_idle(false) { }
+    AICondition(AIStatefulTask* owner) : m_task(owner), m_not_idle(true), m_skip_idle(false), m_idle(false) { }
 
   private:
     friend class AIStatefulTask;

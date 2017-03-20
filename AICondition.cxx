@@ -44,5 +44,5 @@ void AICondition::signal()
   m_skip_idle = m_not_idle;
   m_not_idle = true;
   m_mutex.unlock();
-  m_task.signalled(this);
+  m_task->signalled(this);
 }
