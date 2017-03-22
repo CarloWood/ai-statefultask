@@ -1,0 +1,127 @@
+The core of this library is the function AIStatefulTask::multiplex() function.
+
+Each AIStatefulTask uses four mutexes:
+- mState          (B)   (for access to mState)
+- mSubState       (S)   (for access to mSubstate)
+- mMultiplexMutex (M)
+- mRunMutex       (R)
+
+During the execution of AIStatefulTask::multiplex, critical areas are as follows:
+
+          void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
+  0       {
+          ...
+  1   B     // Critical area of mState.
+      B     {
+      B       if (event == insert_abort && base_state != bs_multiplex) --> leave without doing anything.
+      B       if (event == normal_run && current_engine != engine) --> leave without doing anything.
+      B       if we fail to obtain the lock on mMultiplexMutex --> leave without doing anything.
+  2 M B       // START OF Critical area of mMultiplexMutex
+    M B S     if (event == schedule_run && @mSubState@[ !need_run ]) --> leave without doing anything.                    mSubState lock
+    M B
+    M B       begin_loop();
+    M B     }
+  3 M
+    M       do
+    M       {
+    M         if (event == normal_run)
+    M         {
+  4 M R         // START OF Critical area of mRunMutex
+    M R S       bool const late_abort = (state == bs_multiplex || state == bs_initialize) && @mSubState@[ aborted ];      mSubState lock
+    M R         switch(state)
+    M R         {
+    M R S         // Call the *_impl() functions. (if state == bs_killed then exit multiplex without doing anything).     mSubState lock before calling finish_impl() (when state == bs_finish).
+    M R         }
+    M R         // END OF Critical area of mRunMutex
+  5 M         }
+    M
+  6 M B       // Critical area of mState.
+    M B       {
+    M B         if (event == normal_run || event == insert_abort)
+    M B         {
+  7 M B S         // Critical area of mSubState.
+    M B S         Change base_state if needed and determine what actions need to
+    M B S         be taken by setting the booleans 'need_new_run' and 'destruct'.
+    M B S       }
+  8 M B
+    M B         Determine what engine we should run in next and which actions need
+    M B         to be taken by setting the variable 'engine' and the boolean 'keep_looping'.
+    M B
+    M B         if (keep_looping) // Only true when engine == current_engine (and yield() wasn't called)
+    M B         {
+    M B           // Simulate a re-entry of multiplex(normal_run).
+    M B           begin_loop();
+    M B           event = normal_run;
+    M B         }
+    M B         else
+    M B         {
+    M B           Update current_engine (and add us to it if appropriate).
+    M B           // END OF Critical area of mMultiplexMutex.
+  9(M)B         }
+   (M)B
+   (M)B       }
+ 10(M)
+   (M)      }
+   (M)      while(keep_looping);
+ 11 ^
+    |       if (destruct) intrusive_ptr_release(this);
+    |     }
+    \_ M is not locked here when we're leaving the while loop, while if we're not
+       leaving the loop then M remains locked and  point 10 is equivalent with point 3.
+
+Dead lock discussion
+--------------------
+
+In the above you see that the lock pairs are: M->S, B->S, M->R, R->S, M->B
+and because the *_impl functions can cause B to be locked, the chain is: M->R->B->S
+Note that B->M is therefore forbidden (that would create a loop) and doesn't exist
+because although we try to lock M while having B locked, we do that with a try_lock
+and just exit the function when it fails.
+
+The forced aborting of multiplex() should not result in failure to execute
+tasks correctly of course; so lets investigate:
+
+Suppose thread A attempts to lock M at point 2 and fails, then that must be
+caused by the fact that some thread B sits between points 3 and 6, because
+thread A has B locked at that point (point 10, with M locked, is equivalent
+to point 3).
+
+If thread A is doing a normal_run then there is absolutely no problem to
+return from multiplex() without doing anything: it will be called again
+by the engine, until it CAN run (unless it shouldn't run anymore due to
+what thread B is doing with the task). Note that in this case thread B can't
+be doing a normal_run because that would have to be a different engine
+(a different thread means a different engine; any given engine should
+always run in the same thread), and when thread B reached point 2 with
+event == normal_run then engine == current_engine. Moreover, current_engine
+can only be changed between 8 and 9, which wasn't reached yet by thread B,
+so current_engine is still the engine of thread B. At the same time, if
+thread A reached point 2 (with event == normal_run) then also for that
+thread engine == current_engine, hence A would be running in the same
+engine as B but that means they would be the same thread and they are not.
+Not that this is relevant; it is enough to see that if thread runs with
+event == normal_run then it can be kicked out of multiplex() at point 2
+at random without consequences.
+
+If thread A is not doing a normal_run then it is doing an insert_abort
+or schedule_run (there can't be a thread B when it is doing an initial_run),
+which in both cases means that base_state == bs_multiplex.
+
+If thread A is doing an insert_abort then it called abort() and inside
+abort() it set 'is_waiting' because the task was idle. A task can not
+be idle when it is running and begin_loop() was already called, but
+wait() wasn't called yet, so that means that thread B must have been
+either before the begin_loop() below point 2 or it must have been already
+at the break; in multiplex_impl() leaving that function, after having
+called wait(), at the moment that thread A set mSubState.aborted.
+In the first case thread B then would set late_abort and execute the
+abort, so it is fine that thread A does nothing; while in the second
+case thread B is basically at point 5 while doing a normal_run (because
+it called wait()) and it will process the aborted flag in the critical
+area of point 7 (base_state will be set to bs_abort, current_engine
+will be set to nullptr and keep_looping will be set to false).
+
+Finally, if thread A is doing a schedule_run then all it wants (and
+would do if obtaining M would have succeeded) is run the code at
+point 8 and below. Since thread B is between 3 and 6 that thread will
+take care of that and it's ok for thread A to just exit.

@@ -245,6 +245,8 @@ class AIStatefulTask : public AIRefCount
     // to access this task.
     void abort();                               // Abort the task (unsuccessful finish).
 
+  private:
+    friend class AICondition;                   // Only AICondition::signal may call this function.
     // This is the only function that can be called by any thread at any moment.
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
     bool signalled(AICondition* condition);     // Guarantee at least one full run of multiplex() iff this task is still blocked after a call to wait(*condition).

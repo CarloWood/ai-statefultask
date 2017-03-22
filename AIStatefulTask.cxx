@@ -352,11 +352,37 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
     multiplex_state_type::rat state_r(mState);
     MonteCarloProbeFileState(copy_state(state_r), true, "In multiplex(), CA-mState", multiplex_before_loop, "multiplex_before_loop");
 
+    // This would be an almost impossible race condition.
+    if (AI_UNLIKELY(event == insert_abort && state_r->base_state != bs_multiplex))
+    {
+      Dout(dc::statefultask(mSMDebug), "Leaving because the task finished in the meantime [" << (void*)this << "]");
+      return;
+    }
+
     if (event == normal_run && engine != state_r->current_engine)
     {
       Dout(dc::statefultask(mSMDebug), "Leaving because current_engine isn't equal to calling engine [" << (void*)this << "]");
       return;
     }
+
+    // multiplex(schedule_run) is only called from signalled(condition) provided that
+    // mSubState.blocked equals condition which is never true when blocked is set to
+    // nullptr; blocked is set to nullptr upon a call to abort() or finish() which are
+    // the only two ways to leave the bs_multiplex state. And since blocked is only
+    // set by a call to wait(), which may only be called from multiplex_impl, we can
+    // be sure to be in the bs_multiplex state when multiplex(schedule_run) is called.
+    //
+    // multiplex(insert_abort) is only called while the task is still running (see
+    // abort()), that is, very shortly after releasing the lock on mState during which
+    // this was tested. In the extremely unlikely case that this changed in the meantime
+    // we already left this function in the above test.
+    //
+    // multiplex(normal_run) is only called from AIEngine::mainloop() for tasks
+    // in the engines queue (which are removed when current_engine stops being
+    // equal to that engine; and we return if the above test fails anyway). Hence,
+    // we get here only for tasks with a non-null current_engine, but for any base state.
+    ASSERT(event != initial_run || state_r->base_state == bs_reset);
+    ASSERT((event != schedule_run && event != insert_abort) || state_r->base_state == bs_multiplex);
 
     // If another thread is already running multiplex() then it will pick up
     // our need to run (by us having set need_run), so there is no need to run
@@ -410,9 +436,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
         Dout(dc::statefultask(mSMDebug), "Running state bs_multiplex / " << state_str_impl(run_state) << " [" << (void*)this << "]");
       else
         Dout(dc::statefultask(mSMDebug), "Running state " << state_str(state) << " [" << (void*)this << "]");
-#endif
 
-#ifdef DEBUG
       // This debug code checks that each task steps precisely through each of it's states correctly.
       if (state != bs_reset)
       {
@@ -671,7 +695,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
           // Add us to an engine if necessary.
           if (engine != state_w->current_engine)
           {
-            // Mark that we're want to run in this engine, and at the same time, that we're don't want to run in the previous one.
+            // Mark that we want to run in this engine, and at the same time, that we don't want to run in the previous one.
             state_w->current_engine = engine;
             // Actually add the task to the engine; engine can't be nullptr here: it can only be nullptr if mDefaultEngine is nullptr.
             engine->add(this);
@@ -1013,6 +1037,8 @@ bool AIStatefulTask::signalled(AICondition* condition)
 {
   MonteCarloProbe("Before signalled()");
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signalled(" << (void*)condition << ") [" << (void*)this << "]");
+  // It is not allowed to call this function with a nullptr.
+  ASSERT(condition);
   {
     sub_state_type::wat sub_state_w(mSubState);
     // Test if we are blocked or not.
@@ -1090,6 +1116,8 @@ void AIStatefulTask::finish()
     sub_state_type::wat sub_state_w(mSubState);
     // finish() should not be called when idle.
     ASSERT(!sub_state_w->idle());
+    // But reset blocked to stop subsequent calls to signalled from calling multiplex().
+    sub_state_w->blocked = nullptr;
     // Mark that we are finished.
     sub_state_w->finished = true;
   }
