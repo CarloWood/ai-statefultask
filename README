@@ -1,15 +1,17 @@
 This file describes the design specs of AIStatefulTask.
 
-The main idea behind a task (a class derived from AIStatefulTask)
-is it should be possible to understand what a task does by just
-looking at (the source code of) a single task at a time: a typical
-task will do certain things, in a certain order, and wait inbetween
-for subsequent information, or events, before it can continue.
-How it then continues might depend on that information or the
-particular event.
+The main idea behind a task (a class derived from AIStatefulTask) is:
 
-The main function of a task is it's multiplex_impl(state) function
-that roughly looks like:
+   It should be possible to understand what a task does
+   by just looking at (the source code of) a single task
+   at a time.
+   
+A typical task will do certain things, in a certain order, and wait
+inbetween for events (like other taks finishing) before it can continue
+with the next thing.
+
+The main function of a task is its `multiplex_impl(state)' function that
+roughly looks like this:
 
 void MyTask::multiplex_impl(state_type state)
 {
@@ -25,22 +27,59 @@ void MyTask::multiplex_impl(state_type state)
   }
 }
 
-A task is only loosely coupled to threads: theoretically each
-time the execution of the task is suspended (a break; leaving
-the multiplex_impl function) it may switch threads before
-continuing its execution.
+where usually the task will progress mostly towards higher states over
+time (ie, first state1, then state2, etc), so the above code reads
+intuitively simple: top down. However, also in most cases, the task
+will go idle for some time between execution of state1 and state2
+because it has to wait for some event (triggered by the code in state1).
+A simple example could be that in state1 we start a timer, and then continue in state2 once that timer has
+expired.
 
-This is not important to the task itself, as only one thread
-at a time will be executing a given task, it can be viewed as
-single threaded as long as the data that it deals with is
-only handled by the task (object). If data is also accessed outside
-the task then it should be protected against concurrent access
-as usual, just as it should have been when the task would have
-been executed by a single thread.
+A task is only loosely coupled to threads: theoretically each time the
+execution of the task is suspended (a break; leaving the multiplex_impl
+function) it may switch threads before continuing its execution.
+
+This is not important to the task itself, as only one thread at a time
+will be executing a given task, it can be viewed as single threaded as
+long as the data that it deals with is only handled by the task
+(object). If data is also accessed outside the task then it should be
+protected against concurrent access as usual, just as it should have
+been when the task would have been executed by a single thread.
+
+Note that the only way to change states is by a call to set_state() from
+within multiplex_impl(). And a task will keep running until either
+finish() (or abort()) is called.
+
+So, to progress from state1 to state3 and then finish, one could write
+the following:
+
+void MyTask::initialize_impl()
+{
+  set_state(state1);
+}
+
+void MyTask::multiplex_impl(state_type state)
+{
+  switch(state)
+  {
+    case state1:
+      // ... code here
+      set_state(state2);
+      break;
+    case state2:
+      // ... code here
+      set_state(state3);
+      break;
+    case state3:
+      // ... code here
+      finish();
+      break;
+  }
+}
 
 
-(Non-)executing threads
------------------------
+Tasks and threads
+-----------------
 
 A task has two major modes that play an important role:
 
@@ -48,49 +87,47 @@ A task has two major modes that play an important role:
 2) The task is "not executing".
 
 A task is "executing" when some thread has locked the
-AIStatefulTask::mMultiplexMutex mutex (which is done
-while executing the multiplex_impl function). The thread
-that did this might be executing multiple tasks at
-the same time: it is possible and allowed to run, or
-activate a running task, from within a task, which
-in turn might start executing right away.
+AIStatefulTask::mMultiplexMutex mutex (which is done while executing the
+multiplex_impl function, see also README.multiplex for an indepth
+description of when this mutex is locked).
 
-From the perspective of a thread, it is important
-to know if it is the one that is executing a task,
-or that some other thread is. We call the thread
-that obtained the mutex the "executing thread"
-and all other threads "non-executing threads".
+The thread that locked mMultiplexMutex might be executing multiple tasks
+at the same time: it is possible and allowed to run a task, or activate
+a running task, from within a task, which in turn might start executing
+right away.
 
-Hence, if a task is not executing then ALL threads
-are non-executing threads.
+From the perspective of a thread, it is important to know if it is the
+one that is executing a task, or that some other thread is. We call the
+thread that obtained the mutex the "executing thread" and all other
+threads "non-executing threads".
 
-If a task is executing then one thread is the
-executing thread, and all other threads are
-the non-executing threads.
+Hence, if a task is not executing then ALL threads are non-executing
+threads.
+
+If a task is executing then one thread is the executing thread, and all
+other threads are the non-executing threads.
 
 Control functions
 -----------------
 
-A running task can be controlled by calling member
-functions of the AIStatefulTask base class. There are
-ten such member functions. One member function may be
-called from both, executing and non-executing threads:
+A running task can be controlled by calling member functions of the
+AIStatefulTask base class. There are ten such member functions. One
+member function may be called from both, executing and non-executing
+threads:
 
 1) signalled(condition)
 
-This function is not public though; it may only be
-called from AICondition::signal(); but that function
-may be called from any thread at any time ;).
+This function is not public though; it may only be called from
+AICondition::signal(); but that may be called from any thread at any
+time.
 
-One function may only be called by a child task
-(and therefore by any thread), or from multiplex_impl
-by the executing-thread:
+One control function may only be called by a child task (and therefore
+by any thread), or from multiplex_impl by the executing-thread:
 
 2) abort()
 
-The rest may only be called by the executing
-thread (aka, from within multiplex_impl()).
-These functions are therefore protected:
+The rest may only be called by the executing thread (aka, from within
+multiplex_impl()). These functions are therefore protected:
 
 3) set_state(new_state)
 4) wait(condition)
@@ -101,57 +138,60 @@ These functions are therefore protected:
 9) yield_ms(ms)
 10) yield_if_not(engine)
 
-A task executes code that belongs to a given "state"
-and (possibly) keeps doing so (executing that same state)
-until any of the protected functions or abort() is called.
+A task executes code that belongs to a given "state" and (possibly)
+keeps doing so (executing that same state) until one of the control
+functions (except signalled()) is called.
 
-Hence, every state MUST (eventually, and rather sooner than
-later) call one of the protected functions, or a task could
-go into a tight loop using 100% cpu.
+Hence, every state MUST (eventually, and rather sooner than later) call
+one of the control functions, or a task could go into a tight loop using
+100% CPU.
 
 Moreover, an executing thread that calls abort(), wait(condition),
-finish(), yield_if_not() when that returned true, or any of
-the other yield functions, should immediately stop executing and
-leave multiplex_impl() (aka, those functions should be followed
-by a break).
+finish(), yield_if_not() when that returned true, or any of the other
+yield functions, should immediately stop executing and leave
+multiplex_impl() (aka, those functions should be followed by a break).
 
-Since the effect of any of the yield functions, though yield_if_not
-only when that returns true, is basically the same, we can consider
-just 'yield' for the remainder of this analysis. If yield_if_not
-returns false however, then nothing changed and we can simply
-continue to execute code in the task, now having the guarantee
-that we run in a specific engine.
+Since the effect of any of the yield functions, though yield_if_not only
+when that returns true, is basically the same, we can consider just
+'yield' for the remainder of this analysis. If yield_if_not returns
+false however, then nothing changed and we can simply continue to
+execute code in the task, now having the guarantee that we run in a
+specific engine.
 
-The following details the effect that a call to each member
-function should have, starting with the protected member
-functions:
+The following details the effect that a call to each member function
+should have, starting with the protected member functions:
 
 set_state
 ---------
 
-A call to set_state() has no effect, except that the NEXT
-invokation of multiplex_impl will be with the state that
-was passed to the LAST call to set_state().
+A call to set_state() has no immediate effect, except that the NEXT
+invokation of multiplex_impl will be with the state that was passed to
+the LAST call to set_state().
 
 abort and finish
 ----------------
 
-A call to abort() and finish() will cause a task
-to not call multiplex_impl() again at all after leaving
-it (except when finish_impl() calls run() again, in
-which case the task is restarted from the beginning).
+A call to abort() and finish() will cause a task to not call
+multiplex_impl() again at all after leaving it (except when
+finish_impl() calls run() again, in which case the task is restarted
+from the beginning).
 
 yield
 -----
 
-A call to yield() has basically no effect on a task,
-except that its execution is delayed a bit. Most notably,
-other running tasks will get the chance to execute
-before this task is continued. Note that if a state
-calls yield() without calling first set_state() then this
-might cause 100% CPU usage despite the call to yield()
-because the task will rapidly execute again and then
-call yield() over and over.
+A call to yield() has basically no effect on a task, except that its
+execution is delayed a bit: this causes the task to return to the
+AIEngine mainloop code. That way other running tasks (in that enigine)
+will get the chance to execute before this task is continued.
+
+Note that if a state calls yield() without calling first set_state()
+then this might cause 100% CPU usage despite the call to yield() because
+the task will rapidly execute again and then call yield() over and over:
+an engine keep iterating over its tasks until all tasks finished, with
+the exception of gMainThreadEngine that will return from
+AIEngine::mainloop() regardless after at least AIEngine::sMaxDuration
+milliseconds have passed (which can be set by calling
+gMainThreadEngine.setMaxDuration(milliseconds)).
 
 wait
 ----
@@ -165,29 +205,37 @@ call wait(condition) again; for example:
   case WaitingForChildTask:
     if (!child_task)
     {
-      wait(condition);
+      wait(wait_for_child_task);
       break;
     }
     set_state(ChildFinished);
     break;
 
-As in this code it doesn't matter if the task wakes up
-"randomly"; it will not do anything until child_task returns
-true.
+As in this code it doesn't matter if the task wakes up "randomly"; it
+will not do anything until child_task returns true. Always assume that
+a task that called wait() can wake up spuriously.
+Here, wait_for_child_task must be an AICondition constructed with
+a pointer to the executing task (the one that calls wait).
 
-However, it should be taken care of that whenever child_task
-might have changed (from false to true) due to some change,
-then condition.signal() must be called.
+It must be taken care of that whenever child_task might have changed
+(from false to true) due to some change, that condition.signal() is
+called. So, in the above example, whenever child_task (might have)
+changed to true, call wait_for_child_task.signal().
 
 Finally we'll describe the effect of calling condition.signal()
 in detail:
 
-When condition.signal() is called, the condition is marked as
-non-idle and signalled(condition) is called on the corresponding
+When condition1.signal() is called, the condition is marked as
+non-idle and signalled(condition1) is called on the corresponding
 task. If that task is waiting on that condition then it is woken
 up. If it is not waiting then it is guaranteed that the task will
-do at least one re-entry of multiplex_impl (even if wait(condition)
-is called before it leaves the current loop).
+do at least one re-entry of multiplex_impl even if wait(condition1)
+is called before it leaves the current loop. However, if the task
+did call, or calls, wait(some_other_condition) then the call to
+signalled(condition1) has no effect; this allows one to abandon
+a waiting condition and ignore late signals that it might produce
+by simply stopping to call wait() on that condition: a condition
+should not be reused for another boolean expression.
 
 -----------------------------------------------------------------------------
 
