@@ -36,13 +36,6 @@
 
 #pragma once
 
-#ifdef CW_DEBUG_MONTECARLO
-
-#define MonteCarloProbeFileState(task_state, record_state, ...) do { probe(__FILE__, __LINE__, record_state, task_state, __VA_ARGS__); } while(0)
-#else  // CW_DEBUG_MONTECARLO
-#define MonteCarloProbeFileState(task_state, record_state, ...) do { } while(0)
-#endif // CW_DEBUG_MONTECARLO
-
 #include "utils/AIRefCount.h"
 #include "threadsafe/aithreadsafe.h"
 #include "threadsafe/AIMutex.h"
@@ -99,33 +92,7 @@ class AIStatefulTask : public AIRefCount
       bool aborted;
       bool finished;
       inline bool idle() const;
-#ifdef CW_DEBUG_MONTECARLO
-      // In order to have reproducible results (otherwise these are initially uninitialized).
-      sub_state_st() : run_state(-1), blocked(nullptr), reset(false), need_run(false), wait_called(false), aborted(false), finished(false) { }
-#endif
     };
-
-#ifdef CW_DEBUG_MONTECARLO
-  public:
-    struct task_state_st : public multiplex_state_st, public sub_state_st {
-      bool blocked;                     // True iff sub_state_st::blocked is non-null.
-      char const* base_state_str;       // Human readable version of multiplex_state_st::base_state.
-      char const* run_state_str;        // Human readable version of sub_state_st::run_state.
-      bool reset_m_state_locked_at_end_of_probe;
-      bool reset_m_sub_state_locked_at_end_of_probe;
-      int inside_probe_impl;            // Count of number of recursions into probe_impl().
-
-      bool equivalent(task_state_st const& task_state) const
-      {
-        return base_state == task_state.base_state &&
-               run_state == task_state.run_state &&
-               blocked == task_state.blocked &&
-               reset == task_state.reset &&
-               aborted == task_state.aborted &&
-               finished == task_state.finished;
-      }
-    };
-#endif
 
   private:
     // Base state.
@@ -183,12 +150,6 @@ class AIStatefulTask : public AIRefCount
   protected:
     bool mSMDebug;                      // Print debug output only when true.
 #endif
-#ifdef CW_DEBUG_MONTECARLO
-  protected:
-    int m_inside_probe_impl;
-    mutable multiplex_state_type::crat const* m_state_locked;
-    mutable sub_state_type::crat const* m_sub_state_locked;
-#endif
   private:
     duration_type mDuration;            // Total time spent running in the main thread.
 
@@ -200,9 +161,6 @@ class AIStatefulTask : public AIRefCount
 #endif
 #ifdef CWDEBUG
     mSMDebug(debug),
-#endif
-#ifdef CW_DEBUG_MONTECARLO
-    m_inside_probe_impl(0), m_state_locked(nullptr), m_sub_state_locked(nullptr),
 #endif
     mDuration(duration_type::zero()) { }
 
@@ -285,50 +243,6 @@ class AIStatefulTask : public AIRefCount
     // Return true if this thread is executing this task right now (aka, we're inside multiplex() somewhere).
     bool executing() const { return mMultiplexMutex.self_locked(); }
 
-#ifdef CW_DEBUG_MONTECARLO
-    task_state_st do_copy_state(multiplex_state_type::crat const& state_r, bool reset_m_state_locked_at_end_of_probe,
-                                sub_state_type::crat const& sub_state_r, bool reset_m_sub_state_locked_at_end_of_probe) const;
-    task_state_st copy_state(multiplex_state_type::crat const& state_r, sub_state_type::crat const& sub_state_r) const
-    {
-      ASSERT(!m_sub_state_locked);
-      ASSERT(!m_state_locked || m_state_locked == &state_r);
-      bool m_state_locked_was_set = m_state_locked;
-      m_state_locked = &state_r;
-      m_sub_state_locked = &sub_state_r;
-      return do_copy_state(state_r, !m_state_locked_was_set, sub_state_r, true);
-    }
-    task_state_st copy_state(multiplex_state_type::crat const& state_r) const
-    {
-      ASSERT(!m_state_locked && !m_sub_state_locked);
-      m_state_locked = &state_r;
-      return do_copy_state(state_r, true, sub_state_type::crat(mSubState), true);
-    }
-    task_state_st copy_state() const
-    {
-      if (m_sub_state_locked)
-        return do_copy_state(*m_state_locked, false, *m_sub_state_locked, false);
-      else if (m_state_locked)
-        return do_copy_state(*m_state_locked, false, sub_state_type::crat(mSubState), true);
-      else
-      {
-        // Make sure mState is locked first.
-        multiplex_state_type::crat state_r(mState);
-        return do_copy_state(state_r, true, sub_state_type::crat(mSubState), true);
-      }
-    }
-    void probe(char const* file, int line, bool record_state, task_state_st state, char const* description,
-        int s1 = -1, char const* s1_str = nullptr, int s2 = -1, char const* s2_str = nullptr, int s3 = -1, char const* s3_str = nullptr)
-        {
-          ++m_inside_probe_impl;
-          probe_impl(file, line, record_state, state, description, s1, s1_str, s2, s2_str, s3, s3_str);
-          --m_inside_probe_impl;
-          if (state.reset_m_state_locked_at_end_of_probe)
-            m_state_locked = nullptr;
-          if (state.reset_m_sub_state_locked_at_end_of_probe)
-            m_sub_state_locked = nullptr;
-        }
-#endif
-
     // Return stringified state, for debugging purposes.
     static char const* state_str(base_state_type state);
 #ifdef CWDEBUG
@@ -345,9 +259,6 @@ class AIStatefulTask : public AIRefCount
     virtual void finish_impl() { }
     virtual char const* state_str_impl(state_type run_state) const = 0;
     virtual void force_killed();                // Called from AIEngine::flush().
-#ifdef CW_DEBUG_MONTECARLO
-    virtual void probe_impl(char const* file, int line, bool record_state, task_state_st state, char const* description, int s1, char const* s1_str, int s2, char const* s2_str, int s3, char const* s3_str) = 0;
-#endif
 
   private:
     void reset();                               // Called from run() to (re)initialize a (re)start.

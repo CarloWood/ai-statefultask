@@ -79,21 +79,13 @@ void AIEngine::mainloop()
     {
       clock_type::time_point start = clock_type::now();
       if (!stateful_task.sleep(start))
-      {
-#ifdef CW_DEBUG_MONTECARLO
-        stateful_task.probe("AIEngine.cxx", __LINE__, true, stateful_task.copy_state(), "Main thread / mainloop");
-#endif
         stateful_task.multiplex(AIStatefulTask::normal_run, this);
-      }
       clock_type::duration delta = clock_type::now() - start;
       stateful_task.add(delta);
       total_duration += delta;
     }
     else
     {
-#ifdef CW_DEBUG_MONTECARLO
-      stateful_task.probe("AIEngine.cxx", __LINE__, true, stateful_task.copy_state(), "Non-main thread / mainloop");
-#endif
       stateful_task.multiplex(AIStatefulTask::normal_run, this);
     }
 
