@@ -734,7 +734,7 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
 void AIStatefulTask::run(AIStatefulTask* parent, idle_mask_type condition, on_abort_st on_abort, AIEngine* default_engine)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(" <<
-      (void*)parent << ", " << std::hex << condition << std::dec <<
+      (void*)parent << ", condition = " << std::hex << condition << std::dec <<
       ", on_abort = " << ((on_abort == abort_parent) ? "abort_parent" : (on_abort == signal_parent) ? "signal_parent" : "do_nothing") <<
       ", default_engine = " << (default_engine ? default_engine->name() : "nullptr") << ") [" << (void*)this << "]");
 
@@ -899,6 +899,7 @@ void AIStatefulTask::reset()
     sub_state_w->reset = true;
     // We're not waiting for a condition.
     sub_state_w->idle = 0;
+    sub_state_w->not_idle = ~sub_state_w->idle;
     // Keep running till we reach at least bs_multiplex.
     sub_state_w->need_run = true;
   }
