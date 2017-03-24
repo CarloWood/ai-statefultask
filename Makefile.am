@@ -11,8 +11,6 @@ libstatefultask_la_SOURCES = \
 	AIStatefulTaskThread.h \
 	AITimer.cxx \
 	AITimer.h \
-	AICondition.cxx \
-	AICondition.h \
 	AIAuxiliaryThread.h \
 	AIAuxiliaryThread.cxx \
 	AIStatefulTaskMutex.h

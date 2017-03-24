@@ -54,6 +54,7 @@ class AIStatefulTask : public AIRefCount
 {
   public:
     typedef uint32_t state_type;        //!< The type of run_state.
+    typedef uint32_t idle_mask_type;    //!< The type of not_idle, skip_idle and idle.
 
   protected:
     // The type of event that causes multiplex() to be called.
@@ -84,14 +85,15 @@ class AIStatefulTask : public AIRefCount
       multiplex_state_st() : base_state(bs_reset), current_engine(nullptr) { }
     };
     struct sub_state_st {
+      idle_mask_type not_idle;          //!< Each bit represents not being idle for that bit mask.
+      idle_mask_type skip_idle;         //!< Each bit represents having been signalled ahead of the call to wait() for that bit mask.
+      idle_mask_type idle;              //!< A the idle state at the moment of the last call to wait().
       state_type run_state;
-      AICondition* blocked;
       bool reset;
       bool need_run;
       bool wait_called;
       bool aborted;
       bool finished;
-      inline bool idle() const;
     };
 
   private:
@@ -118,7 +120,7 @@ class AIStatefulTask : public AIRefCount
     // Callback facilities.
     // From within an other stateful task:
     boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
-    AICondition* mParentCondition;                      // The state at which the parent should continue upon a successful finish.
+    idle_mask_type mParentCondition;                    // The condition (bit) that the parent should be signalled with upon a successful finish.
     on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
     // From outside a stateful task:
     struct callback_type {
@@ -179,8 +181,8 @@ class AIStatefulTask : public AIRefCount
   public:
     // These functions may be called directly after creation, or from within finish_impl(), or from the call back function.
     void run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine = &gMainThreadEngine);
-    void run(AIStatefulTask* parent, AICondition* condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
-    void run(AIEngine* default_engine = nullptr) { run(nullptr, nullptr, do_nothing, default_engine); }
+    void run(AIStatefulTask* parent, idle_mask_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
+    void run(AIEngine* default_engine = nullptr) { run(nullptr, 0, do_nothing, default_engine); }
 
     // This function may only be called from the call back function (and cancels a call to run() from finish_impl()).
     void kill();
@@ -189,7 +191,7 @@ class AIStatefulTask : public AIRefCount
     // This function can be called from initialize_impl() and multiplex_impl() (both called from within multiplex()).
     void set_state(state_type new_state);       // Run this state the NEXT loop.
     // These functions can only be called from within multiplex_impl().
-    void wait(AICondition& condition);          // Block if condition wasn't signalled twice or more since the last call to wait().
+    void wait(idle_mask_type idle_bit);         // Block if idle_bit wasn't signalled twice or more since the last call to wait(idle_bit).
     void finish();                              // Mark that the task finished and schedule the call back.
     void yield();                               // Yield to give CPU to other tasks, but do not block.
     void yield(AIEngine* engine);               // Yield to give CPU to other tasks, but do not block. Continue running from engine 'engine'.
@@ -203,11 +205,10 @@ class AIStatefulTask : public AIRefCount
     // to access this task.
     void abort();                               // Abort the task (unsuccessful finish).
 
-  private:
-    friend class AICondition;                   // Only AICondition::signal may call this function.
     // This is the only function that can be called by any thread at any moment.
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
-    bool signalled(AICondition* condition);     // Guarantee at least one full run of multiplex() iff this task is still blocked after a call to wait(*condition).
+    bool signal(idle_mask_type idle_mask);      // Guarantee at least one full run of multiplex() iff this task is still blocked after
+                                                // the last call to wait(idle_bit) where (idle_bit & idle_mask) != 0.
                                                 // Returns false if it already unblocked or is waiting on another condition now.
 
   public:
