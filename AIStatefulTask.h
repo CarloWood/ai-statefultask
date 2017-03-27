@@ -42,6 +42,7 @@
 #include "debug.h"
 #include <list>
 #include <chrono>
+#include <functional>
 #include <boost/signals2.hpp>
 
 class AICondition;
@@ -50,11 +51,13 @@ class AIEngine;
 extern AIEngine gMainThreadEngine;
 extern AIEngine gAuxiliaryThreadEngine;
 
+typedef std::function<bool()> AIWaitConditionFunc;
+
 class AIStatefulTask : public AIRefCount
 {
   public:
     typedef uint32_t state_type;        //!< The type of run_state.
-    typedef uint32_t idle_mask_type;    //!< The type of not_idle, skip_idle and idle.
+    typedef uint32_t condition_type;    //!< The type of the busy, skip_wait and idle bit masks.
 
   protected:
     // The type of event that causes multiplex() to be called.
@@ -82,12 +85,14 @@ class AIStatefulTask : public AIRefCount
     struct multiplex_state_st {
       base_state_type base_state;
       AIEngine* current_engine;         // Current engine.
-      multiplex_state_st() : base_state(bs_reset), current_engine(nullptr) { }
+      AIWaitConditionFunc wait_condition;
+      condition_type conditions;
+      multiplex_state_st() : base_state(bs_reset), current_engine(nullptr), wait_condition(nullptr) { }
     };
     struct sub_state_st {
-      idle_mask_type not_idle;          //!< Each bit represents not being idle for that bit mask.
-      idle_mask_type skip_idle;         //!< Each bit represents having been signalled ahead of the call to wait() for that bit mask.
-      idle_mask_type idle;              //!< A the idle state at the moment of the last call to wait().
+      condition_type busy;              //!< Each bit represents being not-idle for that condition-bit: wait(condition_bit) was never called or signal(condition_bit) was called last.
+      condition_type skip_wait;         //!< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit: signal(condition_bit) was called while already busy.
+      condition_type idle;              //!< A the idle state at the end of the last call to wait(conditions) (~busy & conditions).
       state_type run_state;
       bool reset;
       bool need_run;
@@ -120,7 +125,7 @@ class AIStatefulTask : public AIRefCount
     // Callback facilities.
     // From within an other stateful task:
     boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
-    idle_mask_type mParentCondition;                    // The condition (bit) that the parent should be signalled with upon a successful finish.
+    condition_type mParentCondition;                    // The condition (bit) that the parent should be signalled with upon a successful finish.
     on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
     // From outside a stateful task:
     struct callback_type {
@@ -181,7 +186,7 @@ class AIStatefulTask : public AIRefCount
   public:
     // These functions may be called directly after creation, or from within finish_impl(), or from the call back function.
     void run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine = &gMainThreadEngine);
-    void run(AIStatefulTask* parent, idle_mask_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
+    void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
     void run(AIEngine* default_engine = nullptr) { run(nullptr, 0, do_nothing, default_engine); }
 
     // This function may only be called from the call back function (and cancels a call to run() from finish_impl()).
@@ -191,7 +196,11 @@ class AIStatefulTask : public AIRefCount
     // This function can be called from initialize_impl() and multiplex_impl() (both called from within multiplex()).
     void set_state(state_type new_state);       // Run this state the NEXT loop.
     // These functions can only be called from within multiplex_impl().
-    void wait(idle_mask_type idle_bit);         // Block if idle_bit wasn't signalled twice or more since the last call to wait(idle_bit).
+    void wait(condition_type conditions);       // Go idle if non of the bits of conditions were signalled twice or more since the last call to wait(that_bit).
+                                                // The task will continue whenever signal(condition) is called where conditions & condition != 0.
+    void wait(AIWaitConditionFunc const& wait_condition, condition_type conditions);   // Block until the wait_condition returns true.
+                                                // Whenever something changed that might cause wait_condition to return true, signal(condition) must be called.
+    void wait(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state) { set_state(new_state); wait(wait_condition, conditions); }
     void finish();                              // Mark that the task finished and schedule the call back.
     void yield();                               // Yield to give CPU to other tasks, but do not block.
     void yield(AIEngine* engine);               // Yield to give CPU to other tasks, but do not block. Continue running from engine 'engine'.
@@ -207,9 +216,9 @@ class AIStatefulTask : public AIRefCount
 
     // This is the only function that can be called by any thread at any moment.
     // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
-    bool signal(idle_mask_type idle_mask);      // Guarantee at least one full run of multiplex() iff this task is still blocked after
-                                                // the last call to wait(idle_bit) where (idle_bit & idle_mask) != 0.
-                                                // Returns false if it already unblocked or is waiting on another condition now.
+    bool signal(condition_type condition);      // Guarantee at least one full run of multiplex() iff this task is still blocked since
+                                                // the last call to wait(conditions) where (conditions & condition) != 0.
+                                                // Returns false if it already unblocked or is waiting on (a) different condition(s) now.
 
   public:
     // Accessors.

@@ -67,7 +67,7 @@
 //       |         |
 //   Initialize    |    Calls initialize_impl().
 //       |         |
-//       | (idle)  |    Idle until signalled() is called.
+//       | (idle)  |    Idle until signal() is called.
 //       |  |  ^   |
 //       v  v  |   |
 //   .-----------. |
@@ -213,9 +213,9 @@ hello_world->run(...);          // One of the run() functions.
 //   the call back passed to run() will be called.
 // Upon return from the call back, the task object might be destructed
 //   (see below).
-// If wait(condition) was called, and the condition.running() returns false,
-//   then multiplex_impl() will not be called again until condition.signal()
-//   is called from outside.
+// If wait(condition) was called, and there was only one call to signal(condition)
+//   since the last call to wait(condition), then multiplex_impl() will not be
+//   called again until signal(condition) is called from outside.
 //
 // If the call back function does not call run(), then the task is
 //   deleted when the last boost::intrusive_ptr<> reference is deleted.
@@ -244,8 +244,8 @@ hello_world->run(...);          // One of the run() functions.
 // following functions can be called:
 //
 // - set_state(new_state)       --> Force the state to new_state. This voids any previous call to set_state().
-// - wait(condition)            --> Go idle (do nothing until signalled() is called), however if condition.running()
-//                                  returns true, then multiplex_impl shall be reentered immediately upon return.
+// - wait(condition)            --> Go idle (do nothing until signal(condition) is called), however if signal(condition)
+//                                  was already called then multiplex_impl will be reentered immediately.
 // - finish()                   --> Disables any scheduled runs.
 //                              --> finish_impl --> [optional] kill()
 //                              --> call back
@@ -262,7 +262,7 @@ hello_world->run(...);          // One of the run() functions.
 //
 // while the following functions may be called from anywhere (and any thread):
 //
-// - signalled(condition)       --> if 'condition' matches the condition passed to the last call to wait() then schedule a run.
+// - signal(condition)          --> if 'condition' matches the condition passed to the last call to wait() then schedule a run.
 //
 // In the above "scheduling a run" means calling multiplex_impl(), but the same holds for any *_impl()
 // and the call back: Whenever one of those have to be called, thread_safe_impl() is called to
@@ -314,6 +314,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
   base_state_type state;
   state_type run_state;
+  bool waiting;
 
   // Critical area of mState.
   {
@@ -332,8 +333,8 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       return;
     }
 
-    // multiplex(schedule_run) is only called from signal(idle_mask) provided that
-    // mSubState.idle & idle_mask is non-zero, which is never true when idle is set to
+    // multiplex(schedule_run) is only called from signal(condition) provided that
+    // mSubState.idle & condition is non-zero, which is never true when idle is set to
     // zero; idle is set to zero upon a call to abort() or finish() which are
     // the only two ways to leave the bs_multiplex state. And since idle is only
     // set by a call to wait(), which may only be called from multiplex_impl, we can
@@ -380,6 +381,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 
     // We're at the beginning of multiplex, about to actually run it.
     // Make a copy of the states.
+    waiting = state_r->wait_condition != nullptr;
     run_state = begin_loop((state = state_r->base_state));
   }
   // End of critical area of mState.
@@ -482,7 +484,19 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
           break;
         case bs_multiplex:
           ASSERT(!mDebugAborted);
-          multiplex_impl(run_state);
+          if (!waiting)
+            multiplex_impl(run_state);
+          else
+          {
+            multiplex_state_type::wat state_w(mState);
+            if (!state_w->wait_condition())
+              wait(state_w->conditions);
+            else
+            {
+              state_w->wait_condition = nullptr;
+              sub_state_type::wat(mSubState)->idle = 0;
+            }
+          }
           break;
         case bs_abort:
           abort_impl();
@@ -571,7 +585,8 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
                 ASSERT(!(need_new_run && !mYieldEngine && sub_state_r->run_state == run_state &&
                        !(sub_state_r->aborted ||        // abort was called.
                          sub_state_r->finished ||       // finish was called.
-                         sub_state_r->wait_called)));   // wait was called.
+                         sub_state_r->wait_called ||    // wait was called.
+                         waiting)));                    // wait_condition just became true.
               }
               break;
             case bs_abort:
@@ -643,6 +658,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       if (keep_looping)
       {
         // Start a new loop.
+        waiting = state_w->wait_condition != nullptr;
         run_state = begin_loop((state = state_w->base_state));
         event = normal_run;
       }
@@ -731,7 +747,7 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state
   return sub_state_w->run_state;
 }
 
-void AIStatefulTask::run(AIStatefulTask* parent, idle_mask_type condition, on_abort_st on_abort, AIEngine* default_engine)
+void AIStatefulTask::run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort, AIEngine* default_engine)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(" <<
       (void*)parent << ", condition = " << std::hex << condition << std::dec <<
@@ -899,7 +915,7 @@ void AIStatefulTask::reset()
     sub_state_w->reset = true;
     // We're not waiting for a condition.
     sub_state_w->idle = 0;
-    sub_state_w->not_idle = ~sub_state_w->idle;
+    sub_state_w->busy = ~sub_state_w->idle;
     // Keep running till we reach at least bs_multiplex.
     sub_state_w->need_run = true;
   }
@@ -935,9 +951,9 @@ void AIStatefulTask::set_state(state_type new_state)
   }
 }
 
-void AIStatefulTask::wait(idle_mask_type idle_bit)
+void AIStatefulTask::wait(condition_type conditions)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << std::hex << idle_bit << std::dec << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << std::hex << conditions << std::dec << ") [" << (void*)this << "]");
 #ifdef DEBUG
   {
     multiplex_state_type::rat state_r(mState);
@@ -958,13 +974,13 @@ void AIStatefulTask::wait(idle_mask_type idle_bit)
 
     // Determine if we must go idle.
 
-    // Copy bits from m_skip_idle to m_not_idle.
-    sub_state_w->not_idle &= ~idle_bit;     				// Reset the masked bit.
-    sub_state_w->not_idle |= sub_state_w->skip_idle & idle_bit;         // Then set the masked bit if it is set in m_skip_idle.
-    // Reset the masked bit in m_skip_idle.
-    sub_state_w->skip_idle &= ~idle_bit;
-    // Mark that we are waiting for the condition corresponding to idle_bit.
-    sub_state_w->idle = ~sub_state_w->not_idle & idle_bit;
+    // Copy bits from skip_wait to busy.
+    sub_state_w->busy &= ~conditions;     				// Reset the masked bit.
+    sub_state_w->busy |= sub_state_w->skip_wait & conditions;           // Then set the masked bit if it is set in skip_wait.
+    // Reset the masked bit in skip_wait.
+    sub_state_w->skip_wait &= ~conditions;
+    // Mark that we are waiting for the condition corresponding to conditions.
+    sub_state_w->idle = ~sub_state_w->busy & conditions;
 
     // Not sleeping (anymore).
     mSleep = 0;
@@ -975,23 +991,39 @@ void AIStatefulTask::wait(idle_mask_type idle_bit)
   }
 }
 
-// This function causes the task to do at least one full run of multiplex(), provided we are
-// currently idle as a result of a call to wait() with the same idle_bit.
-// Returns true if the stateful task was unblocked, false if it was already unblocked.
-bool AIStatefulTask::signal(idle_mask_type idle_mask)
+// Go idle until wait_condition() becomes true. For this to work, signal(condition) must be called
+// each time that something changed that might cause wait_condition() to become true, most notably
+// signal(condition) must be called at least once after wait_condition() has become true.
+void AIStatefulTask::wait(std::function<bool()> const& wait_condition, condition_type conditions)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signal(" << std::hex << idle_mask << std::dec << ") [" << (void*)this << "]");
+  if (!wait_condition())
+  {
+    {
+      multiplex_state_type::wat state_w(mState);
+      state_w->wait_condition = wait_condition;
+      state_w->conditions = conditions;
+    }
+    wait(conditions);
+  }
+}
+
+// This function causes the task to do at least one full run of multiplex(), provided we are
+// currently idle as a result of a call to wait() with the same condition.
+// Returns true if the stateful task was unblocked, false if it was already unblocked.
+bool AIStatefulTask::signal(condition_type condition)
+{
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signal(" << std::hex << condition << std::dec << ") [" << (void*)this << "]");
   // It is not allowed to call this function with an empty mask.
-  ASSERT(idle_mask);
+  ASSERT(condition);
   {
     sub_state_type::wat sub_state_w(mSubState);
-    // Copy bits from not_idle to skip_idle.
-    sub_state_w->skip_idle &= ~idle_mask;                		// Reset the masked bits.
-    sub_state_w->skip_idle |= sub_state_w->not_idle & idle_mask;	// Then set masked bits that are set in m_not_idle.
-    // Set the masked bits in not_idle;
-    sub_state_w->not_idle |= idle_mask;
+    // Copy bits from busy to skip_wait.
+    sub_state_w->skip_wait &= ~condition;                       // Reset the masked bits.
+    sub_state_w->skip_wait |= sub_state_w->busy & condition;	// Then set masked bits that are set in busy.
+    // Set the masked bits in busy;
+    sub_state_w->busy |= condition;
     // Test if we are idle or not.
-    if (!(sub_state_w->idle & idle_mask))
+    if (!(sub_state_w->idle & condition))
     {
       Dout(dc::statefultask(mSMDebug), "Ignoring because idle == " << std::hex << sub_state_w->idle << std::dec);
       return false;
