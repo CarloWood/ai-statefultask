@@ -143,6 +143,9 @@ class HelloWorld : public AIStatefulTask {
   protected:
     // The following virtual functions must be implemented:
 
+    // Return human readable string for run_state.
+    /*virtual*/ char const* state_str_impl(state_type run_state) const;
+
     // Handle initializing the object.
     /*virtual*/ void initialize_impl();
 
@@ -154,9 +157,6 @@ class HelloWorld : public AIStatefulTask {
 
     // Handle cleaning up from initialization (or post abort) state (the default AIStatefulTask::finish_impl() does nothing).
     /*virtual*/ void finish_impl();
-
-    // Return human readable string for run_state.
-    /*virtual*/ char const* state_str_impl(state_type run_state) const;
 };
 
 // In the .cpp file:
@@ -178,6 +178,30 @@ char const* HelloWorld::state_str_impl(state_type run_state) const
 #endif
 }
 
+void HelloWorld::initialize_impl()
+{
+  set_state(direct_base_type::max_state);
+}
+
+void HelloWorld::multiplex_impl(state_type run_state)
+{
+  switch(run_state)
+  {
+    case HelloWorld_start:
+      break;
+    case HelloWorld_done:
+      finish();
+      break;
+  }
+}
+
+void HelloWorld::abort_impl()
+{
+}
+
+void HelloWorld::finish_impl()
+{
+}
 #endif // EXAMPLE_CODE
 
 
@@ -867,6 +891,16 @@ void AIStatefulTask::callback()
     // Not restarted by callback. Allow run() to be called later on.
     mParent = nullptr;
   }
+}
+
+void AIStatefulTask::abort_impl()
+{
+  Dout(dc::statefultask, "Calling default abort_impl() [" << (void*)this << "]");
+}
+
+void AIStatefulTask::finish_impl()
+{
+  Dout(dc::statefultask, "Calling default finish_impl() [" << (void*)this << "]");
 }
 
 void AIStatefulTask::force_killed()

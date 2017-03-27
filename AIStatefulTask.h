@@ -263,11 +263,11 @@ class AIStatefulTask : public AIRefCount
     duration_type getDuration() const { return mDuration; }
 
   protected:
+    virtual char const* state_str_impl(state_type run_state) const = 0;
     virtual void initialize_impl() = 0;
     virtual void multiplex_impl(state_type run_state) = 0;
-    virtual void abort_impl() { }
-    virtual void finish_impl() { }
-    virtual char const* state_str_impl(state_type run_state) const = 0;
+    virtual void abort_impl();
+    virtual void finish_impl();
     virtual void force_killed();                // Called from AIEngine::flush().
 
   private:

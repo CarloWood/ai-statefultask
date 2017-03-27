@@ -87,23 +87,25 @@ class HelloWorld : public AIStatefulTask {
     // Call finish() (or abort()), not delete.
     /*virtual*/ ~HelloWorld() { }
 
+    // Implemenation of state_str for run states.
+    /*virtual*/ char const* state_str_impl(state_type run_state) const;
+
     // Handle initializing the object.
     /*virtual*/ void initialize_impl();
 
     // Handle run_state.
     /*virtual*/ void multiplex_impl(state_type run_state);
-
-    // Implemenation of state_str for run states.
-    /*virtual*/ char const* state_str_impl(state_type run_state) const
-    {
-      switch(run_state)
-      {
-        AI_CASE_RETURN(HelloWorld_start);
-        AI_CASE_RETURN(HelloWorld_done);
-      }
-      return "UNKNOWN STATE";
-    }
 };
+
+char const* HelloWorld::state_str_impl(state_type run_state) const
+{
+  switch(run_state)
+  {
+    AI_CASE_RETURN(HelloWorld_start);
+    AI_CASE_RETURN(HelloWorld_done);
+  }
+  return "UNKNOWN STATE";
+}
 
 // The actual implementation of this task starts here!
 
@@ -188,6 +190,9 @@ class AIStatefulTaskThreadBase : public AIStatefulTask {
       { }
 
   private:
+    // Implemenation of state_str for run states.
+    /*virtual*/ char const* state_str_impl(state_type run_state) const;
+
     // Handle initializing the object.
     /*virtual*/ void initialize_impl();
 
@@ -196,9 +201,6 @@ class AIStatefulTaskThreadBase : public AIStatefulTask {
 
     // Handle aborting from current bs_run state.
     /*virtual*/ void abort_impl();
-
-    // Implemenation of state_str for run states.
-    /*virtual*/ char const* state_str_impl(state_type run_state) const;
 
     // Returns a reference to the implementation code that needs to be run in the thread.
     virtual AIThreadImpl& impl() = 0;
