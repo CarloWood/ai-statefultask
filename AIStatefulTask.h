@@ -141,7 +141,8 @@ class AIStatefulTask : public AIRefCount
 
     // Engine stuff.
     AIEngine* mDefaultEngine;           // Default engine.
-    AIEngine* mYieldEngine;             // Requested engine.
+    AIEngine* mTargetEngine;            // Requested engine by a call to yield.
+    bool mYield;                        // True when any yield function was called, except for yield_if_not when the passed engine already matched.
 
 #ifdef DEBUG
     // Debug stuff.
@@ -161,7 +162,7 @@ class AIStatefulTask : public AIRefCount
     duration_type mDuration;            // Total time spent running in the main thread.
 
   public:
-    AIStatefulTask(DEBUG_ONLY(bool debug)) : mCallback(nullptr), mDefaultEngine(nullptr), mYieldEngine(nullptr),
+    AIStatefulTask(DEBUG_ONLY(bool debug)) : mCallback(nullptr), mDefaultEngine(nullptr), mTargetEngine(nullptr), mYield(false),
 #ifdef DEBUG
     mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
     mDebugSetStatePending(false), mDebugRefCalled(false),
@@ -198,12 +199,14 @@ class AIStatefulTask : public AIRefCount
     // These functions can only be called from within multiplex_impl().
     void wait(condition_type conditions);       // Go idle if non of the bits of conditions were signalled twice or more since the last call to wait(that_bit).
                                                 // The task will continue whenever signal(condition) is called where conditions & condition != 0.
-    void wait(AIWaitConditionFunc const& wait_condition, condition_type conditions);   // Block until the wait_condition returns true.
+    void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions);   // Block until the wait_condition returns true.
                                                 // Whenever something changed that might cause wait_condition to return true, signal(condition) must be called.
-    void wait(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state) { set_state(new_state); wait(wait_condition, conditions); }
+    void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state) { set_state(new_state); wait_until(wait_condition, conditions); }
     void finish();                              // Mark that the task finished and schedule the call back.
     void yield();                               // Yield to give CPU to other tasks, but do not block.
-    void yield(AIEngine* engine);               // Yield to give CPU to other tasks, but do not block. Continue running from engine 'engine'.
+    void target(AIEngine* engine);              // Continue running from engine 'engine'. The task will keep running in this engine until target() is called again.
+                                                // Call target(nullptr) to return to running 'freely' (with a default engine, etc, if one was given).
+    void yield(AIEngine* engine);               // The above two combined.
     void yield_frame(unsigned int frames);      // Run from the main-thread engine after at least 'frames' frames have passed.
     void yield_ms(unsigned int ms);             // Run from the main-thread engine after roughly 'ms' miliseconds have passed.
     bool yield_if_not(AIEngine* engine);        // Do not really yield, unless the current engine is not 'engine'. Returns true if it switched engine.
@@ -273,7 +276,7 @@ class AIStatefulTask : public AIRefCount
   private:
     void reset();                               // Called from run() to (re)initialize a (re)start.
     void multiplex(event_type event, AIEngine* engine = nullptr); // Called to step through the states. If event == normal_run then engine is the engine this was called from.
-    state_type begin_loop(base_state_type base_state);  // Called from multiplex() at the start of a loop.
+    state_type begin_loop();                    // Called from multiplex() at the start of a loop.
     void callback();                            // Called when the task finished.
     bool sleep(clock_type::time_point current_time)   // Count frames if necessary and return true when the task is still sleeping.
     {

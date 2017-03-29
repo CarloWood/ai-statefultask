@@ -406,7 +406,8 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
     // We're at the beginning of multiplex, about to actually run it.
     // Make a copy of the states.
     waiting = state_r->wait_condition != nullptr;
-    run_state = begin_loop((state = state_r->base_state));
+    state = state_r->base_state;
+    run_state = begin_loop();
   }
   // End of critical area of mState.
 
@@ -422,7 +423,12 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
     {
 #ifdef CWDEBUG
       if (state == bs_multiplex)
-        Dout(dc::statefultask(mSMDebug), "Running state bs_multiplex / " << state_str_impl(run_state) << " [" << (void*)this << "]");
+      {
+        if (waiting)
+          Dout(dc::statefultask(mSMDebug), "Testing wait condition... [" << (void*)this << "]");
+        else
+          Dout(dc::statefultask(mSMDebug), "Running state bs_multiplex / " << state_str_impl(run_state) << " [" << (void*)this << "]");
+      }
       else
         Dout(dc::statefultask(mSMDebug), "Running state " << state_str(state) << " [" << (void*)this << "]");
 
@@ -519,6 +525,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
             {
               state_w->wait_condition = nullptr;
               sub_state_type::wat(mSubState)->idle = 0;
+              mDebugShouldRun = true;
             }
           }
           break;
@@ -606,7 +613,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
                 // If the state is bs_multiplex we only need to run again when need_run was set again in the meantime or when this task isn't idle.
                 need_new_run = sub_state_r->need_run || !sub_state_r->idle;
                 // If this fails then the run state didn't change and neither wait() nor yield() was called.
-                ASSERT(!(need_new_run && !mYieldEngine && sub_state_r->run_state == run_state &&
+                ASSERT(!(need_new_run && !mYield && sub_state_r->run_state == run_state &&
                        !(sub_state_r->aborted ||        // abort was called.
                          sub_state_r->finished ||       // finish was called.
                          sub_state_r->wait_called ||    // wait was called.
@@ -667,23 +674,25 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       }
 
       // Figure out in which engine we should run.
-      AIEngine* engine = mYieldEngine ? mYieldEngine : (state_w->current_engine ? state_w->current_engine : mDefaultEngine);
+      AIEngine* engine = mTargetEngine ? mTargetEngine : (state_w->current_engine ? state_w->current_engine : mDefaultEngine);
       // And the current engine we're running in.
       AIEngine* current_engine = (event == normal_run) ? state_w->current_engine : nullptr;
 
       // Immediately run again if yield() wasn't called and it's OK to run in this thread.
       // Note that when it's OK to run in any engine (mDefaultEngine is nullptr) then the last
       // compare is also true when current_engine == nullptr.
-      keep_looping = need_new_run && !mYieldEngine && engine == current_engine;
-      mYieldEngine = nullptr;
+      keep_looping = need_new_run && !mYield && engine == current_engine;
+      mYield = false;
 
-      Dout(dc::statefultask(mSMDebug), (!need_new_run ? "No need to run" : !keep_looping ? "Need to run, adding to engine" : "Need to run, will run right now") << " [" << (void*)this << "]");
+      if (!keep_looping)
+        Dout(dc::statefultask(mSMDebug), (!need_new_run ? (state_w->current_engine ? "No need to run, removing from engine" : "No need to run") : "Need to run, adding to engine") << " [" << (void*)this << "]");
 
       if (keep_looping)
       {
         // Start a new loop.
         waiting = state_w->wait_condition != nullptr;
-        run_state = begin_loop((state = state_w->base_state));
+        state = state_w->base_state;
+        run_state = begin_loop();
         event = normal_run;
       }
       else
@@ -699,7 +708,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
             engine->add(this);
           }
 #ifdef DEBUG
-          // We are leaving the loop, but we're not idle. The task should re-enter the loop again.
+          // We are leaving the loop, but we're not idle. The task should re-enter multiplex() again.
           mDebugShouldRun = true;
 #endif
         }
@@ -749,10 +758,8 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
   }
 }
 
-AIStatefulTask::state_type AIStatefulTask::begin_loop(base_state_type base_state)
+AIStatefulTask::state_type AIStatefulTask::begin_loop()
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::begin_loop(" << state_str(base_state) << ") [" << (void*)this << "]");
-
   sub_state_type::wat sub_state_w(mSubState);
   // Mark that we're about to honor all previous run requests.
   sub_state_w->need_run = false;
@@ -1028,7 +1035,7 @@ void AIStatefulTask::wait(condition_type conditions)
 // Go idle until wait_condition() becomes true. For this to work, signal(condition) must be called
 // each time that something changed that might cause wait_condition() to become true, most notably
 // signal(condition) must be called at least once after wait_condition() has become true.
-void AIStatefulTask::wait(std::function<bool()> const& wait_condition, condition_type conditions)
+void AIStatefulTask::wait_until(std::function<bool()> const& wait_condition, condition_type conditions)
 {
   if (!wait_condition())
   {
@@ -1136,19 +1143,6 @@ void AIStatefulTask::finish()
 void AIStatefulTask::yield()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield() [" << (void*)this << "]");
-  multiplex_state_type::rat state_r(mState);
-  // yield() may only be called from multiplex_impl().
-  ASSERT(state_r->base_state == bs_multiplex);
-  // May only be called by the thread that is holding mMultiplexMutex.
-  ASSERT(mThreadId == std::this_thread::get_id());
-  // Set mYieldEngine to the best non-NUL value.
-  mYieldEngine = state_r->current_engine ? state_r->current_engine : (mDefaultEngine ? mDefaultEngine : &gAuxiliaryThreadEngine);
-}
-
-void AIStatefulTask::yield(AIEngine* engine)
-{
-  ASSERT(engine);
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield(" << engine->name() << ") [" << (void*)this << "]");
 #ifdef DEBUG
   {
     multiplex_state_type::rat state_r(mState);
@@ -1158,7 +1152,29 @@ void AIStatefulTask::yield(AIEngine* engine)
     ASSERT(mThreadId == std::this_thread::get_id());
   }
 #endif
-  mYieldEngine = engine;
+  // Indicate we should leave mainloop().
+  mYield = true;
+}
+
+void AIStatefulTask::target(AIEngine* engine)
+{
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::target(" << (engine ? engine->name() : "nullptr") << ") [" << (void*)this << "]");
+#ifdef DEBUG
+  {
+    multiplex_state_type::rat state_r(mState);
+    // May only be called by the thread that is holding mMultiplexMutex.
+    ASSERT(mThreadId == std::this_thread::get_id());
+  }
+#endif
+  mTargetEngine = engine;
+}
+
+void AIStatefulTask::yield(AIEngine* engine)
+{
+  ASSERT(engine);
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield(" << engine->name() << ") [" << (void*)this << "]");
+  target(engine);
+  yield();
 }
 
 bool AIStatefulTask::yield_if_not(AIEngine* engine)
