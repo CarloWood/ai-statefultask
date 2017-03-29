@@ -44,8 +44,8 @@ class AIStatefulTaskMutex
   protected:
     AIStatefulTask const* m_owner;              // Owner of the lock. Only valid when m_lock_count > 0.
     AIThreadSafeSimpleDC<int> m_lock_count;     // Number of times unlock must be callled before unlocked.
-    typedef AIAccess<int> lock_count_wat;
-    typedef AIAccessConst<int> lock_count_crat;
+    using lock_count_wat = AIAccess<int>;
+    using lock_count_crat = AIAccessConst<int>;
 
   public:
     AIStatefulTaskMutex() : m_owner(nullptr), m_lock_count(0) { }

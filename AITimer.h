@@ -63,7 +63,7 @@
 class AITimer : public AIStatefulTask {
   protected:
     // The base class of this task.
-    typedef AIStatefulTask direct_base_type;
+    using direct_base_type = AIStatefulTask;
 
     // The different states of the stateful task.
     enum timer_state_type {

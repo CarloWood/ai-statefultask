@@ -51,13 +51,13 @@ class AIEngine;
 extern AIEngine gMainThreadEngine;
 extern AIEngine gAuxiliaryThreadEngine;
 
-typedef std::function<bool()> AIWaitConditionFunc;
+using AIWaitConditionFunc = std::function<bool()>;
 
 class AIStatefulTask : public AIRefCount
 {
   public:
-    typedef uint32_t state_type;        //!< The type of run_state.
-    typedef uint32_t condition_type;    //!< The type of the busy, skip_wait and idle bit masks.
+    using state_type = uint32_t;        //!< The type of run_state.
+    using condition_type = uint32_t;    //!< The type of the busy, skip_wait and idle bit masks.
 
   protected:
     // The type of event that causes multiplex() to be called.
@@ -103,12 +103,12 @@ class AIStatefulTask : public AIRefCount
 
   private:
     // Base state.
-    typedef aithreadsafe::Wrapper<multiplex_state_st, aithreadsafe::policy::Primitive<std::mutex>> multiplex_state_type;
+    using multiplex_state_type = aithreadsafe::Wrapper<multiplex_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
     multiplex_state_type mState;
 
   protected:
     // Sub state.
-    typedef aithreadsafe::Wrapper<sub_state_st, aithreadsafe::policy::Primitive<std::mutex>> sub_state_type;
+    using sub_state_type = aithreadsafe::Wrapper<sub_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
     sub_state_type mSubState;
 
   private:
@@ -117,8 +117,8 @@ class AIStatefulTask : public AIRefCount
     // Mutex that is locked while calling *_impl() functions and the call back.
     std::recursive_mutex mRunMutex;
 
-    typedef std::chrono::steady_clock clock_type;
-    typedef clock_type::duration duration_type;
+    using clock_type = std::chrono::steady_clock;
+    using duration_type = clock_type::duration;
 
     clock_type::rep mSleep;   //!< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
 
@@ -129,7 +129,7 @@ class AIStatefulTask : public AIRefCount
     on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
     // From outside a stateful task:
     struct callback_type {
-      typedef boost::signals2::signal<void (bool)> signal_type;
+      using signal_type = boost::signals2::signal<void (bool)>;
       callback_type(signal_type::slot_type const& slot) { connection = signal.connect(slot); }
       ~callback_type() { connection.disconnect(); }
       void callback(bool success) const { signal(success); }
@@ -239,7 +239,7 @@ class AIStatefulTask : public AIRefCount
     bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
 
     // Use some safebool idiom (http://www.artima.com/cppsource/safebool.html) rather than operator bool.
-    typedef on_abort_st AIStatefulTask::* bool_type;
+    using bool_type = on_abort_st AIStatefulTask::*;
     // Return true if the task finished.
     // If this function returns false then the callback (or call to abort() on the parent) is guaranteed to still going to happen.
     // If this function returns true then the callback might have happened or might still going to happen.

@@ -122,7 +122,7 @@
 class HelloWorld : public AIStatefulTask {
   protected:
     // The base class of this task.
-    typedef AIStatefulTask direct_base_type;
+    using direct_base_type = AIStatefulTask;
 
     // The different states of the task.
     enum hello_world_state_type {

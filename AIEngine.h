@@ -66,18 +66,18 @@ class AIEngine
     };
 
   public:
-    typedef std::list<QueueElement> queued_type;
+    using queued_type = std::list<QueueElement>;
     struct engine_state_st {
       queued_type list;
       bool waiting;
       engine_state_st() : waiting(false) { }
     };
 
-    typedef AIStatefulTask::clock_type clock_type;
-    typedef AIStatefulTask::duration_type duration_type;
+    using clock_type = AIStatefulTask::clock_type;
+    using duration_type = AIStatefulTask::duration_type;
 
   private:
-    typedef aithreadsafe::Wrapper<engine_state_st, aithreadsafe::policy::Primitive<aithreadsafe::Condition>> engine_state_type;
+    using engine_state_type = aithreadsafe::Wrapper<engine_state_st, aithreadsafe::policy::Primitive<aithreadsafe::Condition>>;
     engine_state_type mEngineState;
     char const* mName;
     static duration_type sMaxDuration;

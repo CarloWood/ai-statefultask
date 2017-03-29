@@ -172,7 +172,7 @@ class AIStatefulTaskThreadBase : public AIStatefulTask {
     class Thread;
 
   protected:
-    typedef AIStatefulTask direct_base_type;
+    using direct_base_type = AIStatefulTask;
 
     // The states of this stateful task.
     enum thread_state_type {

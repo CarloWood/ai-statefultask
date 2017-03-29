@@ -36,9 +36,9 @@ class AIAuxiliaryThread : public Singleton<AIAuxiliaryThread> {
 
   private:
     std::thread m_handle;
-    typedef aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>> keep_running_type;
+    using keep_running_type = aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>>;
     keep_running_type m_keep_running;
-    typedef aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>> stopped_type;
+    using stopped_type = aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>>;
     stopped_type m_stopped;
 
   public:
