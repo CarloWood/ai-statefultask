@@ -138,25 +138,25 @@ class HelloWorld : public AIStatefulTask {
 
   protected:
     // The destructor must be protected.
-    /*virtual*/ ~HelloWorld();
+    ~HelloWorld() override;
 
   protected:
     // The following virtual functions must be implemented:
 
     // Return human readable string for run_state.
-    /*virtual*/ char const* state_str_impl(state_type run_state) const;
+    char const* state_str_impl(state_type run_state) const override;
 
-    // Handle initializing the object.
-    /*virtual*/ void initialize_impl();
+    // Handle initializing the object (the default AIStatefulTask::initialize_impl sets the starting state to maxstate, which should be the first state of the derived class).
+    void initialize_impl() override;
 
     // Handle mRunState.
-    /*virtual*/ void multiplex_impl(state_type run_state);
+    void multiplex_impl(state_type run_state) override;
 
     // Handle aborting from current bs_multiplex state (the default AIStatefulTask::abort_impl() does nothing).
-    /*virtual*/ void abort_impl();
+    void abort_impl() override;
 
     // Handle cleaning up from initialization (or post abort) state (the default AIStatefulTask::finish_impl() does nothing).
-    /*virtual*/ void finish_impl();
+    void finish_impl() override;
 };
 
 // In the .cpp file:
@@ -178,9 +178,10 @@ char const* HelloWorld::state_str_impl(state_type run_state) const
 #endif
 }
 
+// This function could be skipped because this is what the default initialize_impl() does.
 void HelloWorld::initialize_impl()
 {
-  set_state(direct_base_type::max_state);
+  set_state(HelloWorld_start);
 }
 
 void HelloWorld::multiplex_impl(state_type run_state)
@@ -898,6 +899,13 @@ void AIStatefulTask::callback()
     // Not restarted by callback. Allow run() to be called later on.
     mParent = nullptr;
   }
+}
+
+void AIStatefulTask::initialize_impl()
+{
+  Dout(dc::statefultask, "Calling default initialize_impl() [" << (void*)this << "]");
+  // Start with the first state of the derived class.
+  set_state(max_state);
 }
 
 void AIStatefulTask::abort_impl()

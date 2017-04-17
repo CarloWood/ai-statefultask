@@ -47,11 +47,11 @@ class AIStatefulTaskThreadBase::Thread : public AIThread {
 #endif
       mImpl(impl) { }
   protected:
-    /*virtual*/ void run()
+    void run() override
     {
       mNeedCleanup = mImpl->impl().thread_done(mImpl->impl().run());
     }
-    /*virtual*/ void terminated()
+    void terminated() override
     {
       mStatus = STOPPED;
       if (mNeedCleanup)

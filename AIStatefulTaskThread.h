@@ -54,7 +54,7 @@ class HelloWorldThread : public AIThreadImpl {
     bool successful() const { return mSuccess; }
 
     // Mandatory signature.
-    /*virtual*/ bool run()                                              // NEW THREAD
+    bool run() override                                                 // NEW THREAD
     {
       if (mStdErr)
         std::cerr << "Hello world" << std::endl;
@@ -85,16 +85,16 @@ class HelloWorld : public AIStatefulTask {
 
   protected:
     // Call finish() (or abort()), not delete.
-    /*virtual*/ ~HelloWorld() { }
+    ~HelloWorld() override { }
 
     // Implemenation of state_str for run states.
-    /*virtual*/ char const* state_str_impl(state_type run_state) const;
+    char const* state_str_impl(state_type run_state) const override;
 
     // Handle initializing the object.
-    /*virtual*/ void initialize_impl();
+    void initialize_impl() override;
 
     // Handle run_state.
-    /*virtual*/ void multiplex_impl(state_type run_state);
+    void multiplex_impl(state_type run_state) override;
 };
 
 char const* HelloWorld::state_str_impl(state_type run_state) const
@@ -191,16 +191,16 @@ class AIStatefulTaskThreadBase : public AIStatefulTask {
 
   private:
     // Implemenation of state_str for run states.
-    /*virtual*/ char const* state_str_impl(state_type run_state) const;
+    char const* state_str_impl(state_type run_state) const override;
 
     // Handle initializing the object.
-    /*virtual*/ void initialize_impl();
+    void initialize_impl() override;
 
     // Handle mRunState.
-    /*virtual*/ void multiplex_impl(state_type run_state);
+    void multiplex_impl(state_type run_state) override;
 
     // Handle aborting from current bs_run state.
-    /*virtual*/ void abort_impl();
+    void abort_impl() override;
 
     // Returns a reference to the implementation code that needs to be run in the thread.
     virtual AIThreadImpl& impl() = 0;
@@ -235,5 +235,5 @@ class AIStatefulTaskThread : public AIStatefulTaskThreadBase {
     THREAD_IMPL& thread_impl() { return mThreadImpl; }
 
   protected:
-    /*virtual*/ AIThreadImpl& impl() { return mThreadImpl; }
+    AIThreadImpl& impl() override { return mThreadImpl; }
 };

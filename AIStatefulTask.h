@@ -267,7 +267,7 @@ class AIStatefulTask : public AIRefCount
 
   protected:
     virtual char const* state_str_impl(state_type run_state) const = 0;
-    virtual void initialize_impl() = 0;
+    virtual void initialize_impl();
     virtual void multiplex_impl(state_type run_state) = 0;
     virtual void abort_impl();
     virtual void finish_impl();

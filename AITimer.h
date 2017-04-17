@@ -104,19 +104,19 @@ class AITimer : public AIStatefulTask {
 
   protected:
     // Call finish() (or abort()), not delete.
-    /*virtual*/ ~AITimer() { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); mFrameTimer.cancel(); }
+    ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); mFrameTimer.cancel(); }
 
     // Implemenation of state_str for run states.
-    /*virtual*/ char const* state_str_impl(state_type run_state) const;
+    char const* state_str_impl(state_type run_state) const override;
 
     // Handle initializing the object.
-    /*virtual*/ void initialize_impl();
+    void initialize_impl() override;
 
     // Handle mRunState.
-    /*virtual*/ void multiplex_impl(state_type run_state);
+    void multiplex_impl(state_type run_state) override;
 
     // Handle aborting from current bs_run state.
-    /*virtual*/ void abort_impl();
+    void abort_impl() override;
 
   private:
     // This is the callback for mFrameTimer.
