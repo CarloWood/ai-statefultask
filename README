@@ -111,8 +111,8 @@ Control functions
 -----------------
 
 A running task can be controlled by calling member functions of the
-AIStatefulTask base class. There are ten such member functions. One
-member function may be called from both, executing and non-executing
+AIStatefulTask base class. There are thirteen such member functions.
+One member function may be called from both, executing and non-executing
 threads:
 
 1) signal(condition)
@@ -130,26 +130,30 @@ multiplex_impl()). These functions are therefore protected:
 
 3) set_state(new_state)
 4) wait(condition)
-5) finish()
-6) yield()
-7) yield(engine)
-8) yield_frame(frames)
-9) yield_ms(ms)
-10) yield_if_not(engine)
+5) wait_until(wait_condition, conditions)
+6) wait_until(wait_condition, conditions, new_state)
+7) finish()
+8) yield()
+9) target(engine)
+10) yield(engine)
+11) yield_frame(frames)
+12) yield_ms(ms)
+13) yield_if_not(engine)
 
 A task executes code that belongs to a given "state" and (possibly)
 keeps doing so (executing that same state) until one of the control
-functions (except signalled()) is called.
+functions (except signal()) is called.
 
 Hence, every state MUST (eventually, and rather sooner than later) call
 one of the control functions, or a task could go into a tight loop using
 100% CPU.
 
-Moreover, an executing thread that calls abort(), wait(condition) or
-finish() should immediately stop executing and leave multiplex_impl()
-(aka, those functions should be followed by a break). In most cases
-you also want to break after a call to yield() (which can be called
-anywhere in the state though, but it seems to read better that way).
+Moreover, an executing thread that calls abort(), wait(condition),
+wait_until(...) or finish() should immediately stop executing and
+leave multiplex_impl() (aka, those functions should be followed by a
+break). In most cases you also want to break after a call to yield()
+(which can be called anywhere in the state though, but it seems to
+read better that way).
 
 Since the effect of any of the yield functions, though yield_if_not only
 when that returns true, is basically the same, we can consider just
@@ -187,7 +191,7 @@ will get the chance to execute before this task is continued.
 Note that if a state calls yield() without calling first set_state()
 then this might cause 100% CPU usage despite the call to yield() because
 the task will rapidly execute again and then call yield() over and over:
-an engine keep iterating over its tasks until all tasks finished, with
+an engine keeps iterating over its tasks until all tasks finished, with
 the exception of gMainThreadEngine that will return from
 AIEngine::mainloop() regardless after at least AIEngine::sMaxDuration
 milliseconds have passed (which can be set by calling
@@ -233,7 +237,7 @@ as follows:
   case StartChild:
     // ... start child task that will eventually set child_task
     // and then call signal(wait_for_child_task), here.
-    wait([&child_task]{ return child_task; }, wait_for_child_task, ChildFinished);
+    wait_until([&child_task]{ return child_task; }, wait_for_child_task, ChildFinished);
     break;
 
 completely eliminating the need for state WaitingForChildTask.

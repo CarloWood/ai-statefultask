@@ -211,6 +211,9 @@ class AIStatefulTask : public AIRefCount
     void yield_ms(unsigned int ms);             // Run from the main-thread engine after roughly 'ms' miliseconds have passed.
     bool yield_if_not(AIEngine* engine);        // Do not really yield, unless the current engine is not 'engine'. Returns true if it switched engine.
 
+    // Calls wait_until.
+    friend class AIFriendOfStatefulTask;
+
   public:
     // This function can be called from multiplex_imp(), but also by a child task and
     // therefore by any thread. The child task should use an boost::intrusive_ptr<AIStatefulTask>
@@ -238,13 +241,11 @@ class AIStatefulTask : public AIRefCount
     // Return true if we are added to the current engine.
     bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
 
-    // Use some safebool idiom (http://www.artima.com/cppsource/safebool.html) rather than operator bool.
-    using bool_type = on_abort_st AIStatefulTask::*;
     // Return true if the task finished.
     // If this function returns false then the callback (or call to abort() on the parent) is guaranteed to still going to happen.
     // If this function returns true then the callback might have happened or might still going to happen.
     // Call aborted() to check if the task finished successfully if this function returns true (or just call that in the callback).
-    operator bool_type() const
+    bool finished() const
     {
       sub_state_type::crat sub_state_r(mSubState);
       return sub_state_r->finished ? &AIStatefulTask::mOnAbort : 0;
