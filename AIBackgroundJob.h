@@ -31,6 +31,50 @@
 
 #include "AIFriendOfStatefulTask.h"
 
+#ifdef EXAMPLE_CODE     // undefined
+
+class Task : public AIStatefulTask {
+  protected:
+    using direct_base_type = AIStatefulTask;            // The base class of this task.
+    ~Task() override { }                                // The destructor must be protected.
+
+    // The different states of the task.
+    enum task_state_type {
+      Task_start = direct_base_type::max_state,
+      Task_done,
+    };
+
+    // Override virtual functions.
+    char const* state_str_impl(state_type run_state) const override;
+    void multiplex_impl(state_type run_state) override;
+
+  public:
+    static state_type const max_state = Task_done + 1;  // One beyond the largest state.
+    Task() : AIStatefulTask(DEBUG_ONLY(true)),
+        m_long_job(this, 1, blocking_function) { }      // Prepare to run `blocking_function' in its own thread.
+
+  private:
+    AIBackgroundJob m_long_job;
+};
+
+void Task::multiplex_impl(state_type run_state)
+{
+  switch(run_state)
+  {
+    case Task_start:
+    {
+      m_long_job.execute_and_continue_at(Task_done);	// Execute the function `blocking_function' in its own thread
+							// and continue running this task at state Task_done once
+							// `blocking_function' has finished executing.
+      break;
+    }
+    case Task_done:
+      finish();
+      break;
+  }
+}
+#endif // EXAMPLE_CODE
+
 class AIBackgroundJob : AIFriendOfStatefulTask {
   private:
     using FunctionType = std::function<void()>;
