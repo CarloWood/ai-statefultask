@@ -989,13 +989,16 @@ void AIStatefulTask::set_state(state_type new_state)
 #endif
   {
     sub_state_type::wat sub_state_w(mSubState);
-    // It should never happen that set_state() is called while we're idle.
-    ASSERT(!sub_state_w->idle);
+    // It should never happen that set_state() is called while we're idle,
+    // unless we just called wait(). It is ok/allowed to call set_state
+    // after a call to wait() to set the state we want to continue after
+    // receiving a signal().
+    ASSERT(sub_state_w->wait_called || !sub_state_w->idle);
     // Force current state to the requested state.
     sub_state_w->run_state = new_state;
 #ifdef DEBUG
     // We should run. This can only be cancelled by a call to wait().
-    mDebugSetStatePending = true;
+    mDebugSetStatePending = !sub_state_w->wait_called;
 #endif
   }
 }

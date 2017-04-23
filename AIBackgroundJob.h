@@ -30,6 +30,7 @@
 #pragma once
 
 #include "AIFriendOfStatefulTask.h"
+#include "AIDelayedFunction.h"
 
 #ifdef EXAMPLE_CODE     // undefined
 
@@ -75,19 +76,62 @@ void Task::multiplex_impl(state_type run_state)
 }
 #endif // EXAMPLE_CODE
 
+template<typename ...Args>
 class AIBackgroundJob : AIFriendOfStatefulTask {
   private:
-    using FunctionType = std::function<void()>;
-
     std::thread m_thread;                               // Associated with the thread running m_job if m_phase == executing.
     enum { standby, executing, finished } m_phase;      // Keeps track of whether the job is already executing or even finished.
-    FunctionType m_job;
     AIStatefulTask::condition_type m_condition;
+    AIDelayedFunction<Args...> m_delayed_function;
 
   public:
-    AIBackgroundJob(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, FunctionType const& function) :
-        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_job(function), m_condition(condition) { }
+    AIBackgroundJob(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, void (*fp)(Args...)) :
+        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp) { }
+
+    template<class C>
+    AIBackgroundJob(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, void (C::*memfn)(Args...)) :
+        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn) { }
+
     ~AIBackgroundJob();
     void run();
-    void execute_and_continue_at(int new_state);
+    void operator()(Args... args);
 };
+
+template<typename ...Args>
+AIBackgroundJob<Args...>::~AIBackgroundJob()
+{
+  // It should be impossible to destruct an AIBackgroundJob while it is still
+  // executing when it is a member of parent_task; and that is the only way
+  // that this class should be used. The reason that is impossible is because the
+  // parent_task should be in a waiting state until we call m_parent_task->signal(m_condition)
+  // in run() below, which we only do after m_phase is set to finished. Hence,
+  // the parent_task will not be destructed and therefore we won't be destructed either.
+  ASSERT(m_phase != executing);
+  // Wait until the thread actually returned from run().
+  m_thread.join();
+}
+
+// This is executed in the new thread.
+template<typename ...Args>
+void AIBackgroundJob<Args...>::run()
+{
+  Debug(NAMESPACE_DEBUG::init_thread());
+  m_delayed_function.invoke();
+  m_phase = finished;
+  m_parent_task->signal(m_condition);
+}
+
+// Called by parent task to dispatch the job to its own thread.
+// After finishing the job, the parent will be signalled with
+// m_condition set during construction.
+template<typename ...Args>
+void AIBackgroundJob<Args...>::operator()(Args... args)
+{
+  // Store arguments.
+  m_delayed_function(args...);
+  // Pass job to a thread.
+  m_phase = executing;
+  m_thread = std::thread(&AIBackgroundJob::run, this);
+  // Halt task until job finished.
+  wait_until([this](){ return m_phase == finished; }, m_condition);
+}
