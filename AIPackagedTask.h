@@ -59,10 +59,10 @@ class Task : public AIStatefulTask {
   public:
     static state_type const max_state = Task_done + 1;  // One beyond the largest state.
     Task() : AIStatefulTask(DEBUG_ONLY(true)),
-        m_calculate_factorial(this, 1, factorial) { }   // Prepare to run `factorial' in its own thread.
+        m_calculate_factorial(this, 1, &factorial) { }  // Prepare to run `factorial' in its own thread.
 
   private:
-    AIPackagedTask m_calculate_factorial;
+    AIPackagedTask<int(int)> m_calculate_factorial;
 };
 
 void Task::multiplex_impl(state_type run_state)
@@ -76,36 +76,41 @@ void Task::multiplex_impl(state_type run_state)
       break;                                            // `factorial' has finished executing.
     }
     case Task_done:
+      std::cout << "The factorial of 5 = " << m_calculate_factorial.get() << std::endl;
       finish();
       break;
   }
 }
 #endif // EXAMPLE_CODE
 
-template<typename ...Args>
-class AIPackagedTask : AIFriendOfStatefulTask {
+template<typename F>
+class AIPackagedTask;   // not defined.
+
+template<typename R, typename ...Args>
+class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask {
   private:
     std::thread m_thread;                               // Associated with the thread running m_job if m_phase == executing.
     enum { standby, executing, finished } m_phase;      // Keeps track of whether the job is already executing or even finished.
     AIStatefulTask::condition_type m_condition;
-    AIDelayedFunction<Args...> m_delayed_function;
+    AIDelayedFunction<R(Args...)> m_delayed_function;
 
   public:
-    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, void (*fp)(Args...)) :
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...)) :
         AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp) { }
 
     template<class C>
-    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, void (C::*memfn)(Args...)) :
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfn)(Args...)) :
         AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn) { }
 
     ~AIPackagedTask();
 
     void run();
     void operator()(Args... args);
+    R get() const { return m_delayed_function.get(); }
 };
 
-template<typename ...Args>
-AIPackagedTask<Args...>::~AIPackagedTask()
+template<typename R, typename ...Args>
+AIPackagedTask<R(Args...)>::~AIPackagedTask()
 {
   // It should be impossible to destruct an AIPackagedTask while it is still
   // executing when it is a member of parent_task; and that is the only way
@@ -119,8 +124,8 @@ AIPackagedTask<Args...>::~AIPackagedTask()
 }
 
 // This is executed in the new thread.
-template<typename ...Args>
-void AIPackagedTask<Args...>::run()
+template<typename R, typename ...Args>
+void AIPackagedTask<R(Args...)>::run()
 {
   Debug(NAMESPACE_DEBUG::init_thread());
   m_delayed_function.invoke();
@@ -131,8 +136,8 @@ void AIPackagedTask<Args...>::run()
 // Called by parent task to dispatch the job to its own thread.
 // After finishing the job, the parent will be signalled with
 // m_condition set during construction.
-template<typename ...Args>
-void AIPackagedTask<Args...>::operator()(Args... args)
+template<typename R, typename ...Args>
+void AIPackagedTask<R(Args...)>::operator()(Args... args)
 {
   // Store arguments.
   m_delayed_function(args...);

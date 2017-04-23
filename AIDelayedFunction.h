@@ -32,20 +32,53 @@
 #include <functional>
 #include "utils/apply_function.h"
 
+template<typename F>
+class AIDelayedFunction; // not defined.
+
 // Usage:
 //
-// AIDelayedFunction<int, double> delayed_function(&f);          // void f(int, double);
+// AIDelayedFunction<char(int, double)> delayed_function(&f);           // char f(int, double);
 //
 // or
 //
-// AIDelayedFunction<int, double> delayed_function(&obj, &C::f); // void C::f(int, double); where obj is of type C.
+// AIDelayedFunction<char(int, double)> delayed_function(&obj, &C::f);  // char C::f(int, double); where obj is of type C.
 //
-// delayed_function(1, 1.0);    // Store the arguments.
+// delayed_function(1, 1.0);            // Store the arguments.
 //
-// delayed_function.invoke();   // Call f(1, 1.0) or obj.f(1, 1.0).
+// delayed_function.invoke();           // Call f(1, 1.0) or obj.f(1, 1.0) and store the result.
 //
+// char c = delayed_function.get();     // Get the result.
+//
+template<typename R, typename ...Args>
+class AIDelayedFunction<R(Args...)> {
+  private:
+    std::function<R(Args...)> m_function;       // Pointer to the (member) function.
+    std::tuple<Args...> m_args;                 // Copy of the arguments to be passed.
+    R m_result;                                 // Future result of the function.
+
+  public:
+    // Construct a AIDelayedFunction for a free function.
+    AIDelayedFunction(R (*fp)(Args...)) { m_function = fp; }
+
+    // Construct a AIDelayedFunction for a member function of object.
+    // The object must have a lifetime that exceeds the call to invoke.
+    template<class C>
+    AIDelayedFunction(C* object, R (C::*memfn)(Args...))
+        { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
+
+    // Store the arguments to be passed.
+    void operator()(Args... args) { m_args = std::make_tuple(args...); }
+
+    // Actually invoke the call to the stored function with the stored arguments.
+    void invoke() { m_result = utils::apply_function(m_function, m_args); }
+
+    // Get the result, only valid after invoke was called.
+    R const& get() const { return m_result; }
+};
+
+// Specialization for functions returning void.
 template<typename ...Args>
-class AIDelayedFunction {
+class AIDelayedFunction<void(Args...)> {
   private:
     std::function<void(Args...)> m_function;    // Pointer to the (member) function.
     std::tuple<Args...> m_args;                 // Copy of the arguments to be passed.
