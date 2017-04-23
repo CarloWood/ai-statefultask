@@ -7,7 +7,7 @@ libstatefultask_la_SOURCES = \
 	AIStatefulTask.h \
 	AIEngine.cxx \
 	AIEngine.h \
-	AIBackgroundJob.h \
+	AIPackagedTask.h \
 	AITimer.cxx \
 	AITimer.h \
 	AIAuxiliaryThread.h \

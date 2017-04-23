@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Run code in a thread. Declaration of template class AIBackgroundJob.
+ * @brief Run code in a thread. Declaration of template class AIPackagedTask.
  *
  * Copyright (C) 2017  Carlo Wood.
  *
@@ -34,6 +34,13 @@
 
 #ifdef EXAMPLE_CODE     // undefined
 
+int factorial(int n)
+{
+  int r = 1;
+  while(n > 1) r *= n;
+  return r;
+}
+
 class Task : public AIStatefulTask {
   protected:
     using direct_base_type = AIStatefulTask;            // The base class of this task.
@@ -52,10 +59,10 @@ class Task : public AIStatefulTask {
   public:
     static state_type const max_state = Task_done + 1;  // One beyond the largest state.
     Task() : AIStatefulTask(DEBUG_ONLY(true)),
-        m_long_job(this, 1, blocking_function) { }      // Prepare to run `blocking_function' in its own thread.
+        m_calculate_factorial(this, 1, factorial) { }   // Prepare to run `factorial' in its own thread.
 
   private:
-    AIBackgroundJob m_long_job;
+    AIPackagedTask m_calculate_factorial;
 };
 
 void Task::multiplex_impl(state_type run_state)
@@ -64,10 +71,9 @@ void Task::multiplex_impl(state_type run_state)
   {
     case Task_start:
     {
-      m_long_job.execute_and_continue_at(Task_done);	// Execute the function `blocking_function' in its own thread
-							// and continue running this task at state Task_done once
-							// `blocking_function' has finished executing.
-      break;
+      m_calculate_factorial(5);	                        // Execute the function `factorial' in its own thread
+      set_state(Task_done);                             // and continue running this task at state Task_done once
+      break;                                            // `factorial' has finished executing.
     }
     case Task_done:
       finish();
@@ -77,7 +83,7 @@ void Task::multiplex_impl(state_type run_state)
 #endif // EXAMPLE_CODE
 
 template<typename ...Args>
-class AIBackgroundJob : AIFriendOfStatefulTask {
+class AIPackagedTask : AIFriendOfStatefulTask {
   private:
     std::thread m_thread;                               // Associated with the thread running m_job if m_phase == executing.
     enum { standby, executing, finished } m_phase;      // Keeps track of whether the job is already executing or even finished.
@@ -85,22 +91,23 @@ class AIBackgroundJob : AIFriendOfStatefulTask {
     AIDelayedFunction<Args...> m_delayed_function;
 
   public:
-    AIBackgroundJob(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, void (*fp)(Args...)) :
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, void (*fp)(Args...)) :
         AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp) { }
 
     template<class C>
-    AIBackgroundJob(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, void (C::*memfn)(Args...)) :
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, void (C::*memfn)(Args...)) :
         AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn) { }
 
-    ~AIBackgroundJob();
+    ~AIPackagedTask();
+
     void run();
     void operator()(Args... args);
 };
 
 template<typename ...Args>
-AIBackgroundJob<Args...>::~AIBackgroundJob()
+AIPackagedTask<Args...>::~AIPackagedTask()
 {
-  // It should be impossible to destruct an AIBackgroundJob while it is still
+  // It should be impossible to destruct an AIPackagedTask while it is still
   // executing when it is a member of parent_task; and that is the only way
   // that this class should be used. The reason that is impossible is because the
   // parent_task should be in a waiting state until we call m_parent_task->signal(m_condition)
@@ -113,7 +120,7 @@ AIBackgroundJob<Args...>::~AIBackgroundJob()
 
 // This is executed in the new thread.
 template<typename ...Args>
-void AIBackgroundJob<Args...>::run()
+void AIPackagedTask<Args...>::run()
 {
   Debug(NAMESPACE_DEBUG::init_thread());
   m_delayed_function.invoke();
@@ -125,13 +132,13 @@ void AIBackgroundJob<Args...>::run()
 // After finishing the job, the parent will be signalled with
 // m_condition set during construction.
 template<typename ...Args>
-void AIBackgroundJob<Args...>::operator()(Args... args)
+void AIPackagedTask<Args...>::operator()(Args... args)
 {
   // Store arguments.
   m_delayed_function(args...);
   // Pass job to a thread.
   m_phase = executing;
-  m_thread = std::thread(&AIBackgroundJob::run, this);
+  m_thread = std::thread(&AIPackagedTask::run, this);
   // Halt task until job finished.
   wait_until([this](){ return m_phase == finished; }, m_condition);
 }
