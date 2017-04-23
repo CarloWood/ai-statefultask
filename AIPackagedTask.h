@@ -105,8 +105,16 @@ class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask {
     ~AIPackagedTask();
 
     void run();
-    void operator()(Args... args);
-    R get() const { return m_delayed_function.get(); }
+    void operator()(Args... args);                      // Copy the arguments (second time: invoke the function).
+
+    // If Args isn't empty (has_args) then we need this signature to be Callable.
+    template<bool has_args = sizeof... (Args) != 0, typename std::enable_if<has_args, int>::type = 0>
+    void operator()();                                  // Invoke the function.
+
+    R get() const { return m_delayed_function.get(); }  // Get the result.
+
+  private:
+    void invoke();
 };
 
 template<typename R, typename ...Args>
@@ -128,9 +136,24 @@ template<typename R, typename ...Args>
 void AIPackagedTask<R(Args...)>::run()
 {
   Debug(NAMESPACE_DEBUG::init_thread());
+  (*this)();
+}
+
+// Invoke the function (inlined because it's used in two places below).
+template<typename R, typename ...Args>
+inline void AIPackagedTask<R(Args...)>::invoke()
+{
   m_delayed_function.invoke();
   m_phase = finished;
   m_parent_task->signal(m_condition);
+}
+
+// This is executed by a different thread.
+template<typename R, typename ...Args>
+template<bool has_args, typename std::enable_if<has_args, int>::type>
+void AIPackagedTask<R(Args...)>::operator()()
+{
+  invoke();
 }
 
 // Called by parent task to dispatch the job to its own thread.
@@ -139,6 +162,15 @@ void AIPackagedTask<R(Args...)>::run()
 template<typename R, typename ...Args>
 void AIPackagedTask<R(Args...)>::operator()(Args... args)
 {
+  // When sizeof...(Args) == 0 then the second time this function is called is by executing thread.
+  // The first call has to be fast, so assume it's unlikely.
+  if (sizeof...(Args) == 0 &&
+      AI_UNLIKELY(m_phase == executing))
+  {
+    invoke();
+    return;
+  }
+
   // Store arguments.
   m_delayed_function(args...);
   // Pass job to a thread.
