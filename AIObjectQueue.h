@@ -33,6 +33,7 @@
 #include <atomic>
 #include <functional>
 #include <cstdlib>
+#include <cstdint>
 
 // A ring buffer for moveable objects.
 //
@@ -51,7 +52,7 @@
 //
 template<typename T>
 class AIObjectQueue {
-  using size_type = unsigned int;   // "4294967295 objects ought to be enough for anybody." --Bill Gates.
+  using size_type = std::uint_fast32_t;   // "4294967295 objects ought to be enough for anybody." --Bill Gates.
 
  private:
   T* m_start;                       // Start of buffer.
