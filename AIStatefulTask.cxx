@@ -526,7 +526,9 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
             {
               state_w->wait_condition = nullptr;
               sub_state_type::wat(mSubState)->idle = 0;
+#ifdef DEBUG
               mDebugShouldRun = true;
+#endif
             }
           }
           break;
@@ -685,8 +687,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       keep_looping = need_new_run && !mYield && engine == current_engine;
       mYield = false;
 
-      if (!keep_looping)
-        Dout(dc::statefultask(mSMDebug), (!need_new_run ? (state_w->current_engine ? "No need to run, removing from engine" : "No need to run") : "Need to run, adding to engine") << " [" << (void*)this << "]");
+      Dout(dc::statefultask(mSMDebug && !keep_looping), (!need_new_run ? (state_w->current_engine ? "No need to run, removing from engine" : "No need to run") : "Need to run, adding to engine") << " [" << (void*)this << "]");
 
       if (keep_looping)
       {
