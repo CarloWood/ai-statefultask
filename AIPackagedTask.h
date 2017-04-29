@@ -31,6 +31,7 @@
 
 #include "AIFriendOfStatefulTask.h"
 #include "AIDelayedFunction.h"
+#include "AIObjectQueue.h"
 
 #ifdef EXAMPLE_CODE     // undefined
 
@@ -71,7 +72,12 @@ void Task::multiplex_impl(state_type run_state)
   {
     case Task_start:
     {
-      m_calculate_factorial(5);	                        // Execute the function `factorial' in its own thread
+      m_calculate_factorial(5);                         // "Call the function" -- this just copies the argument(s) to be passed to the executing thread.
+      if (!m_calculate_factorial.dispatch())            // Execute the function `factorial' in its own thread.
+      {
+        yield();
+        break;
+      }
       set_state(Task_done);                             // and continue running this task at state Task_done once
       break;                                            // `factorial' has finished executing.
     }
@@ -89,29 +95,32 @@ class AIPackagedTask;   // not defined.
 template<typename R, typename ...Args>
 class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask {
   private:
-    std::thread m_thread;                               // Associated with the thread running m_job if m_phase == executing.
-    enum { standby, executing, finished } m_phase;      // Keeps track of whether the job is already executing or even finished.
+    enum { standby, deferred, executing, finished } m_phase;  // Keeps track of whether the job is already executing or even finished.
     AIStatefulTask::condition_type m_condition;
     AIDelayedFunction<R(Args...)> m_delayed_function;
+    AIObjectQueue<std::function<void()>>& m_object_queue;
 
   public:
-    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...)) :
-        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp) { }
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...), AIObjectQueue<std::function<void()>>& object_queue) :
+        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp), m_object_queue(object_queue) { }
 
     template<class C>
-    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfn)(Args...)) :
-        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn) { }
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfn)(Args...), AIObjectQueue<std::function<void()>>& object_queue) :
+        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn), m_object_queue(object_queue) { }
 
     ~AIPackagedTask();
 
-    void run();
-    void operator()(Args... args);                      // Copy the arguments (second time: invoke the function).
-
-    // If Args isn't empty (has_args) then we need this signature to be Callable.
+    void operator()(Args... args);                      // Copy the arguments.
+    bool dispatch();                                    // Put the task in a queue for execution in a different thread.
+    // If Args isn't empty (has_args) then we need this signature in order to be Callable.
     template<bool has_args = sizeof... (Args) != 0, typename std::enable_if<has_args, int>::type = 0>
     void operator()();                                  // Invoke the function.
 
-    R get() const { return m_delayed_function.get(); }  // Get the result.
+    R get() const
+    {
+      ASSERT(m_phase == finished);                      // Call dispatch() until it returns true, before calling get().
+      return m_delayed_function.get();                  // Get the result.
+    }
 
   private:
     void invoke();
@@ -124,19 +133,9 @@ AIPackagedTask<R(Args...)>::~AIPackagedTask()
   // executing when it is a member of parent_task; and that is the only way
   // that this class should be used. The reason that is impossible is because the
   // parent_task should be in a waiting state until we call m_parent_task->signal(m_condition)
-  // in run() below, which we only do after m_phase is set to finished. Hence,
+  // in invoke() below, which we only do after m_phase is set to finished. Hence,
   // the parent_task will not be destructed and therefore we won't be destructed either.
   ASSERT(m_phase != executing);
-  // Wait until the thread actually returned from run().
-  m_thread.join();
-}
-
-// This is executed in the new thread.
-template<typename R, typename ...Args>
-void AIPackagedTask<R(Args...)>::run()
-{
-  Debug(NAMESPACE_DEBUG::init_thread());
-  (*this)();
 }
 
 // Invoke the function (inlined because it's used in two places below).
@@ -156,9 +155,7 @@ void AIPackagedTask<R(Args...)>::operator()()
   invoke();
 }
 
-// Called by parent task to dispatch the job to its own thread.
-// After finishing the job, the parent will be signalled with
-// m_condition set during construction.
+// Store the function arguments (or invoke task from executing thread).
 template<typename R, typename ...Args>
 void AIPackagedTask<R(Args...)>::operator()(Args... args)
 {
@@ -171,11 +168,35 @@ void AIPackagedTask<R(Args...)>::operator()(Args... args)
     return;
   }
 
+  // If m_phase == deferred then you should have called retry().
+  ASSERT(m_phase == standby);
+
   // Store arguments.
   m_delayed_function(args...);
-  // Pass job to a thread.
-  m_phase = executing;
-  m_thread = std::thread(&AIPackagedTask::run, this);
+}
+
+// Called by parent task to dispatch the job to its own thread.
+// After finishing the job, the parent will be signalled with
+// m_condition set during construction.
+//
+// Returns true upon a successful queue; false when the queue is full
+// in which case dispatch() can be tried again (a bit later).
+template<typename R, typename ...Args>
+bool AIPackagedTask<R(Args...)>::dispatch()
+{
+  { // Lock the queue.
+    auto queue = m_object_queue.producer_access();
+    if (queue.full())
+    {
+      m_phase = deferred;
+      return false;
+    }
+    // Pass job to thread pool.
+    m_phase = executing;
+    queue.move_in(std::function<void()>([this](){ this->invoke(); }));
+  } // Unlock queue.
+
   // Halt task until job finished.
   wait_until([this](){ return m_phase == finished; }, m_condition);
+  return true;
 }

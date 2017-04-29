@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include "utils/macros.h"
 #include <mutex>
 #include <atomic>
 #include <functional>
@@ -73,6 +74,16 @@ class AIObjectQueue {
  private:
   void allocate_(int objects)
   {
+    // Whatever...
+    if (AI_UNLIKELY(objects <= 0))
+    {
+      Dout(dc::warning, "Calling AIObjectQueue::allocate_(" << objects << ")");
+      // Bring object to state of default constructed.
+      ASSERT(m_start == nullptr && m_capacity == 0);
+      m_head = m_tail = 0;
+      return;
+    }
+
     // Allocate storage aligned to at least 32 bytes.
     void* storage;
     int ret = posix_memalign(&storage, alignment, objects * sizeof(T));
@@ -98,6 +109,8 @@ class AIObjectQueue {
     for (size_t i = 0; i < m_capacity; ++i)
       object[i].~T();
     free(m_start);
+    m_capacity = 0;
+    m_start = nullptr;
   }
 
   // Return index advanced one chunk.
@@ -111,21 +124,27 @@ class AIObjectQueue {
   // Producer thread.
 
   // Accessed by ProducerAccess.
-  bool move_in(T&& object)
+  bool full() const
+  {
+    // Increment head before comparison with tail because otherwise the buffer would appear
+    // empty after the m_head.store in move_in, plus we might be writing over data that
+    // still needs to be read by the consumer (at the position returned by move_out()).
+    return increment(m_head.load(std::memory_order_relaxed)) == m_tail.load(std::memory_order_acquire);
+  }
+
+  // Accessed by ProducerAccess.
+  void move_in(T&& object)
   {
     auto const current_head = m_head.load(std::memory_order_relaxed);
     auto const next_head    = increment(current_head);
 
-    if (next_head != m_tail.load(std::memory_order_acquire))  // Otherwise the buffer would appear empty after the m_head.store below,
-                                                              // and we'd be writing over data that possibly still needs to be read
-                                                              // by the consumer (that was returned by move_out()).
-    {
-      m_start[current_head] = std::move(object);
-      m_head.store(next_head, std::memory_order_release);
-      return true; // object was moved to the queue.
-    }
+    // Call and test full() before calling move_in().
+    ASSERT(next_head != m_tail.load(std::memory_order_acquire));
+    // Call reallocate() after a default construction, or pass the size of the queue (in objects) when constructing it.
+    ASSERT(m_capacity > 0);
 
-    return false;  // Full queue.
+    m_start[current_head] = std::move(object);
+    m_head.store(next_head, std::memory_order_release);
   }
 
   //-------------------------------------------------------------------------
@@ -163,7 +182,8 @@ class AIObjectQueue {
    public:
     ProducerAccess(AIObjectQueue<T>* buffer) : m_buffer(buffer) { buffer->m_producer_mutex.lock(); }
     ~ProducerAccess() { m_buffer->m_producer_mutex.unlock(); }
-    bool move_in(T&& ptr) { return m_buffer->move_in(std::move(ptr)); }
+    bool full() const { return m_buffer->full(); }
+    void move_in(T&& ptr) { m_buffer->move_in(std::move(ptr)); }
     void clear() { m_buffer->m_head.store(m_buffer->m_tail.load(std::memory_order_relaxed), std::memory_order_relaxed); }
   };
 
