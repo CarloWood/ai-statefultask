@@ -186,7 +186,7 @@ bool AIPackagedTask<R(Args...)>::dispatch()
 {
   { // Lock the queue.
     auto queue = m_object_queue.producer_access();
-    if (queue.full())
+    if (queue.length() == m_object_queue.capacity())
     {
       m_phase = deferred;
       return false;

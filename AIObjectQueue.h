@@ -40,17 +40,55 @@
 //
 // Usage (using for example std::function<void()>):
 //
-// AIObjectQueue<std::function<void()>> queue(40);          // 40 std::function<void()> objects.
+// constexpr int capacity = 8;
+// AIObjectQueue<std::function<void()>> queue(capacity);    // Allocates 9 std::function<void()> objects.
+//
+// The actual size of the allocated memory for this
+// queue will be nine: eight object can be written
+// to the queue without reading anything from it.
+// The space for the nineth object is reserved to
+// store the last object that was already read from
+// the queue but wasn't popped yet.
 //
 // // Producer threads:
-// if (!queue.producer_access().move_in([](){return 42;}))  // The temporary returned by producer_access() locks producer access (consumers can still continue reading).
-// { /* Buffer full */
+// { // Lock the queue for other producer threads.
+//   auto access = queue.producer_access();
+//   int length = access.length();
+//   if (length == capacity) { /* Buffer full */ return; }
+//   access.move_in([](){ std::cout << "Hello\n"; });
+// } // Unlock the queue.
+//
+// The value of `length' allows one to do client-side
+// bandwidth control; by reducing the throughput till
+// the returned length is as small as possible one can
+// reduce the latency.
+//
+// Note that due to race conditions, the actual length
+// might be less, as consumer threads can read from the
+// queue while we're hold the producer lock.
 //
 // // Consumer threads:
-// auto ca = queue.consumer_access();                       // Lock consumer access (producers can still continue writing).
-// std::function<void()> f(ca.move_out());
-// if (!f) { /* buffer empty */ }
+// std::function<void()> f;
+// { // Lock the queue for other consumer threads.
+//   auto access = queue.consumer_access();
+//   int length = access.length();
+//   if (length == 0) { /* Buffer empty */ return; }
+//   f = access.move_out();
+// } // Unlock the queue.
+// f(); // Invoke the functor.
 //
+// Here the actual length might be greater than the
+// returned value because producer threads can still
+// write to the queue while we hold the consumer lock.
+// In fact, the call to length() is in both cases the
+// same function (which doesn't require locking at all
+// to be thread-safe) but the locking by accessing
+// length() through the respective access objects is
+// necessary to prevent a producer thread having a
+// race condition with another producer thread, or
+// a consumer thread having a race condition with another
+// consumer thread.
+
 template<typename T>
 class AIObjectQueue {
   using size_type = std::uint_fast32_t;   // "4294967295 objects ought to be enough for anybody." --Bill Gates.
@@ -71,6 +109,8 @@ class AIObjectQueue {
   AIObjectQueue(int objects) : m_start(nullptr), m_capacity(0), m_head(0), m_tail(0) { allocate_(objects); }
   ~AIObjectQueue() { if (m_capacity) deallocate_(); }
 
+  int capacity(void) const { return m_capacity; }
+
  private:
   void allocate_(int objects)
   {
@@ -86,17 +126,18 @@ class AIObjectQueue {
 
     // Allocate storage aligned to at least 32 bytes.
     void* storage;
-    int ret = posix_memalign(&storage, alignment, objects * sizeof(T));
+    // Allocate one object more than requested.
+    int ret = posix_memalign(&storage, alignment, (objects + 1) * sizeof(T));
     Dout(dc::malloc, "storage = " << storage);
     if (ret != 0)
     {
-      Dout(dc::warning, "posix_memalign(" << &storage << ", " << alignment << ", " << objects * sizeof(T) << ") returned " << ret);
+      Dout(dc::warning, "posix_memalign(" << &storage << ", " << alignment << ", " << (objects + 1) * sizeof(T) << ") returned " << ret);
       throw std::bad_alloc();
     }
     m_start = static_cast<T*>(storage);
     Dout(dc::malloc, "m_start = " << (void*)m_start);
     m_capacity = objects;
-    for (size_t i = 0; i < m_capacity; ++i)
+    for (size_t i = 0; i <= m_capacity; ++i)
       new (&m_start[i]) T;
     // Clean
     m_tail = 0;
@@ -106,7 +147,7 @@ class AIObjectQueue {
   void deallocate_()
   {
     T* object = m_start;
-    for (size_t i = 0; i < m_capacity; ++i)
+    for (size_t i = 0; i <= m_capacity; ++i)
       object[i].~T();
     free(m_start);
     m_capacity = 0;
@@ -117,28 +158,29 @@ class AIObjectQueue {
   size_t increment(size_type index) const
   {
     // This is branchless and much faster than using modulo.
-    return index + 1 == m_capacity ? 0 : index + 1;
+    return index == m_capacity ? 0 : index + 1;
   }
 
   //-------------------------------------------------------------------------
   // Producer thread.
+  // These member functions are accessed through ProducerAccess.
 
-  // Accessed by ProducerAccess.
-  bool full() const
+  int producer_length() const
   {
-    // Increment head before comparison with tail because otherwise the buffer would appear
-    // empty after the m_head.store in move_in, plus we might be writing over data that
-    // still needs to be read by the consumer (at the position returned by move_out()).
-    return increment(m_head.load(std::memory_order_relaxed)) == m_tail.load(std::memory_order_acquire);
+    auto const current_head = m_head.load(std::memory_order_relaxed);
+    auto const current_tail = m_tail.load(std::memory_order_acquire);
+    // If increment(current_head) == current_tail then the queue is full and we should return m_capacity.
+    int length = current_head - current_tail;
+    return length >= 0 ? length : length + m_capacity + 1;
   }
 
-  // Accessed by ProducerAccess.
   void move_in(T&& object)
   {
     auto const current_head = m_head.load(std::memory_order_relaxed);
     auto const next_head    = increment(current_head);
 
-    // Call and test full() before calling move_in().
+    // Call and test ProducerAccess::length() (must be less than the capacity that this
+    // AIObjectQueue was constructed with (m_capacity)) before calling move_in().
     ASSERT(next_head != m_tail.load(std::memory_order_acquire));
     // Call reallocate() after a default construction, or pass the size of the queue (in objects) when constructing it.
     ASSERT(m_capacity > 0);
@@ -149,18 +191,30 @@ class AIObjectQueue {
 
   //-------------------------------------------------------------------------
   // Consumer thread.
+  // These member functions are accessed through ConsumerAccess.
 
-  // Accessed by ConsumerAccess.
+  int consumer_length() const
+  {
+    auto const current_tail = m_tail.load(std::memory_order_relaxed);
+    auto const current_head = m_head.load(std::memory_order_acquire);
+    // If current_tail == current_head then the queue is empty and we should return 0.
+    int length = current_head - current_tail;
+    return length >= 0 ? length : length + m_capacity + 1;
+  }
+
+  // This function should only be called when consumer_length() returned a value
+  // larger than zero while holding the consumer lock (hence, m_tail didn't change
+  // in the meantime).
   T move_out()
   {
     auto const current_tail = m_tail.load(std::memory_order_relaxed);
-    if (current_tail != m_head.load(std::memory_order_acquire))         // Queue not empty?
-    {
-      auto const next_tail = increment(current_tail);
-      m_tail.store(next_tail, std::memory_order_release);
-      return std::move(m_start[current_tail]);
-    }
-    return T();  // Empty queue.
+
+    // Call and test ConsumerAccess::length() (must be larger than zero) before calling move_out().
+    ASSERT(current_tail != m_head.load(std::memory_order_acquire));
+
+    auto const next_tail = increment(current_tail);
+    m_tail.store(next_tail, std::memory_order_release);
+    return std::move(m_start[current_tail]);
   }
 
   //-------------------------------------------------------------------------
@@ -182,7 +236,7 @@ class AIObjectQueue {
    public:
     ProducerAccess(AIObjectQueue<T>* buffer) : m_buffer(buffer) { buffer->m_producer_mutex.lock(); }
     ~ProducerAccess() { m_buffer->m_producer_mutex.unlock(); }
-    bool full() const { return m_buffer->full(); }
+    int length() const { return m_buffer->producer_length(); }
     void move_in(T&& ptr) { m_buffer->move_in(std::move(ptr)); }
     void clear() { m_buffer->m_head.store(m_buffer->m_tail.load(std::memory_order_relaxed), std::memory_order_relaxed); }
   };
@@ -193,6 +247,7 @@ class AIObjectQueue {
    public:
     ConsumerAccess(AIObjectQueue<T>* buffer) : m_buffer(buffer) { buffer->m_consumer_mutex.lock(); }
     ~ConsumerAccess() { m_buffer->m_consumer_mutex.unlock(); }
+    int length() const { return m_buffer->consumer_length(); }
     T move_out() { return m_buffer->move_out(); }
     void clear() { m_buffer->m_tail.store(m_buffer->m_head.load(std::memory_order_relaxed), std::memory_order_relaxed); }
   };
