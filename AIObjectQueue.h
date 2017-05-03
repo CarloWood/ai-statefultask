@@ -30,6 +30,7 @@
 #pragma once
 
 #include "utils/macros.h"
+#include "debug.h"
 #include <mutex>
 #include <atomic>
 #include <functional>
