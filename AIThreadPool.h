@@ -65,8 +65,8 @@
 //
 class AIThreadPool {
   private:
-    static std::thread::id s_constructor_id;            // Thread id of the thread that created and/or moved AIThreadPool.
     static std::atomic<AIThreadPool*> s_instance;       // The only instance of AIThreadPool that should exist at a time.
+    std::thread::id m_constructor_id;                   // Thread id of the thread that created and/or moved AIThreadPool.
     int m_max_number_of_threads;
     bool m_pillaged;
 
@@ -76,7 +76,7 @@ class AIThreadPool {
     AIThreadPool(AIThreadPool&& rvalue) : m_max_number_of_threads(rvalue.m_max_number_of_threads), m_pillaged(false)
     {
       // The move constructor is not thread-safe. Only the thread that constructed us may move us.
-      assert(aithreadid::is_single_threaded(s_constructor_id));
+      assert(aithreadid::is_single_threaded(m_constructor_id));
       rvalue.m_pillaged = true;
       // Once we're done with constructing this object, other threads (that likely still have to be started,
       // but that is not enforced) should be allowed to call AIThreadPool::instance(). In order to enforce

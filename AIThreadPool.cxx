@@ -7,9 +7,6 @@
 //static
 std::atomic<AIThreadPool*> AIThreadPool::s_instance;
 
-//static
-std::thread::id AIThreadPool::s_constructor_id;
-
 namespace {
 
 struct Worker;
@@ -164,12 +161,12 @@ void remove_threads(workers_t::rat& workers_r, int n)
 } // namespace
 
 AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
-    m_max_number_of_threads(std::max(number_of_threads, max_number_of_threads)), m_pillaged(false)
+    m_constructor_id(aithreadid::none), m_max_number_of_threads(std::max(number_of_threads, max_number_of_threads)), m_pillaged(false)
 {
   // Only here to record the id of the thread who constructed us.
   // Do not create a second AIThreadPool from another thread;
   // use AIThreadPool::instance() to access the thread pool created from main.
-  assert(aithreadid::is_single_threaded(s_constructor_id));
+  assert(aithreadid::is_single_threaded(m_constructor_id));
 
   // Only construct ONE AIThreadPool, preferably somewhere at the beginning of main().
   // If you want more than one thread pool instance, don't. One is enough and much
@@ -189,7 +186,7 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
 AIThreadPool::~AIThreadPool()
 {
   // Construction and destruction is not thread-safe.
-  assert(aithreadid::is_single_threaded(s_constructor_id));
+  assert(aithreadid::is_single_threaded(m_constructor_id));
   if (m_pillaged) return;                        // This instance was moved. We don't really exist.
 
   // Kill all threads.
@@ -199,7 +196,6 @@ AIThreadPool::~AIThreadPool()
     remove_threads(workers_r, workers_r->size());
   }
   // Allow construction of another AIThreadPool.
-  s_constructor_id = aithreadid::none;
   s_instance = nullptr;
 }
 
