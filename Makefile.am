@@ -10,6 +10,8 @@ libstatefultask_la_SOURCES = \
 	AIPackagedTask.h \
 	AITimer.cxx \
 	AITimer.h \
+	AIThreadPool.cxx \
+	AIThreadPool.h \
 	AIAuxiliaryThread.h \
 	AIAuxiliaryThread.cxx \
 	AIStatefulTaskMutex.h
