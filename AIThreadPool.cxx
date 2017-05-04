@@ -6,42 +6,25 @@
 std::atomic<AIThreadPool*> AIThreadPool::s_instance;
 
 //static
-int AIThreadPool::Worker::get_handle()
-{
-  workers_t::rat workers_r(AIThreadPool::instance().m_workers);
-  int const current_number_of_threads = workers_r->size();
-  for (int t = 0; t < current_number_of_threads; ++t)
-    if (workers_r->at(t).m_thread.get_id() == std::this_thread::get_id())
-      return t;
-  // We were destructed before we even began; that is, some thread
-  // now has the read lock on `m_workers` and is waiting for us to join().
-  return -1;
-}
-
-//static
-void AIThreadPool::Worker::main()
+void AIThreadPool::Worker::main(int const self)
 {
   Debug(NAMESPACE_DEBUG::init_thread());
   Dout(dc::threadpool, "Thread started.");
 
-  int const self = get_handle();
-  if (self != -1)
+  while(workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
   {
-    while(workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
-    {
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
+    std::this_thread::sleep_for(std::chrono::seconds(1));
   }
 
   Dout(dc::threadpool, "Thread terminated.");
 }
 
 //static
-void AIThreadPool::add_threads(workers_t::wat& workers_w, int number)
+void AIThreadPool::add_threads(workers_t::wat& workers_w, int current_number_of_threads, int requested_number_of_threads)
 {
-  DoutEntering(dc::threadpool, "add_threads(" << number << ")");
-  for (int i = 0; i < number; ++i)
-    workers_w->emplace_back(&Worker::main);
+  DoutEntering(dc::threadpool, "add_threads(" << current_number_of_threads << ", " << requested_number_of_threads << ")");
+  for (int i = current_number_of_threads; i < requested_number_of_threads; ++i)
+    workers_w->emplace_back(Worker(&Worker::main, i));
 }
 
 // This function is called inside a criticial area of m_workers_r_to_w_mutex
@@ -103,7 +86,7 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
   assert(workers_w->empty());                    // Paranoia; even in the case of constructing a second AIThreadPool
                                                  // after destructing the first, this should be the case here.
   workers_w->reserve(m_max_number_of_threads);   // Attempt to avoid reallocating the vector in the future.
-  add_threads(workers_w, number_of_threads);     // Create and run number_of_threads threads.
+  add_threads(workers_w, 0, number_of_threads);  // Create and run number_of_threads threads.
 }
 
 AIThreadPool::~AIThreadPool()
@@ -122,16 +105,16 @@ AIThreadPool::~AIThreadPool()
   s_instance = nullptr;
 }
 
-void AIThreadPool::change_number_of_threads_to(int number_of_threads)
+void AIThreadPool::change_number_of_threads_to(int requested_number_of_threads)
 {
-  if (number_of_threads > m_max_number_of_threads)
+  if (requested_number_of_threads > m_max_number_of_threads)
   {
     Dout(dc::warning, "Increasing number of thread beyond the initially set maximum.");
     workers_t::wat workers_w(m_workers);
     // This might reallocate the vector and therefore move existing Workers,
     // but that should be ok while holding the write-lock... I think.
-    workers_w->reserve(number_of_threads);
-    m_max_number_of_threads = number_of_threads;
+    workers_w->reserve(requested_number_of_threads);
+    m_max_number_of_threads = requested_number_of_threads;
   }
 
   // This must be locked before locking m_workers.
@@ -139,12 +122,12 @@ void AIThreadPool::change_number_of_threads_to(int number_of_threads)
   // Kill or add threads.
   workers_t::rat workers_r(m_workers);
   int current_number_of_threads = workers_r->size();
-  if (number_of_threads < current_number_of_threads)
-    remove_threads(workers_r, current_number_of_threads - number_of_threads);
-  else if (number_of_threads > current_number_of_threads)
+  if (requested_number_of_threads < current_number_of_threads)
+    remove_threads(workers_r, current_number_of_threads - requested_number_of_threads);
+  else if (requested_number_of_threads > current_number_of_threads)
   {
     workers_t::wat workers_w(workers_r);
-    add_threads(workers_w, number_of_threads - current_number_of_threads);
+    add_threads(workers_w, current_number_of_threads, requested_number_of_threads);
   }
 }
 

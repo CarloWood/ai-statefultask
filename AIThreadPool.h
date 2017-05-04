@@ -68,7 +68,7 @@
 class AIThreadPool {
   private:
     struct Worker;
-    using worker_function_t = void (*)();
+    using worker_function_t = void (*)(int const);
     using worker_container_t = std::vector<Worker>;
     using workers_t = aithreadsafe::Wrapper<worker_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
@@ -79,8 +79,11 @@ class AIThreadPool {
       mutable std::thread m_thread;
       mutable std::atomic_bool m_quit;
 
-      // Construct a new Worker.
-      Worker(worker_function_t worker_function) : m_thread(worker_function), m_quit(false) { }
+      // Construct a new Worker; do not associate it with a running thread yet.
+      // A write lock on m_workers is required before calling this constructor;
+      // that then blocks the thread from accessing m_quit until that lock is released
+      // so that we have time to move the Worker in place (using emplace_back()).
+      Worker(worker_function_t worker_function, int self) : m_thread(std::bind(worker_function, self)), m_quit(false) { }
 
       // The move constructor can only be called as a result of a reallocation, as a result
       // of a size increase of the std::vector<Worker> (because Workers are put into it with
@@ -89,7 +92,7 @@ class AIThreadPool {
       // write lock on the vector and therefore no other thread can access this Worker.
       // Therefore it is safe to non-atomically copy m_quit (note that it cannot be moved or
       // copied atomically).
-      Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)), m_quit(rvalue.m_quit.load()) { }
+      Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)), m_quit(rvalue.m_quit.load()) { rvalue.m_quit.store(true, std::memory_order_relaxed); }
 
       // Destructor.
       ~Worker()
@@ -118,7 +121,7 @@ class AIThreadPool {
       }
 
       // The main function for each of the worker threads.
-      static void main();
+      static void main(int const self);
 
       // Called from worker thread.
       static int get_handle();
@@ -142,7 +145,7 @@ class AIThreadPool {
     std::mutex m_workers_r_to_w_mutex;
 
     // Add new threads to the already write locked m_workers container.
-    static void add_threads(workers_t::wat& workers_w, int number);
+    static void add_threads(workers_t::wat& workers_w, int current_number_of_threads, int requested_number_of_threads);
 
     // Remove threads from the already read locked m_workers container.
     static void remove_threads(workers_t::rat& workers_r, int n);
