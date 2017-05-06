@@ -11,9 +11,25 @@ void AIThreadPool::Worker::main(int const self)
   Debug(NAMESPACE_DEBUG::init_thread());
   Dout(dc::threadpool, "Thread started.");
 
+  // TODO: for now assume there is only one queue. Wait until it appears.
+  while (AIThreadPool::instance().queues_read_access()->size() == 0)
+  {
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
+    continue;
+  }
+
   while(workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
   {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::function<void()> f;
+    { // Lock the queue for other consumer threads.
+      auto queues_r = AIThreadPool::instance().queues_read_access();
+      queues_container_t::value_type& queue = queues_r->at(0);
+      auto access = queue.consumer_access();
+      int length = access.length();
+      if (length == 0) { std::this_thread::sleep_for(std::chrono::microseconds(10)); continue; }
+      f = access.move_out();
+    } // Unlock the queue.
+    f(); // Invoke the functor.
   }
 
   Dout(dc::threadpool, "Thread terminated.");
@@ -129,6 +145,16 @@ void AIThreadPool::change_number_of_threads_to(int requested_number_of_threads)
     workers_t::wat workers_w(workers_r);
     add_threads(workers_w, current_number_of_threads, requested_number_of_threads);
   }
+}
+
+int AIThreadPool::new_queue(int capacity, int priority)
+{
+  DoutEntering(dc::threadpool, "AIThreadPool::new_queue(" << capacity << ", " << priority << ")");
+  queues_t::wat queues_w(m_queues);
+  size_t index = queues_w->size();
+  queues_w->emplace_back(std::move(queues_container_t::value_type(capacity)));
+  Dout(dc::threadpool, "Returning index " << index << "; size is now " << queues_w->size() << " for std::vector<> at " << (void*)&*queues_w);
+  return index;
 }
 
 #ifdef CWDEBUG

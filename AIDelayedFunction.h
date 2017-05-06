@@ -66,6 +66,14 @@ class AIDelayedFunction<R(Args...)> {
     AIDelayedFunction(C* object, R (C::*memfn)(Args...))
         { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
 
+    // Exchange the state with that of other.
+    void swap(AIDelayedFunction& other) noexcept
+    {
+      m_function.swap(other.m_function);
+      m_args.swap(other.m_args);
+      std::swap(m_result, other.m_result);
+    }
+
     // Store the arguments to be passed.
     void operator()(Args... args) { m_args = std::make_tuple(args...); }
 

@@ -150,20 +150,29 @@ class AIThreadPool {
     // Remove threads from the already read locked m_workers container.
     static void remove_threads(workers_t::rat& workers_r, int n);
 
+    using queues_container_t = std::vector<AIObjectQueue<std::function<void()>>>;
+    using queues_t = aithreadsafe::Wrapper<queues_container_t, aithreadsafe::policy::Primitive<std::mutex>>;
+
   private:
-    static std::atomic<AIThreadPool*> s_instance;       // The only instance of AIThreadPool that should exist at a time.
-    std::thread::id m_constructor_id;                   // Thread id of the thread that created and/or moved AIThreadPool.
-    int m_max_number_of_threads;
-    bool m_pillaged;
+    static std::atomic<AIThreadPool*> s_instance;               // The only instance of AIThreadPool that should exist at a time.
+    queues_t m_queues;                                          // List of queues. 
+    std::thread::id m_constructor_id;                           // Thread id of the thread that created and/or moved AIThreadPool.
+    int m_max_number_of_threads;                                // Current capacity of m_workers.
+    bool m_pillaged;                                            // If true, this object was moved and the destructor should do nothing.
 
   public:
     AIThreadPool(int number_of_threads = std::thread::hardware_concurrency() - 2, int max_number_of_threads = std::thread::hardware_concurrency());
     AIThreadPool(AIThreadPool const&) = delete;
-    AIThreadPool(AIThreadPool&& rvalue) : m_max_number_of_threads(rvalue.m_max_number_of_threads), m_pillaged(false)
+    AIThreadPool(AIThreadPool&& rvalue) :
+        m_constructor_id(rvalue.m_constructor_id),
+        m_max_number_of_threads(rvalue.m_max_number_of_threads),
+        m_pillaged(false)
     {
       // The move constructor is not thread-safe. Only the thread that constructed us may move us.
       assert(aithreadid::is_single_threaded(m_constructor_id));
       rvalue.m_pillaged = true;
+      // Move the queues_container_t.
+      *queues_t::wat(m_queues) = std::move(*queues_t::rat(rvalue.m_queues));
       // Once we're done with constructing this object, other threads (that likely still have to be started,
       // but that is not enforced) should be allowed to call AIThreadPool::instance(). In order to enforce
       // that all initialization of this object will be visible to those other threads, we need to prohibit
@@ -173,8 +182,31 @@ class AIThreadPool {
     // Destructor terminates all threads and joins them.
     ~AIThreadPool();
 
+    //------------------------------------------------------------------------
+    // Threads management.
+
     // You bought more cores and updated it while running your program.
     void change_number_of_threads_to(int number_of_threads);
+
+    //------------------------------------------------------------------------
+    // Queue management.
+
+    // Lock m_queues and get access (return value is to be passed to get_queue).
+    AIThreadPool::queues_t::rat queues_read_access() { return m_queues; }
+
+    // Create a new queue with capacity `capacity' and return a handle for it.
+    int new_queue(int capacity, int priority = 256);
+
+    // Return a reference to the queue that belongs to queue_handle.
+    // The returned pointer is only valid until a new queue is requested, which
+    // is blocked for as long as queues_r isn't destructed: keep the read-access
+    // object around until the returned reference is no longer used.
+    queues_container_t::value_type& get_queue(queues_t::rat& queues_r, int queue_handle) { return queues_r->at(queue_handle); }
+
+    // Same for a const AIThreadPool (is that ever used?)
+    queues_container_t::value_type const& get_queue(queues_t::crat& queues_cr, int queue_handle) const { return queues_cr->at(queue_handle); }
+
+    //------------------------------------------------------------------------
 
     static AIThreadPool& instance()
     {

@@ -32,6 +32,7 @@
 #include "AIFriendOfStatefulTask.h"
 #include "AIDelayedFunction.h"
 #include "AIObjectQueue.h"
+#include "AIThreadPool.h"
 
 #ifdef EXAMPLE_CODE     // undefined
 
@@ -98,17 +99,25 @@ class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask {
     enum { standby, deferred, executing, finished } m_phase;  // Keeps track of whether the job is already executing or even finished.
     AIStatefulTask::condition_type m_condition;
     AIDelayedFunction<R(Args...)> m_delayed_function;
-    AIObjectQueue<std::function<void()>>& m_object_queue;
+    int m_queue_handle;
 
   public:
-    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...), AIObjectQueue<std::function<void()>>& object_queue) :
-        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp), m_object_queue(object_queue) { }
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...), int object_queue_handle) :
+        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp), m_queue_handle(object_queue_handle) { }
 
     template<class C>
-    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfn)(Args...), AIObjectQueue<std::function<void()>>& object_queue) :
-        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn), m_object_queue(object_queue) { }
+    AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfn)(Args...), int object_queue_handle) :
+        AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn), m_queue_handle(object_queue_handle) { }
 
     ~AIPackagedTask();
+
+    // Exchange the state with that of other.
+    void swap(AIPackagedTask& other) noexcept
+    {
+      std::swap(m_condition, other.m_condition);
+      m_delayed_function.swap(other.m_delayed_function);
+      std::swap(m_queue_handle, other.m_queue_handle);
+    }
 
     void operator()(Args... args);                      // Copy the arguments.
     bool dispatch();                                    // Put the task in a queue for execution in a different thread.
@@ -184,9 +193,13 @@ void AIPackagedTask<R(Args...)>::operator()(Args... args)
 template<typename R, typename ...Args>
 bool AIPackagedTask<R(Args...)>::dispatch()
 {
-  { // Lock the queue.
-    auto queue = m_object_queue.producer_access();
-    if (queue.length() == m_object_queue.capacity())
+  {
+    // Stop a new queue from being created while we're working with a queue, because that could move the queue.
+    auto queues_r = AIThreadPool::instance().queues_read_access();
+    // Lock the queue.
+    auto& queue_ref = AIThreadPool::instance().get_queue(queues_r, m_queue_handle);
+    auto queue = queue_ref.producer_access();
+    if (queue.length() == queue_ref.capacity())
     {
       m_phase = deferred;
       return false;
@@ -194,7 +207,7 @@ bool AIPackagedTask<R(Args...)>::dispatch()
     // Pass job to thread pool.
     m_phase = executing;
     queue.move_in(std::function<void()>([this](){ this->invoke(); }));
-  } // Unlock queue.
+  } // Unlock queue. And we're done with the queue, so also unlock AIThreadPool::m_queues.
 
   // Halt task until job finished.
   wait_until([this](){ return m_phase == finished; }, m_condition);

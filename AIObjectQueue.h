@@ -108,6 +108,13 @@ class AIObjectQueue {
  public:
   AIObjectQueue() : m_start(nullptr), m_capacity(0), m_head(0), m_tail(0) { }
   AIObjectQueue(int objects) : m_start(nullptr), m_capacity(0), m_head(0), m_tail(0) { allocate_(objects); }
+  AIObjectQueue(AIObjectQueue&& rvalue) : m_start(rvalue.m_start), m_capacity(rvalue.m_capacity), m_head(0), m_tail(0)
+  {
+    // Should only ever move an AIObjectQueue directly after constructing it.
+    ASSERT(rvalue.m_head == 0 && rvalue.m_tail == 0);
+    // Make sure the rvalue's destructor won't deallocate.
+    rvalue.m_capacity = 0;
+  }
   ~AIObjectQueue() { if (m_capacity) deallocate_(); }
 
   int capacity(void) const { return m_capacity; }
