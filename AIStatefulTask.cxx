@@ -701,12 +701,15 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       {
         if (need_new_run)
         {
+          // engine can be nullptr here if mDefaultEngine is nullptr and we called yield() from run() (current_engine is still nullptr).
+          if (!engine)
+            engine = &gAuxiliaryThreadEngine;
           // Add us to an engine if necessary.
           if (engine != state_w->current_engine)
           {
             // Mark that we want to run in this engine, and at the same time, that we don't want to run in the previous one.
             state_w->current_engine = engine;
-            // Actually add the task to the engine; engine can't be nullptr here: it can only be nullptr if mDefaultEngine is nullptr.
+            // Actually add the task to the engine.
             engine->add(this);
           }
 #ifdef DEBUG
