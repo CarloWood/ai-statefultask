@@ -31,7 +31,6 @@
  *   - Transfered copyright to Carlo Wood.
  */
 
-#if 0
 #include "AITimer.h"
 
 char const* AITimer::state_str_impl(state_type run_state) const
@@ -39,24 +38,16 @@ char const* AITimer::state_str_impl(state_type run_state) const
   switch(run_state)
   {
     AI_CASE_RETURN(AITimer_start);
-    AI_CASE_RETURN(AITimer_wait);
     AI_CASE_RETURN(AITimer_expired);
   }
   ASSERT(false);
   return "UNKNOWN STATE";
 }
 
-void AITimer::initialize_impl()
-{
-  ASSERT(!mFrameTimer.isRunning());
-  set_state(AITimer_start);
-}
-
 void AITimer::expired()
 {
-  AICondition<bool>::wat has_expired_w(mHasExpired);
-  *has_expired_w = true;
-  mHasExpired.broadcast();
+  mHasExpired.store(true, std::memory_order::relaxed);
+  signal(1);
 }
 
 void AITimer::multiplex_impl(state_type run_state)
@@ -65,17 +56,8 @@ void AITimer::multiplex_impl(state_type run_state)
   {
     case AITimer_start:
       {
-        mFrameTimer.create(mInterval, boost::bind(&AITimer::expired, this));
-        set_state(AITimer_wait);
-        break;
-      }
-    case AITimer_wait:
-      {
-        AICondition<bool>::rat has_expired_r(mHasExpired);
-        if (*has_expired_r)
-          set_state(AITimer_expired);
-        else
-          wait(mHasExpired);
+        mFrameTimer.create(mInterval, std::bind(&AITimer::expired, *this));
+	wait_until([&]{ return mHasExpired.load(std::memory_order::relaxed); }, 1, AITimer_expired);
         break;
       }
     case AITimer_expired:
@@ -90,4 +72,3 @@ void AITimer::abort_impl()
 {
   mFrameTimer.cancel();
 }
-#endif

@@ -34,7 +34,7 @@
 #pragma once
 
 #include "AIStatefulTask.h"
-#include "aiframetimer.h"
+#include <atomic>
 
 // A timer task.
 //
@@ -68,14 +68,13 @@ class AITimer : public AIStatefulTask {
     // The different states of the stateful task.
     enum timer_state_type {
       AITimer_start = direct_base_type::max_state,
-      AITimer_wait,
       AITimer_expired
     };
   public:
     static state_type const max_state = AITimer_expired + 1;
 
   private:
-    AICondition<bool> mHasExpired;      //!< Set to true after the timer expired.
+    std::atomic_bool mHasExpired;  	//!< Set to true after the timer expired.
     AIFrameTimer mFrameTimer;           //!< The actual timer that this object wraps.
     double mInterval;                   //!< Input variable: interval after which the event will be generated, in seconds.
 
