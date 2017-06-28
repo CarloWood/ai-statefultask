@@ -37,6 +37,7 @@
 #pragma once
 
 #include "utils/AIRefCount.h"
+#include "utils/macros.h"
 #include "threadsafe/aithreadsafe.h"
 #include "threadsafe/AIMutex.h"
 #include "debug.h"
@@ -298,6 +299,3 @@ NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct statefultask;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
-
-// This can be used in state_str_impl.
-#define AI_CASE_RETURN(x) do { case x: return #x; } while(0)
