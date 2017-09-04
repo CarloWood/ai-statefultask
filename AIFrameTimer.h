@@ -1,6 +1,7 @@
 #pragma once
 
 #include<chrono>
+#include<memory>
 
 // The timer task used in AITimer.
 

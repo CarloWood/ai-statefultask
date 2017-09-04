@@ -8,6 +8,8 @@ libstatefultask_la_SOURCES = \
 	AIEngine.cxx \
 	AIEngine.h \
 	AIPackagedTask.h \
+        AIFrameTimer.cxx \
+        AIFrameTimer.h \
 	AITimer.cxx \
 	AITimer.h \
 	AIThreadPool.cxx \

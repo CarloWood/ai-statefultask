@@ -1,9 +1,9 @@
 // The timer task used by AITimer
 
 #include "sys.h"
-#include"AIFrameTimer.h"
+#include "AIFrameTimer.h"
 
-void AIFrameTimer::create(std::chrono::time_point Interval, std::function<void()> callback)
+void AIFrameTimer::create(std::chrono::steady_clock::time_point Interval, std::function<void()> callback)
 {
   //add timepoint to set
   //register callback
@@ -20,7 +20,7 @@ bool AIFrameTimer::isRunning()
   return true;//if running, return false if not running
 }
 
-void AIFrameTimer::call(std::chrono::time_point interval)
+void AIFrameTimer::call(std::chrono::steady_clock::time_point interval)
 {
   //call all functions in the set matching the time point
 }
