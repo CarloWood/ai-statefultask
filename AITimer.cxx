@@ -31,6 +31,7 @@
  *   - Transfered copyright to Carlo Wood.
  */
 
+#include "sys.h"
 #include "AITimer.h"
 
 char const* AITimer::state_str_impl(state_type run_state) const
@@ -44,10 +45,10 @@ char const* AITimer::state_str_impl(state_type run_state) const
   return "UNKNOWN STATE";
 }
 
-void AITimer::expired()
+void AITimer::initialize_impl()
 {
-  mHasExpired.store(true, std::memory_order::relaxed);
-  signal(1);
+  ASSERT(!mFrameTimer.isRunning());
+  set_state(AITimer_start);
 }
 
 void AITimer::multiplex_impl(state_type run_state)
@@ -56,8 +57,9 @@ void AITimer::multiplex_impl(state_type run_state)
   {
     case AITimer_start:
       {
-        mFrameTimer.create(mInterval, std::bind(&AITimer::expired, *this));
-	wait_until([&]{ return mHasExpired.load(std::memory_order::relaxed); }, 1, AITimer_expired);
+        mFrameTimer.create(mInterval, [](){signal(1););
+        set_state(AITimer_expired);
+        wait(1);
         break;
       }
     case AITimer_expired:

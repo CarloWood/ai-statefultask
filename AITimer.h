@@ -34,7 +34,7 @@
 #pragma once
 
 #include "AIStatefulTask.h"
-#include <atomic>
+#include "AIFrameTimer.h"
 
 // A timer task.
 //
@@ -74,7 +74,6 @@ class AITimer : public AIStatefulTask {
     static state_type const max_state = AITimer_expired + 1;
 
   private:
-    std::atomic_bool mHasExpired;  	//!< Set to true after the timer expired.
     AIFrameTimer mFrameTimer;           //!< The actual timer that this object wraps.
     double mInterval;                   //!< Input variable: interval after which the event will be generated, in seconds.
 
@@ -83,7 +82,7 @@ class AITimer : public AIStatefulTask {
 #ifdef CWDEBUG
       AIStatefulTask(debug),
 #endif
-      mHasExpired(false), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
+      mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
     /**
      * @brief Set the interval after which the timer should expire.
@@ -116,8 +115,4 @@ class AITimer : public AIStatefulTask {
 
     // Handle aborting from current bs_run state.
     void abort_impl() override;
-
-  private:
-    // This is the callback for mFrameTimer.
-    void expired();
 };
