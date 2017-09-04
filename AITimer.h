@@ -78,7 +78,7 @@ class AITimer : public AIStatefulTask {
     double mInterval;                   //!< Input variable: interval after which the event will be generated, in seconds.
 
   public:
-    AITimer(CWD_ONLY(bool debug = false)) :
+    AITimer(DEBUG_ONLY(bool debug = false)) :
 #ifdef CWDEBUG
       AIStatefulTask(debug),
 #endif

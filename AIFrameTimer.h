@@ -10,11 +10,11 @@ class AIFrameTimer {
 
   public:
     AIFrameTimer() {}
-    void create(std::chrono::time_point interval, std::function<void()> callback);
+    void create(std::chrono::steady_clock::time_point interval, std::function<void()> callback);
     void cancel();
     bool isRunning();
 
   private:
-    void call(std::chrono::time_point Interval);
+    void call(std::chrono::steady_clock::time_point Interval);
 };
 

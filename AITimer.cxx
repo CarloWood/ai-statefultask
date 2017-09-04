@@ -57,7 +57,8 @@ void AITimer::multiplex_impl(state_type run_state)
   {
     case AITimer_start:
       {
-        mFrameTimer.create(mInterval, [](){signal(1););
+        std::chrono::steady_clock::time_point time_point = std::chrono::steady_clock::now();
+        mFrameTimer.create(time_point, [this](){signal(1);});
         set_state(AITimer_expired);
         wait(1);
         break;
