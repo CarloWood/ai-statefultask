@@ -3,10 +3,13 @@
 #include "sys.h"
 #include "AIFrameTimer.h"
 
-void AIFrameTimer::create(std::chrono::steady_clock::time_point Interval, std::function<void()> callback)
+void AIFrameTimer::create(timetype interval, lambdatype callback)
 {
-  //add timepoint to set
-  //register callback
+  TimerContainer container(interval, callback);
+  auto it = timer_container.begin();
+  while((it != timer_container.end()) && (*it < container))
+    ++it;
+  timer_container.insert(it, std::move(container));
 }
 
 void AIFrameTimer::cancel()
