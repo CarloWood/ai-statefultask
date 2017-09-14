@@ -93,7 +93,7 @@ class AITimer : public AIStatefulTask {
      *
      * Call abort() at any time to stop the timer (and delete the AITimer object).
      */
-    void setInterval(double interval) { mInterval = interval; m_time_point = std::chrono::steady_clock::now() + interval;}
+    void setInterval(double interval) { mInterval = interval; /*m_time_point = std::chrono::steady_clock::now() + std::chrono::duration<double>(interval);*/}
 
     /**
      * @brief Get the expiration interval.
