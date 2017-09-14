@@ -3,28 +3,32 @@
 #include "sys.h"
 #include "AIFrameTimer.h"
 
-void AIFrameTimer::create(timetype interval, lambdatype callback)
+void AIFrameTimer::create(timetype const& interval, lambdatype const& callback)
 {
-  TimerContainer container(interval, callback);
-  auto it = timer_container.begin();
-  while((it != timer_container.end()) && (*it < container))
-    ++it;
-  timer_container.insert(it, std::move(container));
+  auto result = timer_containers.emplace(interval, callback);
+  if(!result.second)
+    result.first->push_back(callback);
 }
 
-void AIFrameTimer::cancel()
+void AIFrameTimer::cancel(timetype const& interval, lambdatype const& callback)
 {
-  //remove timepoint from set
-  //unregister callback
+  auto result = timer_containers.find(interval);
+  if(result != timer_containers.end())
+    if(result->remove(callback))
+      timer_containers.erase(result);    
 }
 
-bool AIFrameTimer::isRunning()
+bool AIFrameTimer::isRunning(timetype const& interval, lambdatype const& callback)
 {
-  return true;//if running, return false if not running
+  return timer_containers.find(interval)->is_in(callback);
 }
 
-void AIFrameTimer::call(std::chrono::steady_clock::time_point interval)
+void AIFrameTimer::expire(timetype const& interval)
 {
-  //call all functions in the set matching the time point
+  auto result = timer_containers.find(interval);
+  if(result == timer_containers.end())
+    return;
+  result->call();
+  timer_containers.erase(result);
 }
 
