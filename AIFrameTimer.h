@@ -23,7 +23,14 @@ class TimerContainer {
     void push_back(lambdatype const& callback) {m_callbacks.push_back(callback);}
     void call() {for(lambdatype callback : m_callbacks) callback();}
     bool is_in(lambdatype const& callback) {for(lambdatype in_vector : m_callbacks) if(callback == in_vector) return true;}
-    bool remove(lambdatype const& callback) {for(auto in_vector = m_callbacks.begin(); in_vector != m_callbacks.end(); ++in_vector) if(callback == *in_vector) m_callbacks.erase(in_vector); return m_callbacks.empty();}
+    bool remove(lambdatype const& callback)
+    {
+      std::erase(
+          std::remove_if(m_callbacks.begin(), m_callbacks.end(), [&callback](lambdatype const& cb){ return callback == cb}),
+          m_callbacks.end()
+      );
+      return m_callbacks.empty();
+    }
 
     friend bool operator<(TimerContainer const& lhs, TimerContainer const& rhs) {return lhs.m_time < rhs.m_time;}
     friend bool operator==(TimerContainer const& lhs, timetype const& rhs) {return lhs.m_time < rhs;}
