@@ -18,9 +18,9 @@ class TimerContainer {
     std::vector<lambdatype> m_callbacks;
 
   public:
-    TimerContainer(timetype const& time, lambdatype const& callback) : m_time(std::move(time)), m_callbacks(1, std::move(callback)) {}
+    TimerContainer(timetype const& time, lambdatype const& callback) : m_time(time), m_callbacks(1, callback) { }
     //TimerContainer(TimerContainer const&& other) : m_time(std::move(other.m_time)), m_callbacks(std::move(other.m_callbacks)) {}
-    void push_back(lambdatype const& callback) {m_callbacks.push_back(std::move(callback));}
+    void push_back(lambdatype const& callback) {m_callbacks.push_back(callback);}
     void call() {for(lambdatype callback : m_callbacks) callback();}
     bool is_in(lambdatype const& callback) {for(lambdatype in_vector : m_callbacks) if(callback == in_vector) return true;}
     bool remove(lambdatype const& callback) {for(auto in_vector = m_callbacks.begin(); in_vector != m_callbacks.end(); ++in_vector) if(callback == *in_vector) m_callbacks.erase(in_vector); return m_callbacks.empty();}
