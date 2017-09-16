@@ -33,7 +33,7 @@ class TimerContainer {
     }
 
     friend bool operator<(TimerContainer const& lhs, TimerContainer const& rhs) {return lhs.m_time < rhs.m_time;}
-    friend bool operator==(TimerContainer const& lhs, timetype const& rhs) {return lhs.m_time < rhs;}
+    friend bool operator==(TimerContainer const& lhs, timetype const& rhs) {return lhs.m_time == rhs.m_time;}
     //TimerContainer& operator=(TimerContainer const& other) {return TimerContainer(other);}
 };
 
