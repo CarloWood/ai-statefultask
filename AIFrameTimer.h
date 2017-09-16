@@ -15,7 +15,7 @@ using lambdatype = std::function<void()>;
 class TimerContainer {
   private:
     timetype m_time;
-    std::vector<lambdatype> m_callbacks;
+    mutable std::vector<lambdatype> m_callbacks;
 
   public:
     TimerContainer(timetype const& time, lambdatype const& callback) : m_time(time), m_callbacks(1, callback) { }
