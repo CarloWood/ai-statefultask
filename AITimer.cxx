@@ -31,6 +31,7 @@
  *   - Transfered copyright to Carlo Wood.
  */
 
+#include "sys.h"
 #include "AITimer.h"
 
 char const* AITimer::state_str_impl(state_type run_state) const
