@@ -1,5 +1,7 @@
 AM_CPPFLAGS = -iquote $(top_srcdir) -iquote $(top_srcdir)/cwds
 
+SUBDIRS = doc
+
 noinst_LTLIBRARIES = libstatefultask.la
 
 libstatefultask_la_SOURCES = \
