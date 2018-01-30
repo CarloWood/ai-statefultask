@@ -1,6 +1,6 @@
 /**
  * @file
- * @brief Declaration of AIAIAuxiliaryThread.
+ * @brief Declaration of AIAuxiliaryThread.
  *
  * Copyright (C) 2017  Carlo Wood.
  *
@@ -26,25 +26,26 @@
 #include "utils/Singleton.h"
 #include "threadsafe/aithreadsafe.h"
 
-class AIAuxiliaryThread : public Singleton<AIAuxiliaryThread> {
-    friend_Instance;
-  private:
-    // MAIN-THREAD
-    AIAuxiliaryThread() : m_keep_running(false), m_stopped(true) { }
-    ~AIAuxiliaryThread() { }
-    AIAuxiliaryThread(AIAuxiliaryThread const&) : Singleton<AIAuxiliaryThread>() { }
+class AIAuxiliaryThread : public Singleton<AIAuxiliaryThread>
+{
+  friend_Instance;
+ private:
+  // MAIN-THREAD
+  AIAuxiliaryThread() : m_keep_running(false), m_stopped(true) { }
+  ~AIAuxiliaryThread() { }
+  AIAuxiliaryThread(AIAuxiliaryThread const&) : Singleton<AIAuxiliaryThread>() { }
 
-  private:
-    std::thread m_handle;
-    using keep_running_type = aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>>;
-    keep_running_type m_keep_running;
-    using stopped_type = aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>>;
-    stopped_type m_stopped;
+ private:
+  std::thread m_handle;
+  using keep_running_type = aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>>;
+  keep_running_type m_keep_running;
+  using stopped_type = aithreadsafe::Wrapper<bool, aithreadsafe::policy::Primitive<std::mutex>>;
+  stopped_type m_stopped;
 
-  public:
-    static void start();
-    static void stop();
+ public:
+  static void start();
+  static void stop();
 
-  private:
-    static void mainloop();
+ private:
+  static void mainloop();
 };

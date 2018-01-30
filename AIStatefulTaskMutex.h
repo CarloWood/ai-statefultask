@@ -41,32 +41,32 @@ class AIStatefulTask;
 
 class AIStatefulTaskMutex
 {
-  protected:
-    AIStatefulTask const* m_owner;              // Owner of the lock. Only valid when m_lock_count > 0.
-    AIThreadSafeSimpleDC<int> m_lock_count;     // Number of times unlock must be callled before unlocked.
-    using lock_count_wat = AIAccess<int>;
-    using lock_count_crat = AIAccessConst<int>;
+ protected:
+  AIStatefulTask const* m_owner;              // Owner of the lock. Only valid when m_lock_count > 0.
+  AIThreadSafeSimpleDC<int> m_lock_count;     // Number of times unlock must be callled before unlocked.
+  using lock_count_wat = AIAccess<int>;
+  using lock_count_crat = AIAccessConst<int>;
 
-  public:
-    AIStatefulTaskMutex() : m_owner(nullptr), m_lock_count(0) { }
+ public:
+  AIStatefulTaskMutex() : m_owner(nullptr), m_lock_count(0) { }
 
-    bool trylock(AIStatefulTask const* owner)
-    {
-      lock_count_wat lock_count_w(m_lock_count);
-      if (*lock_count_w > 0 && m_owner != owner) return false;
-      m_owner = owner;
-      ++*lock_count_w;
-      return true;
-    }
-    void unlock(AIStatefulTask const* owner)
-    {
-      lock_count_wat lock_count_w(m_lock_count);
-      ASSERT(*lock_count_w > 0 && m_owner == owner);
-      --*lock_count_w;
-    }
-    bool is_locked() const
-    {
-      lock_count_crat lock_count_w(m_lock_count);
-      return *lock_count_w > 0;
-    }
+  bool trylock(AIStatefulTask const* owner)
+  {
+    lock_count_wat lock_count_w(m_lock_count);
+    if (*lock_count_w > 0 && m_owner != owner) return false;
+    m_owner = owner;
+    ++*lock_count_w;
+    return true;
+  }
+  void unlock(AIStatefulTask const* owner)
+  {
+    lock_count_wat lock_count_w(m_lock_count);
+    ASSERT(*lock_count_w > 0 && m_owner == owner);
+    --*lock_count_w;
+  }
+  bool is_locked() const
+  {
+    lock_count_crat lock_count_w(m_lock_count);
+    return *lock_count_w > 0;
+  }
 };

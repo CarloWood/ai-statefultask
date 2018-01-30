@@ -114,97 +114,202 @@
 //==================================================================
 // Declaration
 
-// Every stateful task is (indirectly) derived from AIStatefulTask.
-// For example:
+#ifdef DOXYGEN  // Only defined while generating documentation.
 
-#ifdef EXAMPLE_CODE     // undefined
+/*!
+ * @anchor example_task
+ * @brief An example task class.
+ *
+ * Every stateful task is (indirectly) derived from AIStatefulTask.
+ *
+ * For example:
+ * @code
+ * class ExampleBase : public AIStatefulTask
+ * {
+ *   ...
+ * };
+ *
+ * class Example : public ExampleBase
+ * {
+ *  protected:
+ *   // Each derived class must declare direct_base_type to be the class that it is directly derived from.
+ *   using direct_base_type = ExampleBase;
+ *
+ *   // Each derived class must define the states that it might go through.
+ *   enum example_state_type {
+ *     Example_start = direct_base_type::max_state,     // The first state must be equal to direct_base_type::max_state.
+ *     Example_next,
+ *     Example_foo,
+ *     Example_done                                     // The last state is used to give max_state its value.
+ *   };
+ *
+ *  public:
+ *   // Each derived class must define a max_state that is one beyond its last state.
+ *   static state_type constexpr max_state = Example_done + 1;
+ *
+ *  public:
+ *   // The derived class must have a default constructor.
+ *   Example();
+ *
+ *  protected:
+ *  // The destructor of the derived class must be protected.
+ *   ~Example() override;
+ *
+ *  protected:
+ *    // The following two virtual functions must be implemented:
+ *
+ *    // Convert a state_type to a human readable string, for debug purposes.
+ *    char const* state_str_impl(state_type run_state) const override;
+ *
+ *    // Actually run the task.
+ *    void multiplex_impl(state_type run_state) override;
+ *
+ *    // The following virtual function can be overridden (they have a default):
+ *
+ *    // Handle initializing the task object.
+ *    // The default initialize_impl sets the starting state to maxstate,
+ *    // which should be the first state of the derived class.
+ *    void initialize_impl() override;
+ *
+ *    // Handle aborting from current bs_multiplex state.
+ *    // The default abort_impl does nothing.
+ *    void abort_impl() override;
+ *
+ *    // Handle cleaning up from initialization (or post abort) state.
+ *    // The default finish_impl() does nothing.
+ *    void finish_impl() override;
+ * };
+ * @endcode
+ */
+class Example : public AIStatefulTask
+{
+ protected:
+  /*!
+   * @brief Stringify a run state, for debugging output.
+   *
+   * @param run_state A user defined state.
+   * @return A string literal with the human readable name of the state.
+   *
+   * This is a virtual function of the base class AIStatefulTask and
+   * must be overridden by every derived class.
+   *
+   * Example implementation:
+   *
+   * @code
+   * char const* Example::state_str_impl(state_type run_state) const
+   * {
+   *   // If this fails then a derived class forgot to add an AI_CASE_RETURN for this state.
+   *   ASSERT(run_state < max_state);
+   *   switch(run_state)
+   *   {
+   *     // A complete listing of hello_world_state_type.
+   *     AI_CASE_RETURN(Example_start);
+   *     // ...
+   *     AI_CASE_RETURN(Example_done);
+   *   }
+   *   return direct_base_type::state_str_impl(run_state);
+   * }
+   * @endcode
+   */
+  char const* state_str_impl(state_type run_state) const override;
 
-class HelloWorld : public AIStatefulTask {
-  protected:
-    // The base class of this task.
-    using direct_base_type = AIStatefulTask;
+  /*!
+   * @brief Initialization of a task.
+   *
+   * The default \c initialize_impl sets the state to the first state,
+   * as is done in the example below. When the default is overridden
+   * then the new implementation must at least call @ref set_state once.
+   *
+   * Example implementation:
+   *
+   * @code
+   * void Example::initialize_impl()
+   * {
+   *   set_state(Example_start);
+   * }
+   * @endcode
+   */
+  void initialize_impl() override;
 
-    // The different states of the task.
-    enum hello_world_state_type {
-      HelloWorld_start = direct_base_type::max_state,
-      HelloWorld_done,
-    };
-  public:
-    static state_type const max_state = HelloWorld_done + 1;    // One beyond the largest state.
+  /*! @anchor multiplex_impl
+   * @brief The main implementation of the task. Run the task.
+   *
+   * @param run_state The current user defined state that the task is in.
+   *
+   * Example implementation:
+   *
+   * @code
+   * void Example::multiplex_impl(state_type run_state)
+   * {
+   *   switch(run_state)
+   *   {
+   *     case Example_start:
+   *       // Handle state Example_start here.
+   *       break;
+   *     case Example_next:
+   *       // Handle state Example_next here.
+   *       break;
+   *     // ... etc.
+   *     case Example_done:
+   *       finish();
+   *       break;
+   *   }
+   * }
+   * @endcode
+   */
+  void multiplex_impl(state_type run_state) override;
 
-  public:
-    // The derived class must have a default constructor.
-    HelloWorld();
+  /*! Handle aborting the task.
+   *
+   * Example implementation:
+   *
+   * @code
+   * void Example::abort_impl()
+   * {
+   * }
+   * @endcode
+   */
+  void abort_impl() override;
 
-  protected:
-    // The destructor must be protected.
-    ~HelloWorld() override;
+  /*! Handle finishing the task.
+   *
+   * Example implementation:
+   *
+   * @code
+   * void Example::finish_impl()
+   * {
+   * }
+   * @endcode
+   */
+  void finish_impl() override;
 
-  protected:
-    // The following virtual functions must be implemented:
-
-    // Return human readable string for run_state.
-    char const* state_str_impl(state_type run_state) const override;
-
-    // Handle initializing the object (the default AIStatefulTask::initialize_impl sets the starting state to maxstate, which should be the first state of the derived class).
-    void initialize_impl() override;
-
-    // Handle mRunState.
-    void multiplex_impl(state_type run_state) override;
-
-    // Handle aborting from current bs_multiplex state (the default AIStatefulTask::abort_impl() does nothing).
-    void abort_impl() override;
-
-    // Handle cleaning up from initialization (or post abort) state (the default AIStatefulTask::finish_impl() does nothing).
-    void finish_impl() override;
+  /*! Handle being force killed.
+   *
+   * This member function is called when a task is running in an AIEngine
+   * and that engine is flushed (by calling AIEngine::flush()). The result
+   * is that the task just stops running cold. Neither abort_impl() nor
+   * finish_impl() is called: it just stops getting any CPU cycles and
+   * should be destructed shortly.
+   *
+   * You probably will never to override this function. In fact, it
+   * will never be called unless you call AIEngine::flush() yourself
+   * and its main purpose is to avoid an assert in the destructor of
+   * the tasks (because otherwise their internal state would show
+   * they are still running which is an error otherwise).
+   *
+   * Example implementation:
+   *
+   * @code
+   * void Example::force_killed()
+   * {
+   *   direct_base_class::force_killed();
+   *   // Handle being forcefully killed.
+   * }
+   * @endcode
+   */
+  void force_killed() override;
 };
-
-// In the .cpp file:
-
-char const* HelloWorld::state_str_impl(state_type run_state) const
-{
-  switch(run_state)
-  {
-    // A complete listing of hello_world_state_type.
-    AI_CASE_RETURN(HelloWorld_start);
-    AI_CASE_RETURN(HelloWorld_done);
-  }
-#if directly_derived_from_AIStatefulTask
-  ASSERT(false);
-  return "UNKNOWN STATE";
-#else
-  ASSERT(run_state < direct_base_type::max_state);
-  return direct_base_type::state_str_impl(run_state);
-#endif
-}
-
-// This function could be skipped because this is what the default initialize_impl() does.
-void HelloWorld::initialize_impl()
-{
-  set_state(HelloWorld_start);
-}
-
-void HelloWorld::multiplex_impl(state_type run_state)
-{
-  switch(run_state)
-  {
-    case HelloWorld_start:
-      break;
-    case HelloWorld_done:
-      finish();
-      break;
-  }
-}
-
-void HelloWorld::abort_impl()
-{
-}
-
-void HelloWorld::finish_impl()
-{
-}
 #endif // EXAMPLE_CODE
-
 
 //==================================================================
 // Life cycle: creation, initialization, running and destruction
@@ -214,12 +319,12 @@ void HelloWorld::finish_impl()
 // which might or might not immediately start to execute the task.
 
 #ifdef EXAMPLE_CODE
-HelloWorld* hello_world = new HelloWorld;
+Example* hello_world = new Example;
 hello_world->init(...);         // A custom initialization function.
 hello_world->run(...);          // One of the run() functions.
 // hello_world might be destructed here.
-// You can avoid possible destruction by using an boost::intrusive_ptr<HelloWorld>
-// instead of HelloWorld*.
+// You can avoid possible destruction by using an boost::intrusive_ptr<Example>
+// instead of Example*.
 #endif // EXAMPLE_CODE
 
 // The call to run() causes a call to initialize_impl(), which MUST call
@@ -812,10 +917,7 @@ void AIStatefulTask::run(AIStatefulTask* parent, condition_type condition, on_ab
     mParent = parent;
     // In that case remove any old callback!
     if (mCallback)
-    {
-      delete mCallback;
       mCallback = nullptr;
-    }
 
     mParentCondition = condition;
     mOnAbort = on_abort;
@@ -830,9 +932,9 @@ void AIStatefulTask::run(AIStatefulTask* parent, condition_type condition, on_ab
   reset();
 }
 
-void AIStatefulTask::run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine)
+void AIStatefulTask::run(std::function<void (bool)> cb_function, AIEngine* default_engine)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(<slot>, default_engine = " << default_engine->name() << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(<callback>, default_engine = " << default_engine->name() << ") [" << (void*)this << "]");
 
 #ifdef DEBUG
   {
@@ -852,14 +954,9 @@ void AIStatefulTask::run(callback_type::signal_type::slot_type const& slot, AIEn
 
   // Clean up any old callbacks.
   mParent = nullptr;
-  if (mCallback)
-  {
-    delete mCallback;
-    mCallback = nullptr;
-  }
 
   // Create new call back.
-  mCallback = new callback_type(slot);
+  mCallback = std::move(cb_function);
 
   // Start from the beginning.
   reset();
@@ -890,10 +987,9 @@ void AIStatefulTask::callback()
   }
   if (mCallback)
   {
-    mCallback->callback(!aborted);
+    mCallback(!aborted);
     if (multiplex_state_type::rat(mState)->base_state != bs_reset)
     {
-      delete mCallback;
       mCallback = nullptr;
       mParent = nullptr;
     }
@@ -903,6 +999,13 @@ void AIStatefulTask::callback()
     // Not restarted by callback. Allow run() to be called later on.
     mParent = nullptr;
   }
+}
+
+char const* AIStatefulTask::state_str_impl(state_type) const
+{
+  // If this fails then a derived class forgot to add an AI_CASE_RETURN for this state.
+  ASSERT(false);
+  return "UNKNOWN STATE";
 }
 
 void AIStatefulTask::initialize_impl()
@@ -1235,7 +1338,7 @@ char const* AIStatefulTask::state_str(base_state_type state)
   return "UNKNOWN BASE STATE";
 }
 
-#ifdef CWDEBUG
+#if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 channel_ct statefultask("STATEFULTASK");
 NAMESPACE_DEBUG_CHANNELS_END

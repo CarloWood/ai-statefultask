@@ -1,23 +1,46 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html LANG="en_US">
-
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=9"/>
+<meta name="generator" content="Doxygen $doxygenversion"/>
 <meta name="Author" content="Carlo Wood">
-<meta name="description" content="@PACKAGE_NAME@ version @VERSION@">
-<title>@PACKAGE_NAME@ documentation</title>
-<link href="doxygen.css" rel="stylesheet" type="text/css">
-<link href="@PACKAGE@.css" rel="stylesheet" type="text/css">
+<meta name="description" content="$projectname">
+<title>$projectname version $projectnumber documentation</title>
+<link rel="shortcut icon" href="$relpath^images/favicon.ico">
+<link href="$relpath^tabs.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="$relpath^jquery.js"></script>
+<script type="text/javascript" src="$relpath^dynsections.js"></script>
+$treeview
+$search
+$mathjax
+<link href="$relpath^$stylesheet" rel="stylesheet" type="text/css" />
+$extrastylesheet
 </head>
-
 <body>
+<div id="top">
 
-<table class="header">
-<tr>
-<td><img src="images/silvrhed.png"></td>
-<td>edit html.header</td>
-</tr>
+<!--BEGIN TITLEAREA-->
+<div id="titlearea">
+<table>
+ <tbody>
+  <tr>
+  <td style="width: 128px"><img src="images/aistatefultask_arc.png"></td>
+  <!--BEGIN PROJECT_NAME-->
+  <td>
+    <p id="html_header1"><span id="name">AIStatefulTask</span> &dash; Asynchronous, Stateful Task Scheduler library.</p>
+    <p id="html_header2">Threads-like task objects evolving through user-defined states.</p>
+  </td>
+  <!--END PROJECT_NAME-->
+  </tr>
+  <!--BEGIN DISABLE_INDEX-->
+   <!--BEGIN SEARCHENGINE-->
+   <td>$searchbox</td>
+   <!--END SEARCHENGINE-->
+  <!--END DISABLE_INDEX-->
+ </tr>
+ </tbody>
 </table>
-
-<div class="normal">
-<hr>
+</div>
+<!--END TITLEAREA-->
+<!-- end header part -->

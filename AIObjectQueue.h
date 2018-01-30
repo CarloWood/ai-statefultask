@@ -91,7 +91,8 @@
 // consumer thread.
 
 template<typename T>
-class AIObjectQueue {
+class AIObjectQueue
+{
   using size_type = std::uint_fast32_t;   // "4294967295 objects ought to be enough for anybody." --Bill Gates.
 
  private:

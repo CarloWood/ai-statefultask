@@ -37,18 +37,18 @@
 #include "sys.h"
 #include "AIEngine.h"
 
+//! The main thread engine.
 AIEngine gMainThreadEngine("gMainThreadEngine");
+//! The auxiliary thread engine.
 AIEngine gAuxiliaryThreadEngine("gAuxiliaryThreadEngine");
 
 void AIEngine::add(AIStatefulTask* stateful_task)
 {
   Dout(dc::statefultask(stateful_task->mSMDebug), "Adding stateful task [" << (void*)stateful_task << "] to " << mName);
   engine_state_type::wat engine_state_w(mEngineState);
-  engine_state_w->list.push_back(QueueElement(stateful_task));
+  engine_state_w->list.emplace_back(stateful_task);
   if (engine_state_w->waiting)
-  {
     engine_state_w.signal();
-  }
 }
 
 void AIEngine::mainloop()
@@ -137,9 +137,7 @@ void AIEngine::wake_up()
 {
   engine_state_type::wat engine_state_w(mEngineState);
   if (engine_state_w->waiting)
-  {
     engine_state_w.signal();
-  }
 }
 
 bool AIEngine::QueueElementComp::operator()(QueueElement const& e1, QueueElement const& e2) const

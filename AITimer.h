@@ -60,64 +60,65 @@
 // You can call run(...) with parameters too, but using run() without parameters will
 // just reuse the old ones (call the same callback).
 //
-class AITimer : public AIStatefulTask {
-  protected:
-    // The base class of this task.
-    using direct_base_type = AIStatefulTask;
+class AITimer : public AIStatefulTask
+{
+ protected:
+  // The base class of this task.
+  using direct_base_type = AIStatefulTask;
 
-    // The different states of the stateful task.
-    enum timer_state_type {
-      AITimer_start = direct_base_type::max_state,
-      AITimer_expired
-    };
-  public:
-    static state_type const max_state = AITimer_expired + 1;
+  // The different states of the stateful task.
+  enum timer_state_type {
+    AITimer_start = direct_base_type::max_state,
+    AITimer_expired
+  };
+ public:
+  static state_type constexpr max_state = AITimer_expired + 1;
 
-  private:
-    std::atomic_bool mHasExpired;  	//!< Set to true after the timer expired.
-    AIFrameTimer mFrameTimer;           //!< The actual timer that this object wraps.
-    double mInterval;                   //!< Input variable: interval after which the event will be generated, in seconds.
+ private:
+  std::atomic_bool mHasExpired;  	//!< Set to true after the timer expired.
+  //AIFrameTimer mFrameTimer;           //!< The actual timer that this object wraps.
+  double mInterval;                   //!< Input variable: interval after which the event will be generated, in seconds.
 
-  public:
-    AITimer(CWD_ONLY(bool debug = false)) :
+ public:
+  AITimer(DEBUG_ONLY(bool debug = false)) :
 #ifdef CWDEBUG
-      AIStatefulTask(debug),
+    AIStatefulTask(debug),
 #endif
-      mHasExpired(false), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
+    mHasExpired(false), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
-    /**
-     * @brief Set the interval after which the timer should expire.
-     *
-     * @param interval Amount of time in seconds before the timer will expire.
-     *
-     * Call abort() at any time to stop the timer (and delete the AITimer object).
-     */
-    void setInterval(double interval) { mInterval = interval; }
+  /**
+   * @brief Set the interval after which the timer should expire.
+   *
+   * @param interval Amount of time in seconds before the timer will expire.
+   *
+   * Call abort() at any time to stop the timer (and delete the AITimer object).
+   */
+  void setInterval(double interval) { mInterval = interval; }
 
-    /**
-     * @brief Get the expiration interval.
-     *
-     * @returns expiration interval in seconds.
-     */
-    double getInterval() const { return mInterval; }
+  /**
+   * @brief Get the expiration interval.
+   *
+   * @returns expiration interval in seconds.
+   */
+  double getInterval() const { return mInterval; }
 
-  protected:
-    // Call finish() (or abort()), not delete.
-    ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); mFrameTimer.cancel(); }
+ protected:
+  // Call finish() (or abort()), not delete.
+  ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); /* mFrameTimer.cancel(); */ }
 
-    // Implemenation of state_str for run states.
-    char const* state_str_impl(state_type run_state) const override;
+  // Implemenation of state_str for run states.
+  char const* state_str_impl(state_type run_state) const override;
 
-    // Handle initializing the object.
-    void initialize_impl() override;
+  // Handle initializing the object.
+  void initialize_impl() override;
 
-    // Handle mRunState.
-    void multiplex_impl(state_type run_state) override;
+  // Handle mRunState.
+  void multiplex_impl(state_type run_state) override;
 
-    // Handle aborting from current bs_run state.
-    void abort_impl() override;
+  // Handle aborting from current bs_run state.
+  void abort_impl() override;
 
-  private:
-    // This is the callback for mFrameTimer.
-    void expired();
+ private:
+  // This is the callback for mFrameTimer.
+  void expired();
 };

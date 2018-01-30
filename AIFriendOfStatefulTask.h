@@ -31,42 +31,58 @@
 
 #include "AIStatefulTask.h"
 
-#ifdef EXAMPLE_CODE     // undefined
+/*!
+ * @brief A hook to the protected control functions of AIStatefulTask.
+ *
+ * Usage:
+ *
+ * @code
+ * class MyTool : public AIFriendOfStatefulTask
+ * {
+ *  public:
+ *   // Task is the (base class of the) class containing this MyTool as member object.
+ *   MyTool(AIStatefulTask* task) : AIFriendOfStatefulTask(task) { }
+ *
+ *   void f()
+ *   {
+ *     // Now we can call the \@link group_protected protected control functions@endlink of \c task.
+ *     yield();
+ *   }
+ * };
+ * @endcode
+ */
+class AIFriendOfStatefulTask
+{
+ public:
+  using state_type = AIStatefulTask::state_type;              //!< Proxy for AIStatefulTask::state_type.
+  using condition_type = AIStatefulTask::condition_type;      //!< Proxy for AIStatefulTask::condition_type.
 
-class MyTool : public AIFriendOfStatefulTask {
-  public:
-    // Parent is the (base class of the) class containing this MyTool as member object.
-    MyTool(AIStatefulTask* parent) : AIFriendOfStatefulTask(parent) { }
+ protected:
+  AIStatefulTask* m_task;     //!< The base class of the object that this object is a member of.
 
-    void f()
-    {
-      // Now we can call the protected control functions set_state, wait, wait_until,
-      // finish, yield, target, yield_frame, yield_ms and yield_if_not.
-      yield();
-    }
-};
+  //! Construct a friend of \a task.
+  AIFriendOfStatefulTask(AIStatefulTask* task) : m_task(task) { }
 
-#endif  // EXAMPLE CODE
-
-class AIFriendOfStatefulTask {
-  public:
-    using state_type = AIStatefulTask::state_type;
-    using condition_type = AIStatefulTask::condition_type;
-
-  protected:
-    AIStatefulTask* m_parent_task;
-
-    AIFriendOfStatefulTask(AIStatefulTask* parent_task) : m_parent_task(parent_task) { }
-
-    void set_state(state_type new_state) { m_parent_task->set_state(new_state); }
-    void wait(condition_type conditions) { m_parent_task->wait(conditions); }
-    void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions) { m_parent_task->wait_until(wait_condition, conditions); }
-    void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state) { m_parent_task->set_state(new_state); m_parent_task->wait_until(wait_condition, conditions); }
-    void finish() { m_parent_task->finish(); }
-    void yield() { m_parent_task->yield(); }
-    void target(AIEngine* engine) { m_parent_task->target(engine); }
-    void yield(AIEngine* engine) { m_parent_task->yield(engine); }
-    void yield_frame(unsigned int frames) { m_parent_task->yield_frame(frames); }
-    void yield_ms(unsigned int ms) { m_parent_task->yield_ms(ms); }
-    bool yield_if_not(AIEngine* engine) { return m_parent_task->yield_if_not(engine); }
+  //! Proxy for AIStatefulTask::set_state.
+  void set_state(state_type new_state) { m_task->set_state(new_state); }
+  //! Proxy for AIStatefulTask::wait.
+  void wait(condition_type conditions) { m_task->wait(conditions); }
+  //! Proxy for AIStatefulTask::wait_until.
+  void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions) { m_task->wait_until(wait_condition, conditions); }
+  //! Proxy for AIStatefulTask::wait_until.
+  void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state) { m_task->set_state(new_state); m_task->wait_until(wait_condition, conditions); }
+  //! Proxy for AIStatefulTask::finish.
+  void finish() { m_task->finish(); }
+  //! Proxy for AIStatefulTask::yield.
+  void yield() { m_task->yield(); }
+  //! Proxy for AIStatefulTask::target.
+  void target(AIEngine* engine) { m_task->target(engine); }
+  //! Proxy for AIStatefulTask::yield.
+  void yield(AIEngine* engine) { m_task->yield(engine); }
+  //! Proxy for AIStatefulTask::yield_frame.
+  void yield_frame(unsigned int frames) { m_task->yield_frame(frames); }
+  //! Proxy for AIStatefulTask::yield_ms.
+  void yield_ms(unsigned int ms) { m_task->yield_ms(ms); }
+  //! Proxy for AIStatefulTask::yield_if_not.
+  bool yield_if_not(AIEngine* engine) { return m_task->yield_if_not(engine); }
 };

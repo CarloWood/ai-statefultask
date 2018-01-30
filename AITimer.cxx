@@ -47,7 +47,7 @@ char const* AITimer::state_str_impl(state_type run_state) const
 
 void AITimer::expired()
 {
-  mHasExpired.store(true, std::memory_order::relaxed);
+  mHasExpired.store(true, std::memory_order_relaxed);
   signal(1);
 }
 
@@ -57,8 +57,8 @@ void AITimer::multiplex_impl(state_type run_state)
   {
     case AITimer_start:
       {
-        mFrameTimer.create(mInterval, std::bind(&AITimer::expired, *this));
-	wait_until([&]{ return mHasExpired.load(std::memory_order::relaxed); }, 1, AITimer_expired);
+        //mFrameTimer.create(mInterval, std::bind(&AITimer::expired, *this));
+	wait_until([&]{ return mHasExpired.load(std::memory_order_relaxed); }, 1, AITimer_expired);
         break;
       }
     case AITimer_expired:
@@ -71,5 +71,5 @@ void AITimer::multiplex_impl(state_type run_state)
 
 void AITimer::abort_impl()
 {
-  mFrameTimer.cancel();
+  //mFrameTimer.cancel();
 }

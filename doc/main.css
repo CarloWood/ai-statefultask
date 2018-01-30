@@ -1,6 +1,53 @@
-/* Stuff here */
-div {
-  margin: 0;
-  padding: 0;
+div#titlearea table {
+  border-spacing: 0;
 }
 
+div#titlearea table td {
+  width: 100%;
+  background-color: #001314;    /* The background color of aistatfultask_arc.png */
+  text-align: left;
+}
+
+p#html_header1 {
+  font-size: 25px;
+  margin-bottom: 4px;
+  color: #feffff;
+}
+
+p#html_header1 span#name {
+  color: #674333;               /* The brownish color of aistatfultask_arc.png */
+}
+
+p#html_header2 {
+  margin-top: 0px;
+  color: #b1fcfc;               /* The light-blue color of aistatfultask_arc.png */
+}
+
+.projectname {
+  color: #674333;
+}
+
+p#dothis span {
+  font-style: normal;
+}
+
+div#mainpage {
+  width: 632px;;
+  margin-left: 150px;
+}
+
+div.todothis {
+  white-space: pre;
+  font-size: 18px;
+  font-style: italic;
+  margin-left: 50px;
+}
+
+table.implement_table {
+  border-spacing: 0;
+  margin-left: 20px;
+}
+
+table.implement_table td.item {
+  padding-right: 10px;
+}

@@ -44,7 +44,6 @@
 #include <list>
 #include <chrono>
 #include <functional>
-#include <boost/signals2.hpp>
 
 class AICondition;
 class AIEngine;
@@ -52,249 +51,546 @@ class AIEngine;
 extern AIEngine gMainThreadEngine;
 extern AIEngine gAuxiliaryThreadEngine;
 
+//! The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
 using AIWaitConditionFunc = std::function<bool()>;
 
+/**
+ * @brief Base class for task objects.
+ *
+ * Derive a new task from this base class.
+ * The derived class must have a protected destructor that uses the override keyword.
+ *
+ * Furthermore a derived class must define,
+ * <table class="implement_table">
+ * <tr><td class="item">@link example_task direct_base_type @endlink<td>The immediate base class of the derived class.
+ * <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::max_state</code>.
+ * <tr><td class="item">@link example_task max_state @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
+ * <tr><td class="item">@link Example::state_str_impl state_str_impl @endlink<td>A member function that returns a <code>char const*</code> to a human readable string for each of its states (for debug purposes).
+ * <tr><td class="item">@link Example::multiplex_impl multiplex_impl @endlink<td>The core function with a <code>switch</code> on the current state to be run.
+ * </table>
+ *
+ * And optionally override zero or more of the following virtual functions:
+ * <table class="implement_table">
+ * <tr><td class="item">@link Example::initialize_impl initialize_impl@endlink<td>Member function that is called once upon creation.
+ * <tr><td class="item">@link Example::abort_impl abort_impl@endlink<td>Member function that is called when the task is aborted.
+ * <tr><td class="item">@link Example::finish_impl finish_impl@endlink<td>Member function that is called when the task finished.
+ * <tr><td class="item">@link Example::force_killed force_killed@endlink<td>Member function that is called when the task is killed.
+ */
 class AIStatefulTask : public AIRefCount
 {
-  public:
-    using state_type = uint32_t;        //!< The type of run_state.
-    using condition_type = uint32_t;    //!< The type of the busy, skip_wait and idle bit masks.
+ public:
+  using state_type = uint32_t;        //!< The type of run_state.
+  using condition_type = uint32_t;    //!< The type of the busy, skip_wait and idle bit masks.
 
-  protected:
-    // The type of event that causes multiplex() to be called.
-    enum event_type {
-      initial_run,
-      schedule_run,
-      normal_run,
-      insert_abort
-    };
-    // The type of mState
-    enum base_state_type {
-      bs_reset,                 // Idle state before run() is called. Reference count is zero (except for a possible external boost::intrusive_ptr).
-      bs_initialize,            // State after run() and before/during initialize_impl().
-      bs_multiplex,             // State after initialize_impl() before finish() or abort().
-      bs_abort,
-      bs_finish,
-      bs_callback,
-      bs_killed
-    };
-  public:
-    static state_type const max_state = bs_killed + 1;
-    enum on_abort_st { abort_parent, signal_parent, do_nothing };
+ private:
+  //! The type of event that causes <code>multiplex(event_type event)</code> to be called.
+  enum event_type {
+    initial_run,              //!< The user called \c run, directly after creating a task.
+    schedule_run,             //!< The user called signal(condition_type) with a condition that the task was waiting for.
+    normal_run,               //!< Called from AIEngine::mainloop for tasks in the engines queue.
+    insert_abort              //!< Called from abort() when that is called on a waiting task.
+  };
 
-  protected:
-    struct multiplex_state_st {
-      base_state_type base_state;
-      AIEngine* current_engine;         // Current engine.
-      AIWaitConditionFunc wait_condition;
-      condition_type conditions;
-      multiplex_state_st() : base_state(bs_reset), current_engine(nullptr), wait_condition(nullptr) { }
-    };
-    struct sub_state_st {
-      condition_type busy;              //!< Each bit represents being not-idle for that condition-bit: wait(condition_bit) was never called or signal(condition_bit) was called last.
-      condition_type skip_wait;         //!< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit: signal(condition_bit) was called while already busy.
-      condition_type idle;              //!< A the idle state at the end of the last call to wait(conditions) (~busy & conditions).
-      state_type run_state;
-      bool reset;
-      bool need_run;
-      bool wait_called;
-      bool aborted;
-      bool finished;
-    };
+ protected:
+  //! The type of \c mState.
+  enum base_state_type {
+    bs_reset,                 //!< Idle state before \c run is called. Reference count is zero (except for a possible external <code>boost::intrusive_ptr</code>).
+    bs_initialize,            //!< State after \c run and before/during \c initialize_impl.
+    bs_multiplex,             //!< State after \c initialize_impl and before \c finish() or \c abort().
+    bs_abort,                 //!< State after \c abort() <em>and</em> leaving \c inside multiplex_impl (if there), and before \c abort_impl().
+    bs_finish,                //!< State after \c finish() (assuming \c abort() isn't called) <em>and</em> leaving \c multiplex_impl (if there), or after \c abort_impl, and before \c finish_impl().
+    bs_callback,              //!< State after \c finish_impl() and before the call back.
+    bs_killed                 //!< State after the call back, or when aborted before being initialized.
+  };
 
-  private:
-    // Base state.
-    using multiplex_state_type = aithreadsafe::Wrapper<multiplex_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
-    multiplex_state_type mState;
+ public:
+  //! The next state value to use for derived classes.
+  static state_type constexpr max_state = bs_killed + 1;
+  //! What to do when a child task is aborted.
+  enum on_abort_st {
+    abort_parent,             //!< Call abort() on the parent.
+    signal_parent,            //!< Call signal(condition_type) on the parent anyway.
+    do_nothing                //!< Abort without notifying the parent task.
+  };
 
-  protected:
-    // Sub state.
-    using sub_state_type = aithreadsafe::Wrapper<sub_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
-    sub_state_type mSubState;
+ protected:
+#ifndef DOXYGEN
+  struct multiplex_state_st {
+    base_state_type base_state;
+    AIEngine* current_engine;         // Current engine.
+    AIWaitConditionFunc wait_condition;
+    condition_type conditions;
+    multiplex_state_st() : base_state(bs_reset), current_engine(nullptr), wait_condition(nullptr) { }
+  };
 
-  private:
-    // Mutex protecting everything below and making sure only one thread runs the task at a time.
-    AIMutex mMultiplexMutex;
-    // Mutex that is locked while calling *_impl() functions and the call back.
-    std::recursive_mutex mRunMutex;
+  struct sub_state_st {
+    condition_type busy;              //!< Each bit represents being not-idle for that condition-bit: wait(condition_bit) was never called or signal(condition_bit) was called last.
+    condition_type skip_wait;         //!< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit: signal(condition_bit) was called while already busy.
+    condition_type idle;              //!< A the idle state at the end of the last call to wait(conditions) (~busy & conditions).
+    state_type run_state;
+    bool reset;
+    bool need_run;
+    bool wait_called;
+    bool aborted;
+    bool finished;
+  };
 
-    using clock_type = std::chrono::steady_clock;
-    using duration_type = clock_type::duration;
+ private:
+  // Base state.
+  using multiplex_state_type = aithreadsafe::Wrapper<multiplex_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
+  multiplex_state_type mState;
 
-    clock_type::rep mSleep;   //!< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
+ protected:
+  // Sub state.
+  using sub_state_type = aithreadsafe::Wrapper<sub_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
+  sub_state_type mSubState;
+#endif // DOXYGEN
 
-    // Callback facilities.
-    // From within an other stateful task:
-    boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
-    condition_type mParentCondition;                    // The condition (bit) that the parent should be signalled with upon a successful finish.
-    on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
-    // From outside a stateful task:
-    struct callback_type {
-      using signal_type = boost::signals2::signal<void (bool)>;
-      callback_type(signal_type::slot_type const& slot) { connection = signal.connect(slot); }
-      ~callback_type() { connection.disconnect(); }
-      void callback(bool success) const { signal(success); }
-      private:
-      boost::signals2::connection connection;
-      signal_type signal;
-    };
-    callback_type* mCallback;           // Pointer to signal/connection, or nullptr when not connected.
+ private:
+  // Mutex protecting everything below and making sure only one thread runs the task at a time.
+  AIMutex mMultiplexMutex;
+  // Mutex that is locked while calling *_impl() functions and the call back.
+  std::recursive_mutex mRunMutex;
 
-    // Engine stuff.
-    AIEngine* mDefaultEngine;           // Default engine.
-    AIEngine* mTargetEngine;            // Requested engine by a call to yield.
-    bool mYield;                        // True when any yield function was called, except for yield_if_not when the passed engine already matched.
+  using clock_type = std::chrono::steady_clock;
+  using duration_type = clock_type::duration;
+
+  clock_type::rep mSleep;   //!< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
+
+  // Callback facilities.
+  // From within an other stateful task:
+  boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
+  condition_type mParentCondition;                    // The condition (bit) that the parent should be signalled with upon a successful finish.
+  on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
+  // From outside a stateful task:
+  std::function<void (bool)>mCallback;                // Pointer to signal/connection, or nullptr when not connected.
+
+  // Engine stuff.
+  AIEngine* mDefaultEngine;           // Default engine.
+  AIEngine* mTargetEngine;            // Requested engine by a call to yield.
+  bool mYield;                        // True when any yield function was called, except for yield_if_not when the passed engine already matched.
 
 #ifdef DEBUG
-    // Debug stuff.
-    std::thread::id mThreadId;          // The thread currently running multiplex() (or std::thread::id() when none).
-    base_state_type mDebugLastState;    // The previous state that multiplex() had a normal run with.
-    bool mDebugShouldRun;               // Set if we found evidence that we should indeed call multiplex_impl().
-    bool mDebugAborted;                 // True when abort() was called.
-    bool mDebugSignalPending;           // True while wait() was called but didn't get idle because of a pending call to signal() that wasn't handled yet.
-    bool mDebugSetStatePending;         // True while set_state() was called by not handled yet.
-    bool mDebugRefCalled;               // True when ref() is called (or will be called within the critial area of mMultiplexMutex).
+  // Debug stuff.
+  std::thread::id mThreadId;          // The thread currently running multiplex() (or std::thread::id() when none).
+  base_state_type mDebugLastState;    // The previous state that multiplex() had a normal run with.
+  bool mDebugShouldRun;               // Set if we found evidence that we should indeed call multiplex_impl().
+  bool mDebugAborted;                 // True when abort() was called.
+  bool mDebugSignalPending;           // True while wait() was called but didn't get idle because of a pending call to signal() that wasn't handled yet.
+  bool mDebugSetStatePending;         // True while set_state() was called by not handled yet.
+  bool mDebugRefCalled;               // True when ref() is called (or will be called within the critial area of mMultiplexMutex).
 #endif
-#ifdef CWDEBUG
-  protected:
-    bool mSMDebug;                      // Print debug output only when true.
-#endif
-  private:
-    duration_type mDuration;            // Total time spent running in the main thread.
 
-  public:
-    AIStatefulTask(DEBUG_ONLY(bool debug)) : mCallback(nullptr), mDefaultEngine(nullptr), mTargetEngine(nullptr), mYield(false),
+#if defined(CWDEBUG) && !defined(DOXYGEN)
+ protected:
+  bool mSMDebug;                      // Print debug output only when true.
+#endif
+
+ private:
+  duration_type mDuration;            // Total time spent running in the main thread.
+
+ public:
+  /*!
+   * @brief Constructor of base class AIStatefulTask.
+   *
+   * The \a debug parameter only exists when CWDEBUG is defined.
+   *
+   * @param debug Write debug output for this task to dc::statefultask.
+   */
+  AIStatefulTask(DEBUG_ONLY(bool debug)) : mDefaultEngine(nullptr), mTargetEngine(nullptr), mYield(false),
 #ifdef DEBUG
-    mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
-    mDebugSetStatePending(false), mDebugRefCalled(false),
+  mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
+  mDebugSetStatePending(false), mDebugRefCalled(false),
 #endif
 #ifdef CWDEBUG
-    mSMDebug(debug),
+  mSMDebug(debug),
 #endif
-    mDuration(duration_type::zero()) { }
+  mDuration(duration_type::zero()) { }
 
-  protected:
-    // The user should call finish() (or abort(), or kill() from the call back when finish_impl() calls run()),
-    // not delete a class derived from AIStatefulTask directly. Deleting it directly before calling run() is
-    // ok however.
-    virtual ~AIStatefulTask()
-    {
+ protected:
+  //! Destructor.
+  virtual ~AIStatefulTask()
+  {
 #ifdef DEBUG
-      base_state_type state = multiplex_state_type::rat(mState)->base_state;
-      ASSERT(state == bs_killed || state == bs_reset);
+    base_state_type state = multiplex_state_type::rat(mState)->base_state;
+    ASSERT(state == bs_killed || state == bs_reset);
 #endif
-    }
+  }
 
-  public:
-    // These functions may be called directly after creation, or from within finish_impl(), or from the call back function.
-    void run(callback_type::signal_type::slot_type const& slot, AIEngine* default_engine = &gMainThreadEngine);
-    void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
-    void run(AIEngine* default_engine = nullptr) { run(nullptr, 0, do_nothing, default_engine); }
+ public:
+  /*! @addtogroup group_run Running tasks
+   * @{
+   * Start a new task or restart an existing task that just finished.
+   * These functions may be called directly after creation, or from within @link Example::finish_impl finish_impl @endlink, or from the call back function.
+   *
+   * @sa page_default_engine
+   */
 
-    // This function may only be called from the call back function (and cancels a call to run() from finish_impl()).
-    void kill();
+  /*!
+   * (Re)run a task with default engine \a default_engine (or \c nullptr if there is no preference), requesting
+   * a call back to a function <code>void cb_function(bool success)</code>. The parameter \c success will be
+   * \c true when the task finished successfully, or \c false when it was aborted.
+   *
+   * @param cb_function The call back function. This function will be called with a single parameter with type \c bool.
+   * @param default_engine The default engine that the task should run in.
+   */
+  void run(std::function<void (bool)> cb_function, AIEngine* default_engine = &gMainThreadEngine);
 
-  protected:
-    // This function can be called from initialize_impl() and multiplex_impl() (both called from within multiplex()).
-    void set_state(state_type new_state);       // Run this state the NEXT loop.
-    // These functions can only be called from within multiplex_impl().
-    void wait(condition_type conditions);       // Go idle if non of the bits of conditions were signalled twice or more since the last call to wait(that_bit).
-                                                // The task will continue whenever signal(condition) is called where conditions & condition != 0.
-    void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions);   // Block until the wait_condition returns true.
-                                                // Whenever something changed that might cause wait_condition to return true, signal(condition) must be called.
-    void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state) { set_state(new_state); wait_until(wait_condition, conditions); }
-    void finish();                              // Mark that the task finished and schedule the call back.
-    void yield();                               // Yield to give CPU to other tasks, but do not block.
-    void target(AIEngine* engine);              // Continue running from engine 'engine'. The task will keep running in this engine until target() is called again.
-                                                // Call target(nullptr) to return to running 'freely' (with a default engine, etc, if one was given).
-    void yield(AIEngine* engine);               // The above two combined.
-    void yield_frame(unsigned int frames);      // Run from the main-thread engine after at least 'frames' frames have passed.
-    void yield_ms(unsigned int ms);             // Run from the main-thread engine after roughly 'ms' miliseconds have passed.
-    bool yield_if_not(AIEngine* engine);        // Do not really yield, unless the current engine is not 'engine'. Returns true if it switched engine.
+  /*!
+   * (Re)run a task with default engine \a default_engine (or \c nullptr if there is no preference),
+   * requesting to signal the parent on condition \a condition when successfully finished.
+   *
+   * Upon an abort the parent can either still be signalled, also aborted or be left in limbo (do nothing).
+   *
+   * @param parent The parent task.
+   * @param condition The condition of the parent that will be signalled.
+   * @param on_abort What to do with the parent when this task is aborted.
+   * @param default_engine The default engine that the task should run in.
+   */
+  void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
 
-    // Calls wait_until.
-    friend class AIFriendOfStatefulTask;
+  /*!
+   * Just run the bloody task (no call back).
+   *
+   * @param default_engine The default engine that the task should run in.
+   */
+  void run(AIEngine* default_engine = nullptr) { run(nullptr, 0, do_nothing, default_engine); }
 
-  public:
-    // This function can be called from multiplex_imp(), but also by a child task and
-    // therefore by any thread. The child task should use an boost::intrusive_ptr<AIStatefulTask>
-    // to access this task.
-    void abort();                               // Abort the task (unsuccessful finish).
+  /*!@}*/ // group_run
 
-    // This is the only function that can be called by any thread at any moment.
-    // Those threads should use an boost::intrusive_ptr<AIStatefulTask> to access this task.
-    bool signal(condition_type condition);      // Guarantee at least one full run of multiplex() iff this task is still blocked since
-                                                // the last call to wait(conditions) where (conditions & condition) != 0.
-                                                // Returns false if it already unblocked or is waiting on (a) different condition(s) now.
+  /*! @addtogroup group_public Public control functions.
+   * @{
+   */
+  /*!
+   * @brief Terminate a task from the call back.
+   *
+   * This function may <em>only</em> be called from the call back function (and cancels a call to
+   * @link group_run run@endlink from @link Example::finish_impl finish_impl@endlink).
+   */
+  void kill();
+  /*!@}*/
 
-  public:
-    // Accessors.
+ protected:
+  /*! @addtogroup group_protected Protected control functions.
+   * @{
+   * From within the \c multiplex_impl function of a running task, the following
+   * member functions may be called to control the task.
+   *
+   * @sa group_public
+   * @sa page_state_evolution
+   */
 
-    // Return true if the derived class is running (also when we are blocked).
-    bool running() const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
+  /*!
+   * @brief Set the state to run, the next invocation of multiplex_impl.
+   *
+   * This function can be called from \c initialize_impl and \c multiplex_impl.
+   *
+   * A call to \c set_state has no immediate effect, except that the <em>next</em>
+   * invokation of \c multiplex_impl will be with the state that was passed to
+   * the (last) call to \c set_state.
+   *
+   * @param new_state The state to run the next invocation of \c multiplex_impl.
+   *
+   * \internal Both, initialize_impl and multiplex_impl are called from within AIStatefulTask::multiplex.
+   */
+  void set_state(state_type new_state);       // Run this state the NEXT loop.
 
-    // Return true if the derived class is running and idle.
-    bool waiting() const;
+  /*! @addtogroup group_wait Going idle and waiting for an event.
+   * @{
+   * These member functions can only be called from within \c multiplex_impl.
+   */
+  /*!
+   * @brief Wait for \a condition.
+   *
+   * Go idle if non of the bits of \a conditions were signalled <em>twice</em> or more since the last call to <code>wait(</code>that_bit<code>)</code>.
+   * The task will continue whenever <code>signal(condition)</code> is called where <code>conditions &amp; condition != 0</code>.
+   *
+   * @param conditions A bit mask of conditions to wait for.
+   */
+  void wait(condition_type conditions);
 
-    // Return true if the derived class is running and idle or already being aborted.
-    bool waiting_or_aborting() const;
+  /*!
+   * @brief Block until the \a wait_condition returns true.
+   *
+   * Whenever something changed that might cause \a wait_condition to return \c true, <code>signal(condition)</code> must be called.
+   * Calling <code>signal(condition)</code> more often is okay.
+   *
+   * @param wait_condition A <code>std::function&lt;bool()&gt;</code> that must return \c true.
+   * @param conditions A bit mask of conditions to wait for.
+   */
+  void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions);
 
-    // Return true if we are added to the current engine.
-    bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
+  /*!
+   * @brief Block until the \a wait_condition returns true.
+   *
+   * Whenever something changed that might cause \a wait_condition to return \c true, <code>signal(condition)</code> must be called.
+   * Calling <code>signal(condition)</code> more often is okay.
+   *
+   * @param wait_condition A <code>std::function&lt;bool()&gt;</code> that must return \c true.
+   * @param conditions A bit mask of conditions to wait for.
+   * @param new_state The new state to continue with once \a wait_condition returns \c true.
+   */
+  void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state)
+  {
+    set_state(new_state);
+    wait_until(wait_condition, conditions);
+  }
 
-    // Return true if the task finished.
-    // If this function returns false then the callback (or call to abort() on the parent) is guaranteed to still going to happen.
-    // If this function returns true then the callback might have happened or might still going to happen.
-    // Call aborted() to check if the task finished successfully if this function returns true (or just call that in the callback).
-    bool finished() const
-    {
-      sub_state_type::crat sub_state_r(mSubState);
-      return sub_state_r->finished ? &AIStatefulTask::mOnAbort : 0;
-    }
+  /*!@}*/ // group_wait
 
-    // Return true if this task was aborted. This value is guaranteed to be valid (only) after the task finished.
-    bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
+  /*!
+   * @brief Mark that the task finished and schedule the call back.
+   *
+   * A call to \c abort and \c finish will cause a task to not call
+   * \c multiplex_impl again at all after leaving it (except when
+   * \c finish_impl calls \c run again, in which case the task is
+   * restarted from the beginning).
+   */
+  void finish();
 
-    // Return true if this thread is executing this task right now (aka, we're inside multiplex() somewhere).
-    bool executing() const { return mMultiplexMutex.self_locked(); }
+  /*!
+   * A call to yield*() has basically no effect on a task, except that its
+   * execution is delayed a bit: this causes the task to return to the
+   * AIEngine main loop code. That way other running tasks (in that engine)
+   * will get the chance to execute before the current task is continued.
+   *
+   * Note that if a state calls \c yield*() without calling first \ref set_state
+   * then this might <em>still</em> cause 100% cpu usage despite the call to \c yield*
+   * because the task will rapidly execute again and then call \c yield* over and over:
+   * an engine keeps iterating over its tasks until all tasks finished
+   * (with the exception of \ref gMainThreadEngine that will return from
+   * AIEngine::mainloop regardless after at least \c AIEngine::sMaxDuration
+   * milliseconds have passed (which can be set by calling
+   * @link AIEngine::setMaxDuration gMainThreadEngine.setMaxDuration(milliseconds)@endlink)).
+   *
+   * @addtogroup group_yield Yield and engine control
+   * @{
+   */
 
-    // Return stringified state, for debugging purposes.
-    static char const* state_str(base_state_type state);
+  /*!
+   * @brief Yield to give CPU to other tasks, but do not block.
+   *
+   * If a task runs potentially too long, it is a could idea to
+   * regularly call this member function and break out of
+   * \c multiplex_impl in order not to let other tasks in the
+   * same engine starve.
+   */
+  void yield();
+
+  /*!
+   * @brief Continue running from \a engine.
+   *
+   * The task will keep running in this engine until \c target is called again.
+   * Call <code>target(nullptr)</code> to return to running freely (with a default engine, etc, if one was given).
+   *
+   * @param engine The required engine to run in.
+   */
+  void target(AIEngine* engine);
+
+  /*!
+   * @brief The above two combined.
+   *
+   * @param engine The required engine to run in.
+   */
+  void yield(AIEngine* engine);
+
+  /*!
+   * @brief Run from the main-thread engine after at least \a frames frames have passed.
+   *
+   * @param frames The number frames to run before returning CPU to other tasks (if any).
+   */
+  void yield_frame(unsigned int frames);
+
+  /*!
+   * @brief Return from the main-thread engine after roughly \a ms miliseconds have passed.
+   *
+   * @param ms The number of miliseconds to run before returning CPU to other tasks (if any).
+   */
+  void yield_ms(unsigned int ms);
+
+  /*!
+   * @brief Do not really yield, unless the current engine is not \a engine.
+   *
+   * @param engine The required engine to run in.
+   * @returns true if it switched engine.
+   */
+  bool yield_if_not(AIEngine* engine);
+
+  /*!@}*/ // group_yield
+  /*!@}*/ // group_protected
+
+  // Calls wait_until.
+  friend class AIFriendOfStatefulTask;
+
+ public:
+  /*! @addtogroup group_public
+   * @{
+   */
+  /*!
+   * @brief Abort the task (unsuccessful finish).
+   *
+   * This function can be called from \c multiplex_imp, but also by a child task and therefore by any thread.
+   * The child task should use a <code>boost::intrusive_ptr&lt;AIStatefulTask&gt;</code> to access this task.
+   *
+   * A call to \c abort and \c finish will cause a task to not call
+   * \c multiplex_impl again at all after leaving it (except when
+   * \c finish_impl calls \c run again, in which case the task is
+   * restarted from the beginning).
+   */
+  void abort();
+
+  /*!
+   * @brief Wake up a waiting task.
+   *
+   * This is the only control function that can be called by any thread at any moment.
+   *
+   * Those threads should use a <code>boost::intrusive_ptr&lt;AIStatefulTask&gt;</code> to access this task.
+   *
+   * Guarantee at least one full run of \a multiplex iff this task is still blocked since
+   * the last call to <code>wait(conditions)</code> where <code>(conditions & condition) != 0</code>.
+   *
+   * @param condition The condition that might have changed, or that the task is waiting for.
+   * @returns false if it already unblocked or is waiting on (a) different condition(s) now.
+   */
+  bool signal(condition_type condition);
+
+  /*!@}*/ // group_public
+
+ public:
+  // Accessors.
+
+  /*!
+   * @brief Return true if the derived class is running.
+   *
+   * The task was initialized (<em>after</em> \c initialize_impl) and did not
+   * call \c finish() or \c abort() yet (<em>before</em> \c finish() or \c abort()).
+   *
+   * When a task enters \c multiplex_impl it is guaranteed to be running.
+   */
+  bool running() const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
+
+  /*!
+   * @brief Return true if the derived class is running and idle.
+   *
+   * Running and idle since the last call to @link group_wait wait@endlink;
+   * if already having been woken up due to a call to @link group_wait signal(condition)@endlink
+   * then we're still waiting until we actually re-entered \c begin_loop.
+   */
+  bool waiting() const;
+
+  /*!
+   * @brief Return true if the derived class is running and idle or already being aborted.
+   *
+   * A task reached the state aborting after returning from \c initialize_impl
+   * or \c multiplex_impl that called \ref abort().
+   * Or when \ref abort() is called from the outside while the task is idle (in which
+   * case we are in the state aborting directly after the call to \ref abort()).
+   *
+   * @sa waiting
+   */
+  bool waiting_or_aborting() const;
+
+  /*!
+   * @brief Return true if we are added to the current engine.
+   *
+   * @param engine The engine that this task is supposed to run in.
+   * @return True if this task is actually added to \a engine.
+   */
+  bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
+
+  /*!
+   * @brief Return true if the task finished.
+   *
+   * If this function returns false then the callback (or call to abort() on the parent) is guaranteed still going to happen.
+   * If this function returns true then the callback might have happened or might still going to happen.
+   * Call aborted() to check if the task finished successfully if this function returns true (or just call that in the callback).
+   */
+  bool finished() const
+  {
+    sub_state_type::crat sub_state_r(mSubState);
+    return sub_state_r->finished ? &AIStatefulTask::mOnAbort : 0;
+  }
+
+  /*!
+   * @brief Return true if this task was aborted.
+   *
+   * This value is guaranteed to be valid (only) after the task finished.
+   */
+  bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
+
+  /*!
+   * @brief Return true if this thread is executing this task right now (aka, we're inside \c multiplex somewhere).
+   */
+  bool executing() const { return mMultiplexMutex.self_locked(); }
+
+  /*!
+   * @brief Return stringified state, for debugging purposes.
+   *
+   * @param state A base state.
+   */
+  static char const* state_str(base_state_type state);
 #ifdef CWDEBUG
-    static char const* event_str(event_type event);
+  /*!
+   * @brief Return stringified event, for debugging purposes.
+   *
+   * @param event An event.
+   */
+  static char const* event_str(event_type event);
 #endif
 
-    void add(duration_type delta) { mDuration += delta; }
-    duration_type getDuration() const { return mDuration; }
+  /*!
+   * @brief Return total time that this task has been running.
+   *
+   * May only be called from the main thread.
+   */
+  duration_type getDuration() const { return mDuration; }
 
-  protected:
-    virtual char const* state_str_impl(state_type run_state) const = 0;
-    virtual void initialize_impl();
-    virtual void multiplex_impl(state_type run_state) = 0;
-    virtual void abort_impl();
-    virtual void finish_impl();
-    virtual void force_killed();                // Called from AIEngine::flush().
+ protected:
+  /*!{
+   * See \ref example_task for a description of the virtual functions.
+   */
+  //! @brief Called to stringify a run state for debugging output. Must be overridden.
+  virtual char const* state_str_impl(state_type run_state) const;
+  //! @brief Called for base state \ref bs_initialize.
+  virtual void initialize_impl();
+  //! @brief Called for base state \ref bs_multiplex.
+  virtual void multiplex_impl(state_type run_state) = 0;
+  //! @brief Called for base state \ref bs_abort.
+  virtual void abort_impl();
+  //! @brief Called for base state \ref bs_finish.
+  virtual void finish_impl();
+  //! Called from AIEngine::flush().
+  virtual void force_killed();
+  /*!}*/
 
-  private:
-    void reset();                               // Called from run() to (re)initialize a (re)start.
-    void multiplex(event_type event, AIEngine* engine = nullptr); // Called to step through the states. If event == normal_run then engine is the engine this was called from.
-    state_type begin_loop();                    // Called from multiplex() at the start of a loop.
-    void callback();                            // Called when the task finished.
-    bool sleep(clock_type::time_point current_time)   // Count frames if necessary and return true when the task is still sleeping.
-    {
-      if (mSleep == 0)
-        return false;
-      else if (mSleep < 0)
-        ++mSleep;
-      else if (mSleep <= current_time.time_since_epoch().count())
-        mSleep = 0;
-      return mSleep != 0;
-    }
+ private:
+  void reset();                                       // Called from run() to (re)initialize a (re)start.
 
-    friend class AIEngine;                      // Calls multiplex() and force_killed().
+  /*! @brief Called to step through the states.
+   *
+   * If event == normal_run then engine is the engine this was called from.
+   */
+  void multiplex(event_type event, AIEngine* engine = nullptr);
+
+  state_type begin_loop();                            // Called from multiplex() at the start of a loop.
+  void callback();                                    // Called when the task finished.
+  bool sleep(clock_type::time_point current_time)     // Count frames if necessary and return true when the task is still sleeping.
+  {
+    if (mSleep == 0)
+      return false;
+    else if (mSleep < 0)
+      ++mSleep;
+    else if (mSleep <= current_time.time_since_epoch().count())
+      mSleep = 0;
+    return mSleep != 0;
+  }
+
+  void add(duration_type delta) { mDuration += delta; }
+
+  friend class AIEngine;      // Calls multiplex(), force_killed() and add().
 };
 
-#ifdef CWDEBUG
+#if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct statefultask;
 NAMESPACE_DEBUG_CHANNELS_END

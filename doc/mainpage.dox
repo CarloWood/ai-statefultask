@@ -1,8 +1,310 @@
 /*!
 
-\mainpage Put title here
+\mainpage Overview
+\htmlonly
 
-<h2>Edit mainpage.dox</h2>
+<div id="mainpage">
+<h2>Introduction</h2>
 
+<p><span class="projectname">AIStatefulTask</span> is an
+<a href="https://github.com/CarloWood/ai-statefultask">open source project</a>
+written by <a href="http://carlowood.github.io/">Carlo Wood</a> and is
+the accumulation of more than a decade of design effort, testing and improvements.
+<span class="projectname">AIStatefulTask</span> allows you
+to write event based applications of arbitrary complexity.</p>
+
+<h3>The Problem</h3>
+
+<p><b>Applications</b> often need to do something along the lines of</p>
+
+<div class="todothis">&quot;do <span>this</span>, and when you're done [...]&quot;</div>
+
+<p>If that task simply requires lots of CPU cycles then one can pass the task to a thread
+and let that crunch away until the task is done. If the task is something basic, like reading a socket,
+then you might be able to find a library that supports performing that particular task in an asynchronous
+manner. In both cases you probably need some kind of event mechanism to be notified when the task has finished.</p>
+
+<p><b>In reality</b> life isn't that simple.
+Often a task will use some&dash; or possibly a significant amount of&dash;
+CPU cycles alternated by the need to idle (i.e. waiting for network and/or disk access).
+It might even never finish; requiring a timeout and/or error handling, etc.
+There certainly won't be an existing library that does this work asynchronously for you and unless
+you can spare a core to do the task synchronously passing the task to another thread won't
+help you one single bit.</p>
+
+<p><b>If your application is complex</b>, tasks will need to perform an arbitrary number of
+other tasks, which in turn need to do tasks before they can finish, so that it is both,
+completely unpredictable what kind of resources and timing a single task needs,
+as well as not feasible to use a thread-per-task because there are simply too many tasks.</p>
+
+<p>Moreover, each task needs a callback mechanism; if such callbacks are performed
+by the thread that happens to finish a task (remember, you can't allocate one particular
+thread for a task) then it is not possible to predict which thread, or in what state
+it is; as a result you can't do much more than set a flag in the callback and still
+need <em>something</em> to pick up on the fact that the task was finished.</p>
+
+<p><b>Heavily asynchronous code</b> has the tendency to exist of a large collection
+of callback functions where one quickly loses overview of which function(s) will be
+called when and in what order. Object orientation is lost because of this and thread-safety
+can only be guaranteed by locking each and every variable every time they are accessed,
+which either leads to unpredictable deadlocks or thread-unsafe accesses when attempting
+to avoid 'unneeded' mutex locking.<p>
+
+<h3>The Objective Of <span class="projectname">AIStatefulTask</span></h3>
+
+<p><b>The design goal</b> of <span class="projectname">AIStatefulTask</span> was to create
+a framework that allows one to dispatch tasks to a thread pool without losing
+thread-safety or object orientation and without wasting CPU cycles or losing
+the ability to fully utilize the power of every available core.</p>
+
+<p><b>A primary goal</b> has also been to allow a developer to achieve all that by
+only concentrating on a single object at a time; having a clear one-on-one
+relationship between a Task and an object.</p>
+
+<p>Despite the complexity of thread dispatching, asynchronous execution and
+error handling, the code of such a task should give (mostly) a linear feel
+along the way of, <div class="todothis">&quot;To do this task,
+<li>do this, and when done,
+<li>do this, and when done,
+<li>do this, and when done,
+<li>then this task is finished.
+<li>Do this if an error occurs.&quot;</div></p>
+
+<h4>Thread-safety And Object Orientation</h4>
+
+<p>Each Task in <span class="projectname">AIStatefulTask</span></h3>
+is derived from
+\endhtmlonly
+class AIStatefulTask, overriding up to six virtual functions.</p>
+<p>These virtual functions allow the developer to perform
+initialization, execute code in the case something
+unexpected happens or when the task finishes,
+and of course define what the task is supposed
+to accomplish by overriding the pure virtual <code>AIStatefulTask::multiplex_impl</code>
+member function of the base class.</p>
+
+<p>The linear feel of a task is accomplished by having all code
+that comprises the majority of the work done by the task in a single
+<code>switch</code> statement, in the overridden <code>multiplex_impl</code>
+member function:</p>
+
+@code
+void MyTask::multiplex_impl(state_type run_state)
+{
+  switch(run_state)
+  {
+    case MyTask_start:
+      /* Do this, and when done continue with MyTask_next_step. */
+      break;
+    case MyTask_next_step:
+      /* Do this, and when done continue with MyTask_last_step. */
+      break;
+    case MyTask_last_step:
+      /* Do this, and when done continue with MyTask_done. */
+      break;
+    case MyTask_done:
+      /* This task is finished. */
+      finish();
+      break;
+  }
+}
+
+void MyTask::abort_impl()
+{
+  /* Do this if an error occurs. */
+}
+@endcode
+
+<p>The <em>states</em> are user defined. This construct allows for a sequential feel&mdash;
+while the thread, at any point, still can return to its main loop and later reenter
+the code where it left of. Note that it doesn't <em>have</em> to be linear, but
+in general the state of a Task will more or less advance in one direction; in the
+above example from <code>MyTask_start</code> to <code>MyTask_next_step</code> to
+<code>MyTask_last_step</code> and finally to <code>MyTask_done</code>. So if the
+case statements are put in that order then this gives an intuitive feel of how
+the task will progress (from top to bottom).</p>
+
+<p>A Task <em>object</em> is only executed by a single thread at a time. Although
+theoretically that can be a different thread each time <code>multiplex_impl</code>
+is reentered the effect is still single threaded; as long as the variables that
+the Task is accessing aren't also accessed outside of a Task then no locking
+is necessary. Most notably, (non-static) private member variables of the Task
+do not need a mutex to protect them when a Task works in isolation (that is,
+no other threads call its member functions while it is working), which is the
+normal mode of operation for a Task as its internal state is basically unknown
+until the task has finished: a task should be left alone doing its thing while
+it is doing its thing.</p>
+
+<p>Moreover, a Task is executed from a well-defined point in each threads
+main loop. This allows to access variables of thread-unsafe third party code
+by running the Task in the same thread as that third-party code. Note that
+it <em>is</em> possible to tell a Task in which thread to run.</p>
+
+\htmlonly
+See <a href="#usage">Usage</a> for more detailed information.
+
+<h2 id="compiling">Compiling</h2>
+
+<p><span class="projectname">AIStatefulTask</span> is a <tt>git submodule</tt>.
+It can just be checked out in its own subdirectory and be compiled as part
+of a larger project. The submodule <em>does</em> contain a <tt>Makefile.am</tt>
+file to facilitate building a libtool archive using the
+<a href="https://www.gnu.org/software/automake/manual/html_node/index.html"><tt>GNU</tt>&nbsp;<tt>autotools</tt></a>.</p>
+
+<p>However, <b>the recommended way</b> to use this submodule is by using <a href="https://github.com/CarloWood/cwm4">cwm4</a>.
+Please read <a href="https://github.com/CarloWood/ai-statefultask#adding-the-ai-statefultask-submodule-to-a-project">README.md</a>
+for a detailed description of how to include <span class="projectname">AIStatefulTask</span> in your cwm4 based project.</p>
+
+<h2 id="usage">Usage</h2>
+<h3>Prerequisites</h3>
+
+<p>Once the build system has been set up correctly (see <a href="#compiling">Compiling</a> above)
+there are still a few things to be taken care of at the C++ level; lets write a quick
+'Hello World'.</p>
+
+<p>In fact, most prerequisites are due to <a href="http://libcwd.sourceforge.net/index.html"><b>libcwd</b></a>:
+<ul>
+<li>Each source file must start with <code>#include &quot;sys.h&quot;</code>.
+By default this will use the one provided by <a href="https://github.com/CarloWood/cwds#readme">cwds</a>
+or you can override that by providing your own sys.h in the root of the project.
+<li>Each source or header file that uses debugging, so that certainly includes
+the <tt>main.cpp</tt>, needs to <code>#include &quot;debug.h&quot;</code> somewhere.
+<li>At the beginning of <code>main</code> you need to add the line:
+\endhtmlonly
+@code
+Debug(NAMESPACE_DEBUG::init());
+@endcode
+This calls a function provided by <tt>cwds</tt> that reads your <tt>~/.libcwdrc</tt> file
+turning on debug output for the specified debug channels.
+
+\htmlonly
+To enable debug output of <span class="projectname">AIStatefulTask</span> you should turn on
+the debug channel <code>statefultask</code>. This can be done by adding it to your <tt>.libcwdrc</tt>
+file or by adding the following line below the previous one:
+\endhtmlonly
+@code
+Debug(if (!dc::statefultask.is_on()) dc::statefultask.on());
+@endcode
+\htmlonly
+</ul>
+</p>
+
+<p>Then there are two things that are needed for <span class="projectname">AIStatefulTask</span>:
+<ul>
+<li>Call <code>AIAuxiliaryThread::start();</code> before running a Task, and
+call <code>AIAuxiliaryThread::stop();</code> before leaving main().
+<li>Having a main loop that calls <code>gMainThreadEngine.mainloop();</code> on a regular basis;
+for example as part of the 'idle' cycle of the main loop of <a href="https://www.gtkmm.org/en/documentation.html">gtkmm/glibmm</a>.
+</ul>
+</p>
+
+<p>See the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/helloworld.cxx"><tt>helloworld.cxx</tt></a>
+file of the ai-statefultask-testsuite project for a working &quot;Hello World&quot; example.
+As another example have a look at the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/fibonacci.cxx"><tt>fibonacci.cxx</tt></a>
+file in the same project.</p>
+
+<p>If you are new to <span class="projectname">AIStatefulTask</span> then I urge
+you to first clone <a href="https://github.com/CarloWood/ai-statefultask-testsuite">ai-statefultask-testsuite</a> and get that working;
+as that will require you to have all the bits and pieces for building a project
+that uses <span class="projectname">AIStatefulTask</span> installed (hint: start
+with getting, compiling and installing <a href="https://github.com/CarloWood/libcwd">libcwd</a>
+and configure that for example with <tt>--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading</tt>
+because, respectivily, you got it with git, but you're not debugging libcwd itself, you don't need memory allocation
+debugging (slow), or printing source_file:line_number locations, and we only need the multithreaded version).
+
+<h3>A tasks life cycle: creation, initialization, running and destruction</h3>
+
+<p>Because Task objects are called by (possibly) multiple threads, although one at a time,
+that are constantly going into functions and leaving them again at the very least all
+the way back to the their main loop; it makes no sense to even want to create a Task object on
+the stack: the life-time of a Task object is <em>unrelated</em> to any scope.</p>
+
+<p><b>The correct way to create task objects</b> therefore is by allocating them with <code>new</code>
+on the heap. There are two ways to do this:</p>
+\endhtmlonly
+
+<ol>
+<li> The quick and dirty way, where you just want to run a task a single time. The task will delete itself when finished.
+@code
+// Here 'task' is usually just some automatic variable.
+MyTask* task = new MyTask(my_args);
+task->my_initialization(my_params); // Assuming MyTask needs this.
+task->run(callback_args);           // This will cause 'task' to
+                                    // be deleted when finished.
+// Do not use 'task' anymore here.
+@endcode
+
+<li> If you want to control the life-time of the Task.
+@code
+// In general 'm_task' will be a member variable of an object.
+boost::intrusive_ptr<MyTask> m_task = new MyTask(my_args);
+
+// Then, every time you want to run it:
+m_task->my_initialization(my_params);
+m_task->run(callback_args);
+// The task object will be kept around until both,
+// 'm_task' is destructed and the task did finish.
+@endcode
+</ol>
+
+<p>Note that this allows the task to be re-used: it can simply be re-initialized and run again
+after it finished; there is no need to allocate memory on the heap and construct a Task
+object every time you want to run it! Of course a task must be finished first before you can restart it.</p>
+
+<p>In the above code snippets, <code>my_args</code> and <code>my_params</code> are
+entirely user defined; respectively the parameters of the constructor of <code>MyTask</code>
+and the initialization parameters to some user defined function <code>MyTask::my_initialization</code>.</p>
+
+<p><code>callback_args</code> are the arguments of one of the @link group_run AIStatefulTask::run@endlink
+member functions. See the documentation of that member function for a description of those
+arguments.</p>
+
+<p>Any thread may create a stateful task object, initialize it by calling
+its initializing member function and call one of the @link group_run AIStatefulTask::run@endlink
+methods, which might or might not immediately start to execute the task.</p>
+
+<p>The call to \c run causes a call to
+@link Example::initialize_impl initialize_impl@endlink,
+which must call
+@link Example::set_state set_state@endlink
+at least once (only the last call is used).
+Upon return from \c initialize_impl,
+@link Example::multiplex_impl multiplex_impl@endlink
+will be called with that state.</p>
+
+<p>\c multiplex_impl may never reentrant (cause itself to be called)
+and should end by callling either one of
+@link AIStatefulTask::wait wait@endlink,
+@link AIStatefulTask::yield yield@endlink,
+@link AIStatefulTask::finish finish@endlink
+[or @link AIStatefulTask::abort abort@endlink].</p>
+
+<p>Leaving \c multiplex_impl without calling any of those might result in an
+immediate reentry, which could cause the task to enter an infinite loop without
+reaching the main loop again, unless the state is changed
+with @link AIStatefulTask::set_state set_state@endlink.</p>
+
+If \c multiplex_impl calls @link AIStatefulTask::wait wait(condition)@endlink,
+and there was only one call to @link AIStatefulTask::signal signal(condition)@endlink
+since the last call to <code>wait(condition)</code>,
+then \c multiplex_impl will not be called again until
+<code>signal(condition)</code> is called from outside.
+
+If \c multiplex_impl calls \c finish then
+@link Example::finish_impl finish_impl@endlink
+will be called [if instead it calls \c abort then
+first @link Example::abort_impl abort_impl@endlink
+will be called, followed by a call to \c finish_impl].
+Upon return from \c multiplex_impl, and if \c finish [or \c abort] was called,
+the call back passed to \c run will be called.
+
+If the call back function does <em>not</em> call \c run, or when
+@link AIStatefulTask::kill kill@endlink
+is called <em>after</em> \c run was called, then the task is
+deleted upon return from the call back, provided the user didn't
+keep a <code>boost::intrusive_ptr&lt;&gt;</code> reference around.
+
+\htmlonly
+</div> <!-- mainpage -->
+\endhtmlonly
 */
-

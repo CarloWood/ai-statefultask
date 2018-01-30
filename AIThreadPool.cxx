@@ -157,7 +157,7 @@ int AIThreadPool::new_queue(int capacity, int priority)
   return index;
 }
 
-#ifdef CWDEBUG
+#if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 channel_ct threadpool("THREADPOOL");
 NAMESPACE_DEBUG_CHANNELS_END

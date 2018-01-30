@@ -50,60 +50,62 @@ class AIDelayedFunction; // not defined.
 // char c = delayed_function.get();     // Get the result.
 //
 template<typename R, typename ...Args>
-class AIDelayedFunction<R(Args...)> {
-  private:
-    std::function<R(Args...)> m_function;       // Pointer to the (member) function.
-    std::tuple<Args...> m_args;                 // Copy of the arguments to be passed.
-    R m_result;                                 // Future result of the function.
+class AIDelayedFunction<R(Args...)>
+{
+ private:
+  std::function<R(Args...)> m_function;       // Pointer to the (member) function.
+  std::tuple<Args...> m_args;                 // Copy of the arguments to be passed.
+  R m_result;                                 // Future result of the function.
 
-  public:
-    // Construct a AIDelayedFunction for a free function.
-    AIDelayedFunction(R (*fp)(Args...)) { m_function = fp; }
+ public:
+  // Construct a AIDelayedFunction for a free function.
+  AIDelayedFunction(R (*fp)(Args...)) { m_function = fp; }
 
-    // Construct a AIDelayedFunction for a member function of object.
-    // The object must have a lifetime that exceeds the call to invoke.
-    template<class C>
-    AIDelayedFunction(C* object, R (C::*memfn)(Args...))
-        { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
+  // Construct a AIDelayedFunction for a member function of object.
+  // The object must have a lifetime that exceeds the call to invoke.
+  template<class C>
+  AIDelayedFunction(C* object, R (C::*memfn)(Args...))
+      { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
 
-    // Exchange the state with that of other.
-    void swap(AIDelayedFunction& other) noexcept
-    {
-      m_function.swap(other.m_function);
-      m_args.swap(other.m_args);
-      std::swap(m_result, other.m_result);
-    }
+  // Exchange the state with that of other.
+  void swap(AIDelayedFunction& other) noexcept
+  {
+    m_function.swap(other.m_function);
+    m_args.swap(other.m_args);
+    std::swap(m_result, other.m_result);
+  }
 
-    // Store the arguments to be passed.
-    void operator()(Args... args) { m_args = std::make_tuple(args...); }
+  // Store the arguments to be passed.
+  void operator()(Args... args) { m_args = std::make_tuple(args...); }
 
-    // Actually invoke the call to the stored function with the stored arguments.
-    void invoke() { m_result = utils::apply_function(m_function, m_args); }
+  // Actually invoke the call to the stored function with the stored arguments.
+  void invoke() { m_result = utils::apply_function(m_function, m_args); }
 
-    // Get the result, only valid after invoke was called.
-    R const& get() const { return m_result; }
+  // Get the result, only valid after invoke was called.
+  R const& get() const { return m_result; }
 };
 
 // Specialization for functions returning void.
 template<typename ...Args>
-class AIDelayedFunction<void(Args...)> {
-  private:
-    std::function<void(Args...)> m_function;    // Pointer to the (member) function.
-    std::tuple<Args...> m_args;                 // Copy of the arguments to be passed.
+class AIDelayedFunction<void(Args...)>
+{
+ private:
+  std::function<void(Args...)> m_function;    // Pointer to the (member) function.
+  std::tuple<Args...> m_args;                 // Copy of the arguments to be passed.
 
-  public:
-    // Construct a AIDelayedFunction for a free function.
-    AIDelayedFunction(void (*fp)(Args...)) { m_function = fp; }
+ public:
+  // Construct a AIDelayedFunction for a free function.
+  AIDelayedFunction(void (*fp)(Args...)) { m_function = fp; }
 
-    // Construct a AIDelayedFunction for a member function of object.
-    // The object must have a lifetime that exceeds the call to invoke.
-    template<class C>
-    AIDelayedFunction(C* object, void (C::*memfn)(Args...))
-        { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
+  // Construct a AIDelayedFunction for a member function of object.
+  // The object must have a lifetime that exceeds the call to invoke.
+  template<class C>
+  AIDelayedFunction(C* object, void (C::*memfn)(Args...))
+      { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
 
-    // Store the arguments to be passed.
-    void operator()(Args... args) { m_args = std::make_tuple(args...); }
+  // Store the arguments to be passed.
+  void operator()(Args... args) { m_args = std::make_tuple(args...); }
 
-    // Actually invoke the call to the stored function with the stored arguments.
-    void invoke() { utils::apply_function(m_function, m_args); }
+  // Actually invoke the call to the stored function with the stored arguments.
+  void invoke() { utils::apply_function(m_function, m_args); }
 };
