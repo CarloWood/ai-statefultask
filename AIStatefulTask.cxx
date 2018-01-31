@@ -383,7 +383,7 @@ hello_world->run(...);          // One of the run() functions.
 //                              --> [optional] reset, upon return from multiplex_impl, call initialize_impl and start again at the top of multiplex.
 // - yield([engine])            --> give CPU to other tasks before running again, run next from a stateful task engine.
 //                                  If no engine is passed, the task will run in it's default engine (as set during construction).
-// - yield_frame()/yield_ms()   --> yield(&gMainThreadEngine)
+// - yield_frame(engine, frames)/yield_ms(engine, ms)   --> yield(engine)
 //
 // the following function may be called from multiplex_impl() of any task (and thus by any thread):
 //
@@ -1305,21 +1305,23 @@ bool AIStatefulTask::yield_if_not(AIEngine* engine)
   return false;
 }
 
-void AIStatefulTask::yield_frame(unsigned int frames)
+void AIStatefulTask::yield_frame(AIEngine* engine, unsigned int frames)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield_frame(" << frames << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield_frame(" << engine->name() << ", " << frames << ") [" << (void*)this << "]");
   mSleep = -static_cast<AIEngine::clock_type::rep>(frames);       // Frames are stored as a negative number.
-  // Sleeping is always done from the main thread.
-  yield(&gMainThreadEngine);
+  // Sleeping is always done from an engine with mMaxDuration set.
+  ASSERT(engine->hasMaxDuration());
+  yield(engine);
 }
 
-void AIStatefulTask::yield_ms(unsigned int ms)
+void AIStatefulTask::yield_ms(AIEngine* engine, unsigned int ms)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield_ms(" << ms << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield_ms(" << engine->name() << ", " << ms << ") [" << (void*)this << "]");
   AIEngine::duration_type sleep_duration = std::chrono::duration_cast<AIEngine::duration_type>(std::chrono::duration<unsigned int, std::milli>(ms));
   mSleep = (AIEngine::clock_type::now() + sleep_duration).time_since_epoch().count();
-  // Sleeping is always done from the main thread.
-  yield(&gMainThreadEngine);
+  // Sleeping is always done from an engine with mMaxDuration set.
+  ASSERT(engine->hasMaxDuration());
+  yield(engine);
 }
 
 char const* AIStatefulTask::state_str(base_state_type state)

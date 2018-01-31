@@ -26,6 +26,18 @@
 #include "utils/Singleton.h"
 #include "threadsafe/aithreadsafe.h"
 
+/*!
+ * @brief A singleton interface to start and stop \ref gAuxiliaryThreadEngine.
+ *
+ * The \c gAuxiliaryThreadEngine must be started early, and stopped before cleanup destruction,
+ * by calling the <em>static</em> \ref start and \ref stop member functions of this class.
+ *
+ * The real AIEngine (\c gAuxiliaryThreadEngine) is hidden from the user:
+ * <em>this</em> object is not an \c %AIEngine (most notably, there is no need to call
+ * \c gAuxiliaryThreadEngine.mainloop() in a loop somewhere).
+ *
+ * @sa helloworld_example The HelloWorld example mentioned on the main page.
+ */
 class AIAuxiliaryThread : public Singleton<AIAuxiliaryThread>
 {
   friend_Instance;
@@ -43,7 +55,22 @@ class AIAuxiliaryThread : public Singleton<AIAuxiliaryThread>
   stopped_type m_stopped;
 
  public:
+  /*!
+   * @brief Start the auxiliary thread.
+   *
+   * Call this from \c main() before any task is \c run.
+   */
   static void start();
+
+  /*!
+   * @brief Stop the auxiliary thread.
+   *
+   * Call this before destructing objects that might be used by (call backs of)
+   * still running tasks for a clean destruction (avoiding running tasks doing
+   * call backs of destructed objects).
+   *
+   * After this no new task may be (re)started anymore.
+   */
   static void stop();
 
  private:

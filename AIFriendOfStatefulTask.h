@@ -80,9 +80,9 @@ class AIFriendOfStatefulTask
   //! Proxy for AIStatefulTask::yield.
   void yield(AIEngine* engine) { m_task->yield(engine); }
   //! Proxy for AIStatefulTask::yield_frame.
-  void yield_frame(unsigned int frames) { m_task->yield_frame(frames); }
+  void yield_frame(AIEngine* engine, unsigned int frames) { m_task->yield_frame(engine, frames); }
   //! Proxy for AIStatefulTask::yield_ms.
-  void yield_ms(unsigned int ms) { m_task->yield_ms(ms); }
+  void yield_ms(AIEngine* engine, unsigned int ms) { m_task->yield_ms(engine, ms); }
   //! Proxy for AIStatefulTask::yield_if_not.
   bool yield_if_not(AIEngine* engine) { return m_task->yield_if_not(engine); }
 };

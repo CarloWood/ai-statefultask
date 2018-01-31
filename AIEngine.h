@@ -90,23 +90,30 @@ class AIEngine
  private:
   engine_state_type mEngineState;
   char const* mName;
-  static duration_type sMaxDuration;
+  duration_type mMaxDuration;
+  bool mHasMaxDuration;
 
  public:
   /*!
    * @brief Construct an AIEngine.
    *
    * The argument \a name must be a string-literal (only the pointer to it is stored).
+   * If \a max_duration is less than or equal zero (the default) then no duration is set
+   * and the engine won't return from \ref mainloop until all tasks in its queue either
+   * finished, are waiting (idle) or did yield to a different engine.
    *
    * @param name A human readable name for this engine. Mainly used for debug output.
+   * @param max_duration The maximum duration for which new tasks are run per loop. See SetMaxDuration.
    */
-  AIEngine(char const* name) : mName(name) { }
+  AIEngine(char const* name, float max_duration = 0.0f) : mName(name) { setMaxDuration(max_duration); }
 
   /*!
    * @brief Add \a stateful_task to this engine.
    *
    * The task will remain assigned to the engine until it no longer @link AIStatefulTask::active active@endlink
    * (tested after returning from @link Example::multiplex_impl multiplex_impl@endlink).
+   *
+   * Normally you should not call this function directly. Instead, use @link group_run AIStatefulTask::run@endlink.
    *
    * @param stateful_task The task to add.
    */
@@ -116,7 +123,8 @@ class AIEngine
    * @brief The main loop of the engine.
    *
    * Run all tasks that were @link add added@endlink to the engine until
-   * they are all finished and/or idle.
+   * they are all finished and/or idle, or until mMaxDuration milliseconds
+   * have passed if a maximum duration was set.
    */
   void mainloop();
 
@@ -143,12 +151,20 @@ class AIEngine
   char const* name() const { return mName; }
 
   /*!
-   * @brief Set sMaxDuration in milliseconds.
+   * @brief Set mMaxDuration in milliseconds.
    *
    * The maximum time the engine will spend in \ref mainloop calling \c multiplex on unfinished and non-idle tasks.
    * Note that if the last call to \c multiplex takes considerable time then it is possible that the time spend
-   * in \c mainloop will go arbitrarily far beyond \c sMaxDuration. It is the responsibility of the user to not
-   * run states (of task) that can take too long in engines that have an \c maxDuration set.
+   * in \c mainloop will go arbitrarily far beyond \c mMaxDuration. It is the responsibility of the user to not
+   * run states (of task) that can take too long in engines that have an \c mMaxDuration set.
    */
-  static void setMaxDuration(float max_duration);
+  void setMaxDuration(float max_duration);
+
+  /*!
+   * @brief Return true if a maximum duration was set.
+   *
+   * Note, only engines with a set maximum duration can be used to sleep
+   * on by using AIStatefulTask::yield_frame or AIStatefulTask::yield_ms.
+   */
+  bool hasMaxDuration() const { return mHasMaxDuration; }
 };

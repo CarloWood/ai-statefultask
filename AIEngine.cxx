@@ -37,8 +37,6 @@
 #include "sys.h"
 #include "AIEngine.h"
 
-//! The main thread engine.
-AIEngine gMainThreadEngine("gMainThreadEngine");
 //! The auxiliary thread engine.
 AIEngine gAuxiliaryThreadEngine("gAuxiliaryThreadEngine");
 
@@ -53,7 +51,6 @@ void AIEngine::add(AIStatefulTask* stateful_task)
 
 void AIEngine::mainloop()
 {
-  bool const main_thread = this == &gMainThreadEngine;
   queued_type::iterator queued_element, end;
   {
     engine_state_type::wat engine_state_w(mEngineState);
@@ -62,7 +59,7 @@ void AIEngine::mainloop()
     if (queued_element == end)
     {
       // Nothing to do. Wait till something is added to the queue again.
-      if (!main_thread)
+      if (!mHasMaxDuration)
       {
         engine_state_w->waiting = true;
         engine_state_w.wait();
@@ -75,7 +72,7 @@ void AIEngine::mainloop()
   do
   {
     AIStatefulTask& stateful_task(queued_element->stateful_task());
-    if (main_thread)
+    if (mHasMaxDuration)
     {
       clock_type::time_point start = clock_type::now();
       if (!stateful_task.sleep(start))
@@ -100,7 +97,7 @@ void AIEngine::mainloop()
     {
       ++queued_element;
     }
-    if (main_thread && total_duration >= sMaxDuration && engine_state_w->list.size() > 2)
+    if (mHasMaxDuration && total_duration >= mMaxDuration && engine_state_w->list.size() > 2)
     {
       Dout(dc::statefultask, "Sorting " << engine_state_w->list.size() << " stateful tasks.");
       engine_state_w->list.sort(QueueElementComp());
@@ -123,14 +120,14 @@ void AIEngine::flush()
 }
 
 // static
-AIEngine::duration_type AIEngine::sMaxDuration;
-
-// static
 void AIEngine::setMaxDuration(float max_duration)
 {
-  ASSERT(aithreadid::in_main_thread());
-  Dout(dc::statefultask, "(Re)calculating AIEngine::sMaxDuration");
-  sMaxDuration = std::chrono::duration_cast<duration_type>(std::chrono::duration<float, std::milli>(max_duration));
+  mHasMaxDuration = max_duration > 0.0f;
+  if (mHasMaxDuration)
+  {
+    Dout(dc::statefultask, "(Re)calculating AIEngine::mMaxDuration");
+    mMaxDuration = std::chrono::duration_cast<duration_type>(std::chrono::duration<float, std::milli>(max_duration));
+  }
 }
 
 void AIEngine::wake_up()

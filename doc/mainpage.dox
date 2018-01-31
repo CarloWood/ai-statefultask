@@ -170,6 +170,7 @@ or you can override that by providing your own sys.h in the root of the project.
 <li>Each source or header file that uses debugging, so that certainly includes
 the <tt>main.cpp</tt>, needs to <code>#include &quot;debug.h&quot;</code> somewhere.
 <li>At the beginning of <code>main</code> you need to add the line:
+</ul>
 \endhtmlonly
 @code
 Debug(NAMESPACE_DEBUG::init());
@@ -185,10 +186,10 @@ file or by adding the following line below the previous one:
 @code
 Debug(if (!dc::statefultask.is_on()) dc::statefultask.on());
 @endcode
-\htmlonly
-</ul>
 </p>
 
+@anchor helloworld_example
+\htmlonly
 <p>Then there are two things that are needed for <span class="projectname">AIStatefulTask</span>:
 <ul>
 <li>Call <code>AIAuxiliaryThread::start();</code> before running a Task, and

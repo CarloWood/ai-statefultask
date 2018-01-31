@@ -48,7 +48,6 @@
 class AICondition;
 class AIEngine;
 
-extern AIEngine gMainThreadEngine;
 extern AIEngine gAuxiliaryThreadEngine;
 
 //! The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
@@ -234,7 +233,7 @@ class AIStatefulTask : public AIRefCount
    * @param cb_function The call back function. This function will be called with a single parameter with type \c bool.
    * @param default_engine The default engine that the task should run in.
    */
-  void run(std::function<void (bool)> cb_function, AIEngine* default_engine = &gMainThreadEngine);
+  void run(std::function<void (bool)> cb_function, AIEngine* default_engine = nullptr);
 
   /*!
    * (Re)run a task with default engine \a default_engine (or \c nullptr if there is no preference),
@@ -247,7 +246,7 @@ class AIStatefulTask : public AIRefCount
    * @param on_abort What to do with the parent when this task is aborted.
    * @param default_engine The default engine that the task should run in.
    */
-  void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = &gMainThreadEngine);
+  void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = nullptr);
 
   /*!
    * Just run the bloody task (no call back).
@@ -356,12 +355,12 @@ class AIStatefulTask : public AIRefCount
    *
    * Note that if a state calls \c yield*() without calling first \ref set_state
    * then this might <em>still</em> cause 100% cpu usage despite the call to \c yield*
-   * because the task will rapidly execute again and then call \c yield* over and over:
-   * an engine keeps iterating over its tasks until all tasks finished
-   * (with the exception of \ref gMainThreadEngine that will return from
-   * AIEngine::mainloop regardless after at least \c AIEngine::sMaxDuration
-   * milliseconds have passed (which can be set by calling
-   * @link AIEngine::setMaxDuration gMainThreadEngine.setMaxDuration(milliseconds)@endlink)).
+   * if the task runs in an engine without @link max_duration@endlink because the task
+   * will rapidly execute again and then call \c yield* over and over:
+   * an engine without max_duration keeps iterating over its tasks until all tasks finished.
+   * Otherwise the engine will return from AIEngine::mainloop regardless after at least
+   * \c AIEngine::sMaxDuration milliseconds have passed (which can be set by calling
+   * @link AIEngine::setMaxDuration AIEngine::setMaxDuration(milliseconds)@endlink).
    *
    * @addtogroup group_yield Yield and engine control
    * @{
@@ -397,16 +396,18 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Run from the main-thread engine after at least \a frames frames have passed.
    *
+   * @param engine The engine to sleep in. This must be an engine with a max_duration set.
    * @param frames The number frames to run before returning CPU to other tasks (if any).
    */
-  void yield_frame(unsigned int frames);
+  void yield_frame(AIEngine* engine, unsigned int frames);
 
   /*!
    * @brief Return from the main-thread engine after roughly \a ms miliseconds have passed.
    *
+   * @param engine The engine to sleep in. This must be an engine with a max_duration set.
    * @param ms The number of miliseconds to run before returning CPU to other tasks (if any).
    */
-  void yield_ms(unsigned int ms);
+  void yield_ms(AIEngine* engine, unsigned int ms);
 
   /*!
    * @brief Do not really yield, unless the current engine is not \a engine.
