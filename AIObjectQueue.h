@@ -45,7 +45,7 @@
 // AIObjectQueue<std::function<void()>> queue(capacity);    // Allocates 9 std::function<void()> objects.
 //
 // The actual size of the allocated memory for this
-// queue will be nine: eight object can be written
+// queue will be nine: eight objects can be written
 // to the queue without reading anything from it.
 // The space for the nineth object is reserved to
 // store the last object that was already read from
@@ -54,7 +54,7 @@
 // // Producer threads:
 // { // Lock the queue for other producer threads.
 //   auto access = queue.producer_access();
-//   int length = access.length();
+//   int length = access.producer_length();
 //   if (length == capacity) { /* Buffer full */ return; }
 //   access.move_in([](){ std::cout << "Hello\n"; });
 // } // Unlock the queue.
@@ -72,7 +72,7 @@
 // std::function<void()> f;
 // { // Lock the queue for other consumer threads.
 //   auto access = queue.consumer_access();
-//   int length = access.length();
+//   int length = access.consumer_length();
 //   if (length == 0) { /* Buffer empty */ return; }
 //   f = access.move_out();
 // } // Unlock the queue.

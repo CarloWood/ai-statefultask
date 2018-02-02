@@ -35,6 +35,9 @@
 template<typename F>
 class AIDelayedFunction; // not defined.
 
+/*!
+ * @brief 
+ */
 // Usage:
 //
 // AIDelayedFunction<char(int, double)> delayed_function(&f);           // char f(int, double);
