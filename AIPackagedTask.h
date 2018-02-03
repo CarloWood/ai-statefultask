@@ -91,9 +91,14 @@ void Task::multiplex_impl(state_type run_state)
 }
 #endif // EXAMPLE_CODE
 
+#ifndef DOXYGEN
 template<typename F>
 class AIPackagedTask;   // not defined.
+#endif
 
+/*!
+ * @brief 
+ */
 template<typename R, typename ...Args>
 class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
 {

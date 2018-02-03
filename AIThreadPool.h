@@ -37,34 +37,38 @@
 #include <thread>
 #include <cassert>
 
-// Only one AIThreadPool may exist at a time; it can be accessed by
-// a call to a static function AIThreadPool::instance().
-//
-// However, an AIThreadPool is not a singleton; it doesn't have
-// private constructors and it may not be constructed before main().
-// Also, it has a public move constructor.
-//
-// It is allowed to create an AIThreadPool and after some usage
-// destruct it; and then create a new one (this is not recommended).
-// The recommended usage is:
-//
-// int main()
-// {
-// #ifdef DEBUGGLOBAL
-//   GlobalObjectManager::main_entered();
-// #endif
-//   Debug(NAMESPACE_DEBUG::init());
-//
-//   AIAuxiliaryThread::start();
-//   AIThreadPool thread_pool;          // Creates (std::thread::hardware_concurrency() - 2) threads by default:
-//                                      // the number of concurrent threads supported by the implementation
-//                                      // minus one for the main thread and minus one for the auxiliary thread.
-// ...
-//   // Use thread_pool or AIThreadPool::instance()
-//
-//   AIAuxiliaryThread::stop();
-// }
-//
+/*!
+ * @brief A thread pool.
+ *
+ * Only one AIThreadPool may exist at a time; and can subsequently be
+ * accessed by a call to the static function AIThreadPool::instance().
+ *
+ * However, an AIThreadPool is not a singleton: it doesn't have
+ * private constructors and it may not be constructed before main().
+ * Also, it has a public move constructor (although only the thread
+ * that created it may move it).
+ *
+ * It is allowed to create an AIThreadPool and after some usage
+ * destruct it; and then create a new one (this is not recommended).
+ * The <em>recommended</em> usage is:
+ *
+ * @code
+ * int main()
+ * {
+ * #ifdef DEBUGGLOBAL
+ *   GlobalObjectManager::main_entered();
+ * #endif
+ *   Debug(NAMESPACE_DEBUG::init());
+ *
+ *   AIAuxiliaryThread::start();
+ *   AIThreadPool thread_pool;
+ * ...
+ *   // Use thread_pool or AIThreadPool::instance()
+ *
+ *   AIAuxiliaryThread::stop();
+ * }
+ * @endcode
+ */
 class AIThreadPool
 {
  private:
@@ -81,22 +85,26 @@ class AIThreadPool
     mutable std::thread m_thread;
     mutable std::atomic_bool m_quit;
 
-    // Construct a new Worker; do not associate it with a running thread yet.
-    // A write lock on m_workers is required before calling this constructor;
-    // that then blocks the thread from accessing m_quit until that lock is released
-    // so that we have time to move the Worker in place (using emplace_back()).
+    /*!
+     * Construct a new Worker; do not associate it with a running thread yet.
+     * A write lock on m_workers is required before calling this constructor;
+     * that then blocks the thread from accessing m_quit until that lock is released
+     * so that we have time to move the Worker in place (using emplace_back()).
+     */
     Worker(worker_function_t worker_function, int self) : m_thread(std::bind(worker_function, self)), m_quit(false) { }
 
-    // The move constructor can only be called as a result of a reallocation, as a result
-    // of a size increase of the std::vector<Worker> (because Workers are put into it with
-    // emplace_back(), Worker is not copyable, and we never move a Worker out of the vector).
-    // That means that at the moment the move constuctor is called we have the exclusive
-    // write lock on the vector and therefore no other thread can access this Worker.
-    // Therefore it is safe to non-atomically copy m_quit (note that it cannot be moved or
-    // copied atomically).
+    /*!
+     * The move constructor can only be called as a result of a reallocation, as a result
+     * of a size increase of the std::vector<Worker> (because Workers are put into it with
+     * emplace_back(), Worker is not copyable, and we never move a Worker out of the vector).
+     * That means that at the moment the move constuctor is called we have the exclusive
+     * write lock on the vector and therefore no other thread can access this Worker.
+     * Therefore it is safe to non-atomically copy m_quit (note that it cannot be moved or
+     * copied atomically).
+     */
     Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)), m_quit(rvalue.m_quit.load()) { rvalue.m_quit.store(true, std::memory_order_relaxed); }
 
-    // Destructor.
+    //! Destructor.
     ~Worker()
     {
       // It's ok to use memory_order_relaxed here because this is the
@@ -108,10 +116,14 @@ class AIThreadPool
     }
 
    public:
-    // Inform the thread that we want it to stop running.
+    /*!
+     * Inform the thread that we want it to stop running.
+     */
     void quit() const { m_quit.store(true, std::memory_order_relaxed); }
 
-    // Wait for the thread to have exited.
+    /*!
+     * Wait for the thread to have exited.
+     */
     void join() const
     {
       // It's ok to use memory_order_relaxed here because this is the same thread that (should have) called quit() in the first place.
@@ -122,7 +134,9 @@ class AIThreadPool
       m_thread.join();
     }
 
-    // The main function for each of the worker threads.
+    /*!
+     * The main function for each of the worker threads.
+     */
     static void main(int const self);
 
     // Called from worker thread.
@@ -163,8 +177,24 @@ class AIThreadPool
   bool m_pillaged;                                            // If true, this object was moved and the destructor should do nothing.
 
  public:
+  /*!
+   * Construct an AIThreadPool with \a number_of_threads number of threads.
+   *
+   * @params number_of_threads The initial number of worker threads in this pool.
+   * @params max_number_of_threads The largest value that you expect to pass to change_number_of_threads_to during the execution of the program.
+   */
   AIThreadPool(int number_of_threads = std::thread::hardware_concurrency() - 2, int max_number_of_threads = std::thread::hardware_concurrency());
+
+  //! Copying is not possible.
   AIThreadPool(AIThreadPool const&) = delete;
+
+  /*!
+   * @brief Move constructor.
+   *
+   * The move constructor is not thread-safe. Usage is only intended to be used
+   * directly after creation of the AIThreadPool, by the thread that created it,
+   * to move it into place, if needed.
+   */
   AIThreadPool(AIThreadPool&& rvalue) :
       m_constructor_id(rvalue.m_constructor_id),
       m_max_number_of_threads(rvalue.m_max_number_of_threads),
@@ -181,7 +211,8 @@ class AIThreadPool
     // that stores done before this point arrive in such threads reordered to after this store.
     s_instance.store(this, std::memory_order_release);
   }
-  // Destructor terminates all threads and joins them.
+
+  //! Destructor terminates all threads and joins them.
   ~AIThreadPool();
 
   //------------------------------------------------------------------------
@@ -210,6 +241,11 @@ class AIThreadPool
 
   //------------------------------------------------------------------------
 
+  /*!
+   * @brief Obtain a reference to the thread pool.
+   *
+   * Use this in threads that did not create the thread pool.
+   */
   static AIThreadPool& instance()
   {
     // Construct an AIThreadPool somewhere, preferably at the beginning of main().

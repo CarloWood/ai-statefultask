@@ -355,7 +355,7 @@ class AIStatefulTask : public AIRefCount
    *
    * Note that if a state calls \c yield*() without calling first \ref set_state
    * then this might <em>still</em> cause 100% cpu usage despite the call to \c yield*
-   * if the task runs in an engine without @link max_duration@endlink because the task
+   * if the task runs in an engine without @link AIEngine::setMaxDuration max_duration@endlink because the task
    * will rapidly execute again and then call \c yield* over and over:
    * an engine without max_duration keeps iterating over its tasks until all tasks finished.
    * Otherwise the engine will return from AIEngine::mainloop regardless after at least

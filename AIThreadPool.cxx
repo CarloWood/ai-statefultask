@@ -21,15 +21,19 @@ void AIThreadPool::Worker::main(int const self)
   while(workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
   {
     std::function<void()> f;
+    int length;
     { // Lock the queue for other consumer threads.
       auto queues_r = AIThreadPool::instance().queues_read_access();
       queues_container_t::value_type& queue = queues_r->at(0);
       auto access = queue.consumer_access();
-      int length = access.length();
-      if (length == 0) { std::this_thread::sleep_for(std::chrono::microseconds(10)); continue; }
-      f = access.move_out();
+      length = access.length();
+      if (length > 0)
+        f = access.move_out();
     } // Unlock the queue.
-    f(); // Invoke the functor.
+    if (length > 0)
+      f(); // Invoke the functor.
+    else
+      std::this_thread::sleep_for(std::chrono::microseconds(10));       // FIXME
   }
 
   Dout(dc::threadpool, "Thread terminated.");
@@ -40,7 +44,7 @@ void AIThreadPool::add_threads(workers_t::wat& workers_w, int current_number_of_
 {
   DoutEntering(dc::threadpool, "add_threads(" << current_number_of_threads << ", " << requested_number_of_threads << ")");
   for (int i = current_number_of_threads; i < requested_number_of_threads; ++i)
-    workers_w->emplace_back(Worker(&Worker::main, i));
+    workers_w->emplace_back(&Worker::main, i);
 }
 
 // This function is called inside a criticial area of m_workers_r_to_w_mutex
