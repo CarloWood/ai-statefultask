@@ -57,7 +57,7 @@ using AIWaitConditionFunc = std::function<bool()>;
  * @brief Base class for task objects.
  *
  * Derive a new task from this base class.
- * The derived class must have a protected destructor that uses the override keyword.
+ * The derived class must have a protected destructor that uses the <code>override</code> keyword.
  *
  * Furthermore a derived class must define,
  * <table class="implement_table">
@@ -74,6 +74,9 @@ using AIWaitConditionFunc = std::function<bool()>;
  * <tr><td class="item">@link Example::abort_impl abort_impl@endlink<td>Member function that is called when the task is aborted.
  * <tr><td class="item">@link Example::finish_impl finish_impl@endlink<td>Member function that is called when the task finished.
  * <tr><td class="item">@link Example::force_killed force_killed@endlink<td>Member function that is called when the task is killed.
+ * </table>
+ *
+ * @sa Example
  */
 class AIStatefulTask : public AIRefCount
 {
@@ -295,6 +298,9 @@ class AIStatefulTask : public AIRefCount
   void set_state(state_type new_state);       // Run this state the NEXT loop.
 
   /*! @addtogroup group_wait Going idle and waiting for an event.
+   *
+   * For a more detailed usage description and overview please see the @link waiting main page@endlink.
+   *
    * @{
    * These member functions can only be called from within \c multiplex_impl.
    */
@@ -369,7 +375,7 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Yield to give CPU to other tasks, but do not block.
    *
-   * If a task runs potentially too long, it is a could idea to
+   * If a task runs potentially too long, it is a good idea to
    * regularly call this member function and break out of
    * \c multiplex_impl in order not to let other tasks in the
    * same engine starve.
@@ -394,7 +400,11 @@ class AIStatefulTask : public AIRefCount
   void yield(AIEngine* engine);
 
   /*!
-   * @brief Run from the main-thread engine after at least \a frames frames have passed.
+   * @brief Switch to \a engine and sleep for \a frames frames.
+   *
+   * This function can only be used for an \a engine with a max_duration.
+   * One frame means one entry into \c AIEngine::mainloop. So, for \a frames
+   * entries of \c mainloop this task will not be run.
    *
    * @param engine The engine to sleep in. This must be an engine with a max_duration set.
    * @param frames The number frames to run before returning CPU to other tasks (if any).
@@ -402,7 +412,9 @@ class AIStatefulTask : public AIRefCount
   void yield_frame(AIEngine* engine, unsigned int frames);
 
   /*!
-   * @brief Return from the main-thread engine after roughly \a ms miliseconds have passed.
+   * @brief Switch to \a engine and sleep for \a ms milliseconds.
+   *
+   * This function can only be used for an engine with a max_duration.
    *
    * @param engine The engine to sleep in. This must be an engine with a max_duration set.
    * @param ms The number of miliseconds to run before returning CPU to other tasks (if any).

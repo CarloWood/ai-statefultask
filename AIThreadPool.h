@@ -47,9 +47,9 @@
  * private constructors and it may not be constructed before main().
  * Also, it has a public move constructor (although only the thread
  * that created it may move it).
- *
  * It is allowed to create an AIThreadPool and after some usage
  * destruct it; and then create a new one (this is not recommended).
+ *
  * The <em>recommended</em> usage is:
  *
  * @code
@@ -68,6 +68,57 @@
  *   AIAuxiliaryThread::stop();
  * }
  * @endcode
+ *
+ * In order to <em>use</em> the thread pool one has to create one
+ * or more task queues by calling AIThreadPool::new_queue. The
+ * handle returned by that function can subsequently be used
+ * to access the underlaying queue and move an AIDelayedFunction
+ * object into it.
+ *
+ * For example,
+ *
+ * @code
+ * ... (see above)
+ *   // Create a new queue with a capacity of 32 and default priority.
+ *   int queue_handle = thread_pool.new_queue(32);
+ * 
+ *   {
+ *     // Get read access to AIThreadPool::m_queues.
+ *     auto queues_access = thread_pool.queues_read_access();
+ *     { // <-- See comment below!
+ *       // Get a reference to one of the queues in m_queues.
+ *       AIObjectQueue<std::function<void()>>& queue = thread_pool.get_queue(queues_access, queue_handle);
+ *       // Get producer accesses to this queue.
+ *       auto access = queue.producer_access();
+ *       int length = access.length();
+ *       if (length < 32) // Buffer not full?
+ *       {
+ *         // Place a lambda in the queue.
+ *         access.move_in([](){ std::cout << "Hello pool!\n"; });
+ *       }
+ *     } // Release producer accesses, so another thread can write to this queue again.
+ *   } // Release read access to AIThreadPool::m_queues so another thread can use AIThreadPool::new_queue again.
+ * @endcode
+ *
+ * Note that although write access to <code>AIThreadPool::m_queues</code>, which is a vector of <code>AIObjectQueue<std::function<void()>></code>
+ * objects, is only necessary in AIThreadPool::new_queue (and the constructors of AIThreadPool).
+ * And it would compile to do
+ *
+ * @code
+ * // This is WRONG.
+ * AIObjectQueue<std::function<void()>>& queue = thread_pool.get_queue(thread_pool.queues_read_access(), queue_handle);
+ * @endcode
+ *
+ * that releases the read lock on <code>AIThreadPool::m_queues</code> immediately after this line,
+ * theoretically allowing some other thread to add a new queue which could resize the underlaying vector
+ * and move the AIObjectQueue objects in memory, invalidating the returned reference here!
+ *
+ * It is therefore necessary to keep the <code>queues_access</code> object until after the scope in which
+ * this reference is available. This is more or less enforced by opening a new scope immediately
+ * after creating the <code>queues_access</code> object.
+ *
+ * @sa AIObjectQueue
+ * @sa @link AIPackagedTask< R(Args...)> AIPackagedTask@endlink
  */
 class AIThreadPool
 {
@@ -180,8 +231,8 @@ class AIThreadPool
   /*!
    * Construct an AIThreadPool with \a number_of_threads number of threads.
    *
-   * @params number_of_threads The initial number of worker threads in this pool.
-   * @params max_number_of_threads The largest value that you expect to pass to change_number_of_threads_to during the execution of the program.
+   * @param number_of_threads The initial number of worker threads in this pool.
+   * @param max_number_of_threads The largest value that you expect to pass to \ref change_number_of_threads_to during the execution of the program.
    */
   AIThreadPool(int number_of_threads = std::thread::hardware_concurrency() - 2, int max_number_of_threads = std::thread::hardware_concurrency());
 
@@ -218,25 +269,46 @@ class AIThreadPool
   //------------------------------------------------------------------------
   // Threads management.
 
-  // You bought more cores and updated it while running your program.
+  /*!
+   * @brief Change the number of threads.
+   *
+   * You bought more cores and updated it while running your program.
+   *
+   * @param number_of_threads The new number of threads.
+   */
   void change_number_of_threads_to(int number_of_threads);
 
   //------------------------------------------------------------------------
   // Queue management.
 
-  // Lock m_queues and get access (return value is to be passed to get_queue).
+  //! Lock m_queues and get access (return value is to be passed to \ref get_queue).
   AIThreadPool::queues_t::rat queues_read_access() { return m_queues; }
 
-  // Create a new queue with capacity `capacity' and return a handle for it.
+  /*!
+   * @brief Create a new queue.
+   *
+   * @param capacity The capacity of the new queue.
+   * @param priority The priority of the new queue.
+   *
+   * @returns A handle for the new queue.
+   */
   int new_queue(int capacity, int priority = 256);
 
-  // Return a reference to the queue that belongs to queue_handle.
-  // The returned pointer is only valid until a new queue is requested, which
-  // is blocked for as long as queues_r isn't destructed: keep the read-access
-  // object around until the returned reference is no longer used.
+  /*!
+   * @brief Return a reference to the queue that belongs to \a queue_handle.
+   *
+   * The returned pointer is only valid until a new queue is requested, which
+   * is blocked for as long as \a queues_r isn't destructed: keep the read-access
+   * object around until the returned reference is no longer used.
+   *
+   * @param queues_r The read-lock object as returned by \ref queues_read_access.
+   * @param queue_handle A queue handle as returned by \ref new_queue.
+   *
+   * @returns A reference to AIObjectQueue<std::function<void()>>.
+   */
   queues_container_t::value_type& get_queue(queues_t::rat& queues_r, int queue_handle) { return queues_r->at(queue_handle); }
 
-  // Same for a const AIThreadPool (is that ever used?)
+  //! Same for a const AIThreadPool (is that ever used?)
   queues_container_t::value_type const& get_queue(queues_t::crat& queues_cr, int queue_handle) const { return queues_cr->at(queue_handle); }
 
   //------------------------------------------------------------------------
@@ -257,7 +329,7 @@ class AIThreadPool
   }
 };
 
-#ifdef CWDEBUG
+#if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct threadpool;
 NAMESPACE_DEBUG_CHANNELS_END

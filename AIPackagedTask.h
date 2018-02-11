@@ -75,9 +75,12 @@ void Task::multiplex_impl(state_type run_state)
     case Task_start:
     {
       m_calculate_factorial(5);                         // "Call the function" -- this just copies the argument(s) to be passed to the executing thread.
+      set_state(Task_dispatch);
+    }
+    case Task_dispatch:
       if (!m_calculate_factorial.dispatch())            // Execute the function `factorial' in its own thread.
       {
-        yield();
+        yield_frames(1);
         break;
       }
       set_state(Task_done);                             // and continue running this task at state Task_done once
@@ -97,7 +100,55 @@ class AIPackagedTask;   // not defined.
 #endif
 
 /*!
- * @brief 
+ * @brief A wrapper for a <em>(member) function</em> to be executed by the AIThreadPool.
+ *
+ * An AIPackagedTask is supposed to be a member of a class (e.g. <code>MyTask</code>) derived from AIStatefulTask.
+ * The <code>this</code> pointer of that task should be passed to the constructor, along with a function to
+ * be called and a handle of the queue to add it to (as obtained by a call to <code>AIThreadPool::get_handle()</code>).
+ *
+ * It is possible to use a pointer to a free function or to the member function of a given object.
+ * In both cases with arbitrary signature.
+ *
+ * For example, suppose you have some object \c foo of type \c Foo with a member function
+ * called <code>retrieve</code> that has the signature <code>bool Foo::retrieve(int, double)</code>,
+ * whatever those parameters may mean. Then you could do:
+ *
+ * @code
+ * class MyTask : public AIStatefulTask
+ * {
+ *   AIPackagedTask<bool(int, double)> m_retrieve;              // Space holder for all variables involved.
+ *   static condition_type constexpr retrieve_condition = 1;    // The condition bit to be used.
+ *  public:
+ *   MyTask(int queue_handle) : m_retrieve(this, retrieve_condition, &foo, &Foo::retrieve, queue_handle) { }
+ * ...
+ * };
+ * @endcode
+ *
+ * where as @link waiting usual@endlink \c retrieve_condition should be different from any other condition
+ * bits that this task is using. And where \c queue_handle is a handle
+ * that was previously returned by AIThreadPool::new_queue().
+ *
+ * Then this function can be called (repeatedly, with different parameters
+ * if need be) from \c multiplex_impl as follows:
+ *
+ * @code
+ * ...
+ *   case MyTask_state20:
+ *     m_retrieve(n, y);                   // Copy parameters to m_retrieve.
+ *     set_state(MyTask_dispatch);
+ *   case MyTask_dispatch:
+ *     if (!m_retrieve.dispatch())         // Put m_retrieve in the queue.
+ *     {
+ *       yield_frames(1);                  // Yield because the queue was full.
+ *       break;
+ *     }
+ *     set_state(MyTask_state21);          // Continue with state21 once the
+ *     break;                              //   function finished executing.
+ *   case MyTask_state21:
+ *   {
+ *     bool result = m_retrieve.get();     // Get the result.
+ *
+ * @endcode
  */
 template<typename R, typename ...Args>
 class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
@@ -109,16 +160,34 @@ class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
   int m_queue_handle;
 
  public:
+  /*!
+   * @brief Construct a packaged task for a free function.
+   *
+   * @param parent_task The task that \ref dispatch will call \ref wait_until and @link AIStatefulTask::signal signal@endlink on.
+   * @param condition The condition to use for \ref wait_until and @link AIStatefulTask::signal signal@endlink.
+   * @param fp A pointer to the function that needs to be called.
+   * @param object_queue_handle A handle to the AIObjectQueue that the delayed function should be placed in.
+   */
   AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...), int object_queue_handle) :
       AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp), m_queue_handle(object_queue_handle) { }
 
+  /*!
+   * @brief Construct a packaged task for a member function.
+   *
+   * @param parent_task The task that \ref dispatch will call \ref wait_until and @link AIStatefulTask::signal signal@endlink on.
+   * @param condition The condition to use for \ref wait_until and @link AIStatefulTask::signal signal@endlink.
+   * @param object Pointer to the object of which the member function must be called.
+   * @param memfp A pointer to the member function that needs to be called.
+   * @param object_queue_handle A handle to the AIObjectQueue that the delayed function should be placed in.
+   */
   template<class C>
-  AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfn)(Args...), int object_queue_handle) :
-      AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfn), m_queue_handle(object_queue_handle) { }
+  AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfp)(Args...), int object_queue_handle) :
+      AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfp), m_queue_handle(object_queue_handle) { }
 
+  //! Destructor.
   ~AIPackagedTask();
 
-  // Exchange the state with that of other.
+  //! Exchange the state with that of \a other.
   void swap(AIPackagedTask& other) noexcept
   {
     std::swap(m_condition, other.m_condition);
@@ -126,12 +195,30 @@ class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
     std::swap(m_queue_handle, other.m_queue_handle);
   }
 
-  void operator()(Args... args);                      // Copy the arguments.
-  bool dispatch();                                    // Put the task in a queue for execution in a different thread.
+  //! Copy the arguments.
+  void operator()(Args... args);
+
+  /*!
+   * @brief Put the task in a queue for execution in a different thread.
+   *
+   * Actually queue the task in the AIObjectQueue whose handle was passed to the constructor
+   * and halt the \c parent_task as passed to the constructor until this task is finished.
+   *
+   * @returns True if the task was successfully queued; false if the queue was full.
+   */
+  bool dispatch();
+
+#ifndef DOXYGEN
   // If Args isn't empty (has_args) then we need this signature in order to be Callable.
   template<bool has_args = sizeof... (Args) != 0, typename std::enable_if<has_args, int>::type = 0>
   void operator()();                                  // Invoke the function.
+#endif
 
+  /*!
+   * @brief Read out the result of the function.
+   *
+   * May only be called after <code>parent_task->signal(condition)</code> was called.
+   */
   R get() const
   {
     ASSERT(m_phase == finished);                      // Call dispatch() until it returns true, before calling get().
