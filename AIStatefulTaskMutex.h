@@ -37,36 +37,84 @@
 
 class AIStatefulTask;
 
-// class AIStatefulTaskMutex
-
+/*!
+ * @brief A task mutex.
+ *
+ * Prevent different tasks from concurrently entering the same critical area.
+ *
+ * Consider an object that is shared between tasks, but may
+ * not be simultaneously accessed by two different threads.
+ *
+ * For example,
+ *
+ * @code
+ * struct Shared
+ * {
+ *   AIStatefulTaskMutex m_task_mutex;
+ *   void do_work();    // Only one thread at a time may call this.
+ * };
+ *
+ * Shared shared;
+ * @endcode
+ *
+ * Then multiple running tasks could use this to prevent
+ * concurrent access:
+ *
+ * @code
+ * ...
+ *   case MyTask_stateX:
+ *     if (!shared.m_task_mutex.trylock(this))
+ *     {
+ *       yield();
+ *       break;
+ *     }
+ *     shared.do_work();
+ *     shared.m_task_mutex.unlock();
+ * @endcode
+ */
 class AIStatefulTaskMutex
 {
  protected:
-  AIStatefulTask const* m_owner;              // Owner of the lock. Only valid when m_lock_count > 0.
-  AIThreadSafeSimpleDC<int> m_lock_count;     // Number of times unlock must be callled before unlocked.
-  using lock_count_wat = AIAccess<int>;
-  using lock_count_crat = AIAccessConst<int>;
+  //! The type of m_lock_count.
+  using lock_count_type = aithreadsafe::Wrapper<int, aithreadsafe::policy::Primitive<std::mutex>>;
+
+  AIStatefulTask const* m_owner;                //!< Owner of the lock. Only valid when m_lock_count > 0.
+  lock_count_type m_lock_count;                 //!< Number of times unlock must be callled before unlocked.
 
  public:
+  //! Construct an unlocked AIStatefulTaskMutex.
   AIStatefulTaskMutex() : m_owner(nullptr), m_lock_count(0) { }
 
+  /*!
+   * @brief Try to obtain ownership for \a owner.
+   *
+   * @returns True upon success, false upon failure to obtain ownership.
+   */
   bool trylock(AIStatefulTask const* owner)
   {
-    lock_count_wat lock_count_w(m_lock_count);
+    lock_count_type::wat lock_count_w(m_lock_count);
     if (*lock_count_w > 0 && m_owner != owner) return false;
     m_owner = owner;
     ++*lock_count_w;
     return true;
   }
+
+  /*!
+   * @brief Undo one (succcessful) call to trylock.
+   */
   void unlock(AIStatefulTask const* owner)
   {
-    lock_count_wat lock_count_w(m_lock_count);
+    lock_count_type::wat lock_count_w(m_lock_count);
     ASSERT(*lock_count_w > 0 && m_owner == owner);
     --*lock_count_w;
   }
+
+  /*!
+   * @brief Is this object currently owned (locked) by some task?
+   */
   bool is_locked() const
   {
-    lock_count_crat lock_count_w(m_lock_count);
+    lock_count_type::crat lock_count_w(m_lock_count);
     return *lock_count_w > 0;
   }
 };

@@ -46,7 +46,7 @@ struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
 #endif
 
 /*!
- * @brief A thread pool.
+ * @brief The thread pool class.
  *
  * Only one AIThreadPool may exist at a time; and can subsequently be
  * accessed by a call to the static function AIThreadPool::instance().

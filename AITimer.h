@@ -36,86 +36,94 @@
 #include "AIStatefulTask.h"
 #include <atomic>
 
-// A timer task.
-//
-// Before calling run(), call setInterval() to pass needed parameters.
-//
-// When the task finishes it calls the callback, use parameter _1,
-// (success) to check whether or not the task actually timed out or
-// was cancelled. The boolean is true when it expired and false if the
-// task was aborted.
-//
-// Objects of this type can be reused multiple times, see
-// also the documentation of AIStatefulTask.
-//
-// Typical usage:
-//
-// AITimer* timer = new AITimer;
-//
-// timer->setInterval(5.5);     // 5.5 seconds time out interval.
-// timer->run(...);             // Start timer and pass callback; see AIStatefulTask.
-//
-// The default behavior is to call the callback and then delete the AITimer object.
-// One can call run() again from the callback function to get a repeating expiration.
-// You can call run(...) with parameters too, but using run() without parameters will
-// just reuse the old ones (call the same callback).
-//
+/*!
+ * @brief The timer task.
+ *
+ * Before calling @link group_run run()@endlink, call set_interval() to pass needed parameters.
+ *
+ * When the task finishes it calls the callback, use parameter _1,
+ * (success) to check whether or not the task actually timed out or
+ * was cancelled. The boolean is true when it expired and false if the
+ * task was aborted.
+ *
+ * Objects of this type can be reused multiple times, see
+ * also the documentation of AIStatefulTask.
+ *
+ * Typical usage:
+ *
+ * @code
+ * AITimer* timer = new AITimer;
+ *
+ * timer->set_interval(5.5);     // 5.5 seconds time out interval.
+ * timer->run(...);             // Start timer and pass callback; see AIStatefulTask.
+ * @endcode
+ *
+ * The default behavior is to call the callback and then delete the AITimer object.
+ * One can call run() again from the callback function to get a repeating expiration.
+ * You can call run(...) with parameters too, but using run() without parameters will
+ * just reuse the old ones (call the same callback).
+ */
 class AITimer : public AIStatefulTask
 {
  protected:
-  // The base class of this task.
+  //! The base class of this task.
   using direct_base_type = AIStatefulTask;
 
-  // The different states of the stateful task.
+  //! The different states of the stateful task.
   enum timer_state_type {
     AITimer_start = direct_base_type::max_state,
     AITimer_expired
   };
+
  public:
+  //! One beyond the largest state of this task.
   static state_type constexpr max_state = AITimer_expired + 1;
 
  private:
   std::atomic_bool mHasExpired;  	//!< Set to true after the timer expired.
   //AIFrameTimer mFrameTimer;           //!< The actual timer that this object wraps.
-  double mInterval;                   //!< Input variable: interval after which the event will be generated, in seconds.
+  double mInterval;                     //!< Input variable: interval after which the event will be generated, in seconds.
 
  public:
+  /*!
+   * @brief Construct an AITimer object.
+   */
   AITimer(DEBUG_ONLY(bool debug = false)) :
 #ifdef CWDEBUG
     AIStatefulTask(debug),
 #endif
     mHasExpired(false), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
-  /**
+  /*!
    * @brief Set the interval after which the timer should expire.
    *
    * @param interval Amount of time in seconds before the timer will expire.
    *
    * Call abort() at any time to stop the timer (and delete the AITimer object).
    */
-  void setInterval(double interval) { mInterval = interval; }
+  void set_interval(double interval) { mInterval = interval; }
 
-  /**
+  /*!
    * @brief Get the expiration interval.
    *
    * @returns expiration interval in seconds.
    */
-  double getInterval() const { return mInterval; }
+  double get_interval() const { return mInterval; }
 
  protected:
-  // Call finish() (or abort()), not delete.
+  //! Call finish() (or abort()), not delete.
   ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); /* mFrameTimer.cancel(); */ }
 
-  // Implemenation of state_str for run states.
+  //! Implemenation of state_str for run states.
   char const* state_str_impl(state_type run_state) const override;
 
-  // Handle initializing the object.
+  //! Handle initializing the object.
   void initialize_impl() override;
 
-  // Handle mRunState.
+  //! Handle mRunState.
   void multiplex_impl(state_type run_state) override;
 
-  // Handle aborting from current bs_run state.
+  //! Handle aborting from current bs_run state.
   void abort_impl() override;
 
  private:
