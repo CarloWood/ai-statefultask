@@ -32,10 +32,18 @@
 #include "AIObjectQueue.h"
 #include "debug.h"
 #include "threadsafe/AIReadWriteMutex.h"
+#include "threadsafe/AIReadWriteSpinLock.h"
 #include "threadsafe/aithreadid.h"
 #include "threadsafe/aithreadsafe.h"
+#include "utils/Vector.h"
 #include <thread>
 #include <cassert>
+
+#ifndef DOXYGEN
+namespace ordering_category {
+struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
+} // namespace ordering_category
+#endif
 
 /*!
  * @brief A thread pool.
@@ -72,7 +80,7 @@
  * In order to <em>use</em> the thread pool one has to create one
  * or more task queues by calling AIThreadPool::new_queue. The
  * handle returned by that function can subsequently be used
- * to access the underlaying queue and move an AIDelayedFunction
+ * to access the underlaying queue and move a <code>std::function<void()></code>
  * object into it.
  *
  * For example,
@@ -80,7 +88,7 @@
  * @code
  * ... (see above)
  *   // Create a new queue with a capacity of 32 and default priority.
- *   int queue_handle = thread_pool.new_queue(32);
+ *   AIThreadPool::QueueHandle queue_handle = thread_pool.new_queue(32);
  * 
  *   {
  *     // Get read access to AIThreadPool::m_queues.
@@ -217,11 +225,17 @@ class AIThreadPool
   // Remove threads from the already read locked m_workers container.
   static void remove_threads(workers_t::rat& workers_r, int n);
 
-  using queues_container_t = std::vector<AIObjectQueue<std::function<void()>>>;
-  using queues_t = aithreadsafe::Wrapper<queues_container_t, aithreadsafe::policy::Primitive<std::mutex>>;
+ public:
+  //! The type of a queue handle as returned by new_queue.
+  using QueueHandle = utils::VectorIndex<ordering_category::QueueHandle>;
+
+  //! The container type in which the queues are stored.
+  using queues_container_t = utils::Vector<AIObjectQueue<std::function<void()>>, QueueHandle>;
 
  private:
   static std::atomic<AIThreadPool*> s_instance;               // The only instance of AIThreadPool that should exist at a time.
+  // m_queues is seldom write locked and very often read locked, so use AIReadWriteSpinLock.
+  using queues_t = aithreadsafe::Wrapper<queues_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteSpinLock>>;
   queues_t m_queues;                                          // List of queues. 
   std::thread::id m_constructor_id;                           // Thread id of the thread that created and/or moved AIThreadPool.
   int m_max_number_of_threads;                                // Current capacity of m_workers.
@@ -255,7 +269,7 @@ class AIThreadPool
     assert(aithreadid::is_single_threaded(m_constructor_id));
     rvalue.m_pillaged = true;
     // Move the queues_container_t.
-    *queues_t::wat(m_queues) = std::move(*queues_t::rat(rvalue.m_queues));
+    *queues_t::wat(m_queues) = std::move(*queues_t::wat(rvalue.m_queues));
     // Once we're done with constructing this object, other threads (that likely still have to be started,
     // but that is not enforced) should be allowed to call AIThreadPool::instance(). In order to enforce
     // that all initialization of this object will be visible to those other threads, we need to prohibit
@@ -292,24 +306,26 @@ class AIThreadPool
    *
    * @returns A handle for the new queue.
    */
-  int new_queue(int capacity, int priority = 256);
+  QueueHandle new_queue(int capacity, int priority = 256);
 
   /*!
    * @brief Return a reference to the queue that belongs to \a queue_handle.
    *
    * The returned pointer is only valid until a new queue is requested, which
-   * is blocked for as long as \a queues_r isn't destructed: keep the read-access
+   * is blocked only as long as \a queues_r isn't destructed: keep the read-access
    * object around until the returned reference is no longer used.
    *
+   * Note that despite using a Read Access Type (rat) this function returns
+   * a non-const reference! The reasoning is that "read access" here should be
+   * interpreted as "may be accessed by an arbitrary number of threads at the
+   * same time".
+   *
    * @param queues_r The read-lock object as returned by \ref queues_read_access.
-   * @param queue_handle A queue handle as returned by \ref new_queue.
+   * @param queue_handle A QueueHandle as returned by \ref new_queue.
    *
    * @returns A reference to AIObjectQueue<std::function<void()>>.
    */
-  queues_container_t::value_type& get_queue(queues_t::rat& queues_r, int queue_handle) { return queues_r->at(queue_handle); }
-
-  //! Same for a const AIThreadPool (is that ever used?)
-  queues_container_t::value_type const& get_queue(queues_t::crat& queues_cr, int queue_handle) const { return queues_cr->at(queue_handle); }
+  queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, QueueHandle queue_handle) { return queues_r->at(queue_handle); }
 
   //------------------------------------------------------------------------
 

@@ -97,6 +97,23 @@
  * prevent a producer thread having a race condition with
  * another producer thread, or a consumer thread having a
  * race condition with another consumer thread.
+ *
+ * <h3>const qualifier and %AIObjectQueue&lt;T&gt;</h3>
+ *
+ * Essentially, an %AIObjectQueue only allows one to move
+ * objects of type \c T into and out of the queue;
+ * it doesn't have accessors.
+ * Consequently none of its member functions is const.
+ *
+ * Therefore, it is possible to overload the use of the const
+ * qualifier for the public member functions to mean: these
+ * member functions are threadsafe; they may be accessed
+ * concurrently by multiple threads.
+ *
+ * Specifically, producer_access() and consumer_access(),
+ * although \c const, <em>do</em> allow respectively writing data into \htmlonly&dash;\endhtmlonly
+ * and extracting data from the queue. Their const-ness merely means that concurrent
+ * access is thread safe.
  */
 template<typename T>
 class AIObjectQueue
@@ -352,12 +369,12 @@ class AIObjectQueue
    *
    * @returns A ProducerAccess object.
    */
-  ProducerAccess producer_access() { return ProducerAccess(this); }
+  ProducerAccess producer_access() const { return ProducerAccess(const_cast<AIObjectQueue<T>*>(this)); }
 
   /*!
    * @brief Obtain exclusive consumer access to the buffer.
    *
    * @returns A ConsumerAccess object.
    */
-  ConsumerAccess consumer_access() { return ConsumerAccess(this); }
+  ConsumerAccess consumer_access() const { return ConsumerAccess(const_cast<AIObjectQueue<T>*>(this)); }
 };

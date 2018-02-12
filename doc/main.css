@@ -52,10 +52,6 @@ table.implement_table td.item {
   padding-right: 10px;
 }
 
-div.headertitle div.title2 {
-  display: none;
-}
-
 a#details + h2.groupheader {
   display:none;
 }

@@ -24,7 +24,7 @@ void AIThreadPool::Worker::main(int const self)
     int length;
     { // Lock the queue for other consumer threads.
       auto queues_r = AIThreadPool::instance().queues_read_access();
-      queues_container_t::value_type& queue = queues_r->at(0);
+      queues_container_t::value_type const& queue = (*queues_r)[queues_r->ibegin()]; // queues_container_t is a utils::Vector
       auto access = queue.consumer_access();
       length = access.length();
       if (length > 0)
@@ -151,11 +151,11 @@ void AIThreadPool::change_number_of_threads_to(int requested_number_of_threads)
   }
 }
 
-int AIThreadPool::new_queue(int capacity, int priority)
+AIThreadPool::QueueHandle AIThreadPool::new_queue(int capacity, int priority)
 {
   DoutEntering(dc::threadpool, "AIThreadPool::new_queue(" << capacity << ", " << priority << ")");
   queues_t::wat queues_w(m_queues);
-  size_t index = queues_w->size();
+  QueueHandle index(queues_w->size());
   queues_w->emplace_back(std::move(queues_container_t::value_type(capacity)));
   Dout(dc::threadpool, "Returning index " << index << "; size is now " << queues_w->size() << " for std::vector<> at " << (void*)&*queues_w);
   return index;
