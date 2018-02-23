@@ -289,19 +289,24 @@ bool AIPackagedTask<R(Args...)>::dispatch()
 {
   {
     // Stop a new queue from being created while we're working with a queue, because that could move the queue.
-    auto queues_r = AIThreadPool::instance().queues_read_access();
+    AIThreadPool& thread_pool = AIThreadPool::instance();
+    auto queues_r = thread_pool.queues_read_access();
     // Lock the queue.
-    auto& queue_ref = AIThreadPool::instance().get_queue(queues_r, m_queue_handle);
-    auto queue = queue_ref.producer_access();
-    if (queue.length() == queue_ref.capacity())
+    auto& queue_ref = thread_pool.get_queue(queues_r, m_queue_handle);
     {
-      m_phase = deferred;
-      return false;
-    }
-    // Pass job to thread pool.
-    m_phase = executing;
-    queue.move_in(std::function<void()>([this](){ this->invoke(); }));
-  } // Unlock queue. And we're done with the queue, so also unlock AIThreadPool::m_queues.
+      auto queue = queue_ref.producer_access();
+      if (queue.length() == queue_ref.capacity())
+      {
+        m_phase = deferred;
+        return false;
+      }
+      // Pass job to thread pool.
+      m_phase = executing;
+      queue.move_in(std::function<void()>([this](){ this->invoke(); }));
+    } // Unlock queue.
+    // Now that we added something to queue, wake up one thread if needed.
+    queue_ref.notify_one();
+  } // And we're done with the queue, so also unlock AIThreadPool::m_queues.
 
   // Halt task until job finished.
   wait_until([this](){ return m_phase == finished; }, m_condition);

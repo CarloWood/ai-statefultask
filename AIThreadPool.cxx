@@ -6,53 +6,140 @@
 std::atomic<AIThreadPool*> AIThreadPool::s_instance;
 
 //static
+std::atomic_int AIThreadPool::s_idle;
+
+//static
+std::mutex AIThreadPool::s_idle_mutex;
+
+//static
+std::condition_variable AIThreadPool::s_idle_cv;
+
+//static
 void AIThreadPool::Worker::main(int const self)
 {
   Debug(NAMESPACE_DEBUG::init_thread());
   Dout(dc::threadpool, "Thread started.");
 
-  // TODO: for now assume there is only one queue. Wait until it appears.
-  while (AIThreadPool::instance().queues_read_access()->size() == 0)
+  // Wait until we have at least one queue.
   {
-    std::this_thread::sleep_for(std::chrono::microseconds(10));
-    continue;
+    auto queues_r = AIThreadPool::instance().queues_read_access();
+    while (queues_r->size() == 0)
+    {
+      std::this_thread::sleep_for(std::chrono::microseconds(10));
+      continue;
+    }
   }
 
-  while(workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
+  std::function<void()> f;
+  QueueHandle q;
+  q.set_to_zero();      // Zero is the highest priority queue.
+  while (workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
   {
-    std::function<void()> f;
-    int length;
+    bool empty;
+    bool go_idle = false;
     { // Lock the queue for other consumer threads.
       auto queues_r = AIThreadPool::instance().queues_read_access();
-      queues_container_t::value_type const& queue = (*queues_r)[queues_r->ibegin()]; // queues_container_t is a utils::Vector
-      auto access = queue.consumer_access();
-      length = access.length();
-      if (length > 0)
-        f = access.move_out();
+      // Obtain a reference to queue `q`.
+      queues_container_t::value_type const& queue = (*queues_r)[q];
+      {
+        // Obtain and lock consumer access this queue.
+        auto access = queue.consumer_access();
+        // The number of messages in the queue.
+        int length = access.length();
+        empty = length == 0;
+        // If the queue is not empty, move one object from the queue to `f`.
+        if (!empty)
+          f = access.move_out();
+      }
+      if (empty)
+      {
+        // Process lower priority queues if any.
+        // We are not available anymore to work on lower priority queues: we're already going to work on them.
+        // However, go idle if we're not allowed to process queues with a lower priority.
+        if ((go_idle = queue.decrement_active_workers()))
+          queue.increment_active_workers();             // Undo the above decrement.
+        else if (!(go_idle = ++q == queues_r->iend()))  // If there is no lower priority queue left, then just go idle.
+          continue;                                     // Otherwise, handle the lower priority queue.
+        if (go_idle)
+        {
+          // We're going idle and are available again for queues of any priority.
+          // Increment the available workers on all higher priority queues again before going idle.
+          while (q != queues_r->ibegin())
+            (*queues_r)[--q].increment_active_workers();
+        }
+      } // Not empty - not idle - need to invoke the functor f().
     } // Unlock the queue.
-    if (length > 0)
-      f(); // Invoke the functor.
+
+    if (!go_idle)
+    {
+      // ***************************************************
+      f(); //          Invoke the functor.                 *
+      // ***************************************************
+
+      { // Lock the queue for other consumer threads.
+        auto queues_r = AIThreadPool::instance().queues_read_access();
+        // See if any higher priority queues need our help.
+        while (q != queues_r->ibegin())
+        {
+          // Obtain a reference to the queue with the next higher priority.
+          queues_container_t::value_type const& queue = (*queues_r)[--q];
+          // If the priority is less than the number of idle threads then that means the higher priority queues must be empty.
+          // We're not locking s_idle_mutex here because it doesn't matter how precise the read value of s_idle is here.
+          // If the result of the comparison is false while it should have been true then this thread simply will move to
+          // high priority queues, find out that are empty and quickly return to the lower priority queue that it is on now.
+          // While, if the result of the comparison is true while it should have been false, then this thread will run
+          // a task of lower priority queue before returning to the higher priority queue the next time (I don't think
+          // this can even happen).
+          if (queue.get_total_reserved_threads() <= s_idle.load(std::memory_order_relaxed))
+          {
+            ++q;        // Stay on the last queue.
+            break;
+          }
+          // Increment the available workers on this higher priority queue before checking it for new tasks.
+          queue.increment_active_workers();
+        }
+      }
+    }
     else
-      std::this_thread::sleep_for(std::chrono::microseconds(10));       // FIXME
+    {
+      // Atomically increment s_idle and go into the wait state.
+      std::unique_lock<std::mutex> lk(s_idle_mutex);
+      // The requirement we have here is that a thread that sees this increment will
+      // not be able to obtain the lock on s_idle_mutex before this threads releases
+      // it again inside s_idle_cv.wait(lk). In other words, a thread that sees the
+      // increment must also see the mutex being locked. For that it is sufficient
+      // that the increment is done with std::memory_order_relaxed.
+      s_idle.fetch_add(1, std::memory_order_relaxed);
+      s_idle_cv.wait(lk);
+    }
   }
 
   Dout(dc::threadpool, "Thread terminated.");
 }
 
-//static
-void AIThreadPool::add_threads(workers_t::wat& workers_w, int current_number_of_threads, int requested_number_of_threads)
+void AIThreadPool::add_threads(workers_t::wat& workers_w, int n)
 {
-  DoutEntering(dc::threadpool, "add_threads(" << current_number_of_threads << ", " << requested_number_of_threads << ")");
-  for (int i = current_number_of_threads; i < requested_number_of_threads; ++i)
-    workers_w->emplace_back(&Worker::main, i);
+  DoutEntering(dc::threadpool, "add_threads(" << n << ")");
+  {
+    queues_t::wat queues_w(m_queues);
+    for (auto&& queue : *queues_w)
+      queue.available_workers_add(n);
+  }
+  int const current_number_of_threads = workers_w->size();
+  for (int i = 0; i < n; ++i)
+    workers_w->emplace_back(&Worker::main, current_number_of_threads + i);
 }
 
 // This function is called inside a criticial area of m_workers_r_to_w_mutex
 // so we may convert the read lock to a write lock.
-//static
 void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
 {
   DoutEntering(dc::threadpool, "remove_threads(" << n << ")");
+  {
+    queues_t::wat queues_w(m_queues);
+    for (auto&& queue : *queues_w)
+      queue.available_workers_add(-n);
+  }
 
   // Since we only have a read lock on `m_workers` we can only
   // get access to const Worker's; in order to allow us to manipulate
@@ -68,6 +155,7 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
   int t = workers_r->size();
   for (int i = 0; i < n; ++i)
     workers_r->at(--t).quit();
+  s_idle_cv.notify_all();
   // If the relaxed stores to the m_quit's is very slow then we might
   // be calling join() on threads before they can see their m_quit
   // flag being set. This is not a problem. However, theoretically
@@ -106,7 +194,7 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
   assert(workers_w->empty());                    // Paranoia; even in the case of constructing a second AIThreadPool
                                                  // after destructing the first, this should be the case here.
   workers_w->reserve(m_max_number_of_threads);   // Attempt to avoid reallocating the vector in the future.
-  add_threads(workers_w, 0, number_of_threads);  // Create and run number_of_threads threads.
+  add_threads(workers_w, number_of_threads);     // Create and run number_of_threads threads.
 }
 
 AIThreadPool::~AIThreadPool()
@@ -141,22 +229,23 @@ void AIThreadPool::change_number_of_threads_to(int requested_number_of_threads)
   std::lock_guard<std::mutex> lock(m_workers_r_to_w_mutex);
   // Kill or add threads.
   workers_t::rat workers_r(m_workers);
-  int current_number_of_threads = workers_r->size();
+  int const current_number_of_threads = workers_r->size();
   if (requested_number_of_threads < current_number_of_threads)
     remove_threads(workers_r, current_number_of_threads - requested_number_of_threads);
   else if (requested_number_of_threads > current_number_of_threads)
   {
     workers_t::wat workers_w(workers_r);
-    add_threads(workers_w, current_number_of_threads, requested_number_of_threads);
+    add_threads(workers_w, requested_number_of_threads - current_number_of_threads);
   }
 }
 
-AIThreadPool::QueueHandle AIThreadPool::new_queue(int capacity, int priority)
+AIThreadPool::QueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
 {
-  DoutEntering(dc::threadpool, "AIThreadPool::new_queue(" << capacity << ", " << priority << ")");
+  DoutEntering(dc::threadpool, "AIThreadPool::new_queue(" << capacity << ", " << reserved_threads << ")");
   queues_t::wat queues_w(m_queues);
   QueueHandle index(queues_w->size());
-  queues_w->emplace_back(std::move(queues_container_t::value_type(capacity)));
+  int previous_reserved_threads = index.is_zero() ? 0 : (*queues_w)[index - 1].get_total_reserved_threads();
+  queues_w->emplace_back(capacity, previous_reserved_threads, reserved_threads);
   Dout(dc::threadpool, "Returning index " << index << "; size is now " << queues_w->size() << " for std::vector<> at " << (void*)&*queues_w);
   return index;
 }

@@ -288,14 +288,18 @@ class AIObjectQueue
   }
 
   //! The return type of producer_access().
-  struct ProducerAccess {
+  struct ProducerAccess
+  {
    private:
     AIObjectQueue<T>* m_buffer;
+
    public:
     //! Constructor.
     ProducerAccess(AIObjectQueue<T>* buffer) : m_buffer(buffer) { buffer->m_producer_mutex.lock(); }
+
     //! Destructor.
     ~ProducerAccess() { m_buffer->m_producer_mutex.unlock(); }
+
     /*!
      * @brief Return the current length of the buffer.
      *
@@ -303,12 +307,14 @@ class AIObjectQueue
      * If the returned value equals the capacity of the buffer
      * than the buffer is full and one should not call move_in.
      */
+
     int length() const { return m_buffer->producer_length(); }
     /*!
      * @brief Write an object into the buffer by means of \c std::move.
      *
      * @param object The object to move into the buffer.
      */
+
     void move_in(T&& object) { m_buffer->move_in(std::move(object)); }
     /*!
      * @brief Clear the buffer by putting the head where the tail is.
@@ -327,12 +333,15 @@ class AIObjectQueue
   };
 
   //! The return type of consumer_access().
-  struct ConsumerAccess {
+  struct ConsumerAccess
+  {
    private:
     AIObjectQueue<T>* m_buffer;
+
    public:
     //! Constructor.
     ConsumerAccess(AIObjectQueue<T>* buffer) : m_buffer(buffer) { buffer->m_consumer_mutex.lock(); }
+
     //! Destructor.
     ~ConsumerAccess() { m_buffer->m_consumer_mutex.unlock(); }
     /*!
@@ -341,12 +350,14 @@ class AIObjectQueue
      * This is the number of objects available for reading.
      * If the returned value equals zero than the buffer is empty and one should not call move_out.
      */
+
     int length() const { return m_buffer->consumer_length(); }
     /*!
      * @brief Read an object from the buffer by means of \c std::move.
      *
      * @returns The read object.
      */
+
     T move_out() { return m_buffer->move_out(); }
     /*!
      * @brief Clear the buffer by putting the tail where the head is.
@@ -361,6 +372,7 @@ class AIObjectQueue
      * destructor is always only called once the buffer is
      * destructed or reallocate() is called).
      */
+
     void clear() { m_buffer->m_tail.store(m_buffer->m_head.load(std::memory_order_relaxed), std::memory_order_relaxed); }
   };
 

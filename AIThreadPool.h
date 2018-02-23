@@ -38,6 +38,7 @@
 #include "utils/Vector.h"
 #include <thread>
 #include <cassert>
+#include <condition_variable>
 
 #ifndef DOXYGEN
 namespace ordering_category {
@@ -93,37 +94,36 @@ struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
  *   {
  *     // Get read access to AIThreadPool::m_queues.
  *     auto queues_access = thread_pool.queues_read_access();
- *     { // <-- See comment below!
- *       // Get a reference to one of the queues in m_queues.
- *       AIObjectQueue<std::function<void()>>& queue = thread_pool.get_queue(queues_access, queue_handle);
+ *     // Get a reference to one of the queues in m_queues.
+ *     auto& queue = thread_pool.get_queue(queues_access, queue_handle);
+ *     {
  *       // Get producer accesses to this queue.
- *       auto access = queue.producer_access();
- *       int length = access.length();
+ *       auto queue_access = queue.producer_access();
+ *       int length = queue_access.length();
  *       if (length < 32) // Buffer not full?
  *       {
  *         // Place a lambda in the queue.
- *         access.move_in([](){ std::cout << "Hello pool!\n"; });
+ *         queue_access.move_in([](){ std::cout << "Hello pool!\n"; });
  *       }
  *     } // Release producer accesses, so another thread can write to this queue again.
+ *     // This function must be called every time move_in was called
+ *     // on a queue that was returned by thread_pool.get_queue.
+ *     queue.notify_one();
  *   } // Release read access to AIThreadPool::m_queues so another thread can use AIThreadPool::new_queue again.
  * @endcode
  *
- * Note that although write access to <code>AIThreadPool::m_queues</code>, which is a vector of <code>AIObjectQueue<std::function<void()>></code>
- * objects, is only necessary in AIThreadPool::new_queue (and the constructors of AIThreadPool).
- * And it would compile to do
+ * It is necessary to keep <code>AIThreadPool::m_queues</code> read locked \htmlonly&mdash;\endhtmlonly
+ * by not destroying the object returned by \ref queues_read_access \htmlonly&mdash;\endhtmlonly
+ * for as long as the write lock on the queue exists.
+ * I.e., in the above code, the lifetime of <code>queues_access</code>
+ * must exceed the lifetime of <code>queue_access</code>.
  *
- * @code
- * // This is WRONG.
- * AIObjectQueue<std::function<void()>>& queue = thread_pool.get_queue(thread_pool.queues_read_access(), queue_handle);
- * @endcode
- *
- * that releases the read lock on <code>AIThreadPool::m_queues</code> immediately after this line,
- * theoretically allowing some other thread to add a new queue which could resize the underlaying vector
- * and move the AIObjectQueue objects in memory, invalidating the returned reference here!
- *
- * It is therefore necessary to keep the <code>queues_access</code> object until after the scope in which
- * this reference is available. This is more or less enforced by opening a new scope immediately
- * after creating the <code>queues_access</code> object.
+ * This is necessary because as soon as that read lock is released,
+ * theoretically, some other thread that called AIThreadPool::new_queue
+ * could resize <code>AIThreadPool::m_queues</code>, the underlaying vector of
+ * <code>AIObjectQueue<std::function<void()>></code> objects and move the
+ * AIObjectQueue objects in memory, invalidating the returned reference to
+ * the queue.
  *
  * @sa AIObjectQueue
  * @sa @link AIPackagedTask< R(Args...)> AIPackagedTask@endlink
@@ -136,34 +136,93 @@ class AIThreadPool
   using worker_container_t = std::vector<Worker>;
   using workers_t = aithreadsafe::Wrapper<worker_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
+  // Number of idle workers.
+  static std::atomic_int s_idle;
+
+  // Condition variable mutex.
+  static std::mutex s_idle_mutex;
+
+  // Condition variable.
+  static std::condition_variable s_idle_cv;
+
+  struct PriorityQueue : public AIObjectQueue<std::function<void()>>
+  {
+    int const m_previous_total_reserved_threads;// The number of threads that are reserved for all higher priority queues together.
+    int const m_total_reserved_threads;         // The number of threads that are reserved for this queue, plus all higher priority queues, together.
+    std::atomic_int m_available_workers;        // The number of workers that may be added to work on queues of lower priority
+                                                // (number of worker threads minus m_total_reserved_threads minus the number of
+                                                //  worker threads that already work on lower priority queues).
+                                                // The lowest priority queue must have a value of 0.
+
+    PriorityQueue(int capacity, int previous_total_reserved_threads, int reserved_threads) :
+        AIObjectQueue<std::function<void()>>(capacity),
+        m_previous_total_reserved_threads(previous_total_reserved_threads),
+        m_total_reserved_threads(previous_total_reserved_threads + reserved_threads),
+        m_available_workers(AIThreadPool::instance().number_of_workers() - m_total_reserved_threads)
+      { }
+
+    PriorityQueue(PriorityQueue&& rvalue) :
+        AIObjectQueue<std::function<void()>>(std::move(rvalue)),
+        m_previous_total_reserved_threads(rvalue.m_previous_total_reserved_threads),
+        m_total_reserved_threads(rvalue.m_total_reserved_threads),
+        m_available_workers(rvalue.m_available_workers.load())
+      { }
+
+    void available_workers_add(int n) { m_available_workers.fetch_add(n, std::memory_order_relaxed); }
+    // As with AIObjectQueue, the 'const' here means "safe under concurrent access".
+    // Therefore the const casst is ok, because the atomic m_available_workers is thread-safe.
+    // Return true when the number of workers active on this queue may no longer be reduced.
+    bool decrement_active_workers() const { return const_cast<std::atomic_int&>(m_available_workers).fetch_sub(1, std::memory_order_relaxed) <= 0; }
+    void increment_active_workers() const { const_cast<std::atomic_int&>(m_available_workers).fetch_add(1, std::memory_order_relaxed); }
+    int get_total_reserved_threads() const { return m_total_reserved_threads; }
+
+    /*!
+     * @brief Wake up one thread to process the just added function, if needed.
+     *
+     * When the threads of the thread pool have nothing to do, they go to
+     * sleep by waiting on a condition variable. Call this function every
+     * time a new message was added to a queue in order to make sure that
+     * there is a thread that will handle it.
+     */
+    void notify_one() const
+    {
+      int idle;
+      while ((idle = s_idle.load(std::memory_order_relaxed)) > m_previous_total_reserved_threads) // This line takes 0.9...0.97 ns.
+      {
+        if (!s_idle.compare_exchange_weak(idle, idle - 1, std::memory_order_relaxed, std::memory_order_relaxed))
+          continue;
+        // Taking this lock is only necessary when idle == 1, but adding a test for that makes things 1% slower due to branch misprediction.
+        std::unique_lock<std::mutex> lk(s_idle_mutex);
+        s_idle_cv.notify_one();                                                         // This lines turns out to take 19.5 microseconds!
+        break;
+      }
+    }
+  };
+
   struct Worker
   {
     // A Worker is only const when we access it from a const worker_container_t.
     // However, the (read) lock on the worker_container_t only protects the internals
-    // of the container, not it's elements. So, all elements are considered mutable.
+    // of the container, not its elements. So, all elements are considered mutable.
     mutable std::thread m_thread;
     mutable std::atomic_bool m_quit;
 
-    /*!
-     * Construct a new Worker; do not associate it with a running thread yet.
-     * A write lock on m_workers is required before calling this constructor;
-     * that then blocks the thread from accessing m_quit until that lock is released
-     * so that we have time to move the Worker in place (using emplace_back()).
-     */
+    // Construct a new Worker; do not associate it with a running thread yet.
+    // A write lock on m_workers is required before calling this constructor;
+    // that then blocks the thread from accessing m_quit until that lock is released
+    // so that we have time to move the Worker in place (using emplace_back()).
     Worker(worker_function_t worker_function, int self) : m_thread(std::bind(worker_function, self)), m_quit(false) { }
 
-    /*!
-     * The move constructor can only be called as a result of a reallocation, as a result
-     * of a size increase of the std::vector<Worker> (because Workers are put into it with
-     * emplace_back(), Worker is not copyable, and we never move a Worker out of the vector).
-     * That means that at the moment the move constuctor is called we have the exclusive
-     * write lock on the vector and therefore no other thread can access this Worker.
-     * Therefore it is safe to non-atomically copy m_quit (note that it cannot be moved or
-     * copied atomically).
-     */
+    // The move constructor can only be called as a result of a reallocation, as a result
+    // of a size increase of the std::vector<Worker> (because Worker`s are put into it with
+    // emplace_back(), Worker is not copyable, and we never move a Worker out of the vector).
+    // That means that at the moment the move constuctor is called we have the exclusive
+    // write lock on the vector and therefore no other thread can access this Worker.
+    // Therefore it is safe to non-atomically copy m_quit (note that it cannot be moved or
+    // copied atomically).
     Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)), m_quit(rvalue.m_quit.load()) { rvalue.m_quit.store(true, std::memory_order_relaxed); }
 
-    //! Destructor.
+    // Destructor.
     ~Worker()
     {
       // It's ok to use memory_order_relaxed here because this is the
@@ -175,27 +234,21 @@ class AIThreadPool
     }
 
    public:
-    /*!
-     * Inform the thread that we want it to stop running.
-     */
+    // Inform the thread that we want it to stop running.
     void quit() const { m_quit.store(true, std::memory_order_relaxed); }
 
-    /*!
-     * Wait for the thread to have exited.
-     */
+    // Wait for the thread to have exited.
     void join() const
     {
       // It's ok to use memory_order_relaxed here because this is the same thread that (should have) called quit() in the first place.
-      // Only call join() on Workers that are quitting.
+      // Only call join() on Worker`s that are quitting.
       ASSERT(m_quit.load(std::memory_order_relaxed));
-      // Only call join() once (this should be true for all Worker's that were created and not moved).
+      // Only call join() once (this should be true for all Worker`s that were created and not moved).
       ASSERT(m_thread.joinable());
       m_thread.join();
     }
 
-    /*!
-     * The main function for each of the worker threads.
-     */
+    // The main function for each of the worker threads.
     static void main(int const self);
 
     // Called from worker thread.
@@ -203,7 +256,7 @@ class AIThreadPool
     bool running() const { return !m_quit.load(std::memory_order_acquire); } // We are running as long as m_quit isn't set.
   };
 
-  // Define a read/write lock protected container with all Workers.
+  // Define a read/write lock protected container with all Worker`s.
   //
   // Obtaining and releasing a read lock by constructing and destructing a workers_t::rat object,
   // takes 178 ns (without optimization) / 117 ns (with optimization) [measured with microbench
@@ -220,17 +273,17 @@ class AIThreadPool
   std::mutex m_workers_r_to_w_mutex;
 
   // Add new threads to the already write locked m_workers container.
-  static void add_threads(workers_t::wat& workers_w, int current_number_of_threads, int requested_number_of_threads);
+  void add_threads(workers_t::wat& workers_w, int n);
 
   // Remove threads from the already read locked m_workers container.
-  static void remove_threads(workers_t::rat& workers_r, int n);
+  void remove_threads(workers_t::rat& workers_r, int n);
 
  public:
   //! The type of a queue handle as returned by new_queue.
   using QueueHandle = utils::VectorIndex<ordering_category::QueueHandle>;
 
   //! The container type in which the queues are stored.
-  using queues_container_t = utils::Vector<AIObjectQueue<std::function<void()>>, QueueHandle>;
+  using queues_container_t = utils::Vector<PriorityQueue, QueueHandle>;
 
  private:
   static std::atomic<AIThreadPool*> s_instance;               // The only instance of AIThreadPool that should exist at a time.
@@ -292,6 +345,11 @@ class AIThreadPool
    */
   void change_number_of_threads_to(int number_of_threads);
 
+  /*!
+   * @brief Return the number of worker threads.
+   */
+  int number_of_workers() const { return workers_t::crat(m_workers)->size(); }
+
   //------------------------------------------------------------------------
   // Queue management.
 
@@ -302,11 +360,11 @@ class AIThreadPool
    * @brief Create a new queue.
    *
    * @param capacity The capacity of the new queue.
-   * @param priority The priority of the new queue.
+   * @param reserved_threads The number of threads that are rather idle than work on lower priority queues.
    *
    * @returns A handle for the new queue.
    */
-  QueueHandle new_queue(int capacity, int priority = 256);
+  QueueHandle new_queue(int capacity, int reserved_threads = 1);
 
   /*!
    * @brief Return a reference to the queue that belongs to \a queue_handle.
@@ -323,7 +381,7 @@ class AIThreadPool
    * @param queues_r The read-lock object as returned by \ref queues_read_access.
    * @param queue_handle A QueueHandle as returned by \ref new_queue.
    *
-   * @returns A reference to AIObjectQueue<std::function<void()>>.
+   * @returns A reference to AIThreadPool::PriorityQueue.
    */
   queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, QueueHandle queue_handle) { return queues_r->at(queue_handle); }
 
@@ -337,7 +395,7 @@ class AIThreadPool
   static AIThreadPool& instance()
   {
     // Construct an AIThreadPool somewhere, preferably at the beginning of main().
-    ASSERT(s_instance != nullptr);
+    ASSERT(s_instance.load(std::memory_order_relaxed) != nullptr);
     // In order to see the full construction of the AIThreadPool instance, we need to prohibit
     // reads done after this point from being reordered before this load, because that could
     // potentially still read memory locations in the object from before when it was constructed.
