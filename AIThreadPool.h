@@ -119,11 +119,11 @@ struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
  * must exceed the lifetime of <code>queue_access</code>.
  *
  * This is necessary because as soon as that read lock is released,
- * theoretically, some other thread that called AIThreadPool::new_queue
- * could resize <code>AIThreadPool::m_queues</code>, the underlaying vector of
- * <code>AIObjectQueue<std::function<void()>></code> objects and move the
- * AIObjectQueue objects in memory, invalidating the returned reference to
- * the queue.
+ * some other thread can call AIThreadPool::new_queue would
+ * resize <code>AIThreadPool::m_queues</code>, the underlaying vector of
+ * <code>AIObjectQueue<std::function<void()>></code> objects and
+ * possibly move the AIObjectQueue objects in memory, invalidating the
+ * returned reference to the queue.
  *
  * @sa AIObjectQueue
  * @sa @link AIPackagedTask< R(Args...)> AIPackagedTask@endlink

@@ -21,14 +21,8 @@ void AIThreadPool::Worker::main(int const self)
   Dout(dc::threadpool, "Thread started.");
 
   // Wait until we have at least one queue.
-  {
-    auto queues_r = AIThreadPool::instance().queues_read_access();
-    while (queues_r->size() == 0)
-    {
-      std::this_thread::sleep_for(std::chrono::microseconds(10));
-      continue;
-    }
-  }
+  while (AIThreadPool::instance().queues_read_access()->size() == 0)
+    std::this_thread::sleep_for(std::chrono::microseconds(10));
 
   std::function<void()> f;
   QueueHandle q;
