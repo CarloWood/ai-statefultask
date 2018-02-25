@@ -24,7 +24,7 @@ void AIThreadPool::Worker::main(int const self)
   while (AIThreadPool::instance().queues_read_access()->size() == 0)
     std::this_thread::sleep_for(std::chrono::microseconds(10));
 
-  std::function<void()> f;
+  std::function<bool()> f;
   QueueHandle q;
   q.set_to_zero();      // Zero is the highest priority queue.
   while (workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
@@ -66,33 +66,55 @@ void AIThreadPool::Worker::main(int const self)
 
     if (!go_idle)
     {
-      // ***************************************************
-      f(); //          Invoke the functor.                 *
-      // ***************************************************
+      bool active = true;
+      QueueHandle next_q;
 
-      { // Lock the queue for other consumer threads.
-        auto queues_r = AIThreadPool::instance().queues_read_access();
-        // See if any higher priority queues need our help.
-        while (q != queues_r->ibegin())
-        {
-          // Obtain a reference to the queue with the next higher priority.
-          queues_container_t::value_type const& queue = (*queues_r)[--q];
-          // If the priority is less than the number of idle threads then that means the higher priority queues must be empty.
-          // We're not locking s_idle_mutex here because it doesn't matter how precise the read value of s_idle is here.
-          // If the result of the comparison is false while it should have been true then this thread simply will move to
-          // high priority queues, find out that are empty and quickly return to the lower priority queue that it is on now.
-          // While, if the result of the comparison is true while it should have been false, then this thread will run
-          // a task of lower priority queue before returning to the higher priority queue the next time (I don't think
-          // this can even happen).
-          if (queue.get_total_reserved_threads() <= s_idle.load(std::memory_order_relaxed))
+      while (active)
+      {
+        // ***************************************************
+        active = f();   // Invoke the functor.               *
+        // ***************************************************
+
+        // Determine the next queue to handle: the highest priority queue that doesn't have all reserved threads idle.
+        next_q = q;
+        { // Get read access to AIThreadPool::m_queues.
+          auto queues_r = AIThreadPool::instance().queues_read_access();
+          // See if any higher priority queues need our help.
+          while (next_q != queues_r->ibegin())
           {
-            ++q;        // Stay on the last queue.
-            break;
+            // Obtain a reference to the queue with the next higher priority.
+            queues_container_t::value_type const& queue = (*queues_r)[--next_q];
+            // If the priority is less than the number of idle threads then that means the higher priority queues must be empty.
+            // We're not locking s_idle_mutex here because it doesn't matter how precise the read value of s_idle is here.
+            // If the result of the comparison is false while it should have been true then this thread simply will move to
+            // high priority queues, find out that are empty and quickly return to the lower priority queue that it is on now.
+            // While, if the result of the comparison is true while it should have been false, then this thread will run
+            // a task of lower priority queue before returning to the higher priority queue the next time (I don't think
+            // this can even happen).
+            if (queue.get_total_reserved_threads() <= s_idle.load(std::memory_order_relaxed))
+            {
+              ++next_q;   // Stay on the last queue.
+              break;
+            }
+            // Increment the available workers on this higher priority queue before checking it for new tasks.
+            queue.increment_active_workers();
           }
-          // Increment the available workers on this higher priority queue before checking it for new tasks.
-          queue.increment_active_workers();
+          if (active)
+          {
+            queues_container_t::value_type const& queue = (*queues_r)[q];
+            auto pa = queue.producer_access();
+            int length = pa.length();
+            if (length < queue.capacity() && (next_q != q || length > 0))
+            {
+              // Put f() back into q.
+              pa.move_in(std::move(f));
+              break;
+            }
+            // Otherwise, call f() again.
+          }
         }
       }
+      q = next_q;
     }
     else
     {

@@ -81,7 +81,7 @@ struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
  * In order to <em>use</em> the thread pool one has to create one
  * or more task queues by calling AIThreadPool::new_queue. The
  * handle returned by that function can subsequently be used
- * to access the underlaying queue and move a <code>std::function<void()></code>
+ * to access the underlaying queue and move a <code>std::function<bool()></code>
  * object into it.
  *
  * For example,
@@ -121,7 +121,7 @@ struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
  * This is necessary because as soon as that read lock is released,
  * some other thread can call AIThreadPool::new_queue would
  * resize <code>AIThreadPool::m_queues</code>, the underlaying vector of
- * <code>AIObjectQueue<std::function<void()>></code> objects and
+ * <code>AIObjectQueue<std::function<bool()>></code> objects and
  * possibly move the AIObjectQueue objects in memory, invalidating the
  * returned reference to the queue.
  *
@@ -145,7 +145,7 @@ class AIThreadPool
   // Condition variable.
   static std::condition_variable s_idle_cv;
 
-  struct PriorityQueue : public AIObjectQueue<std::function<void()>>
+  struct PriorityQueue : public AIObjectQueue<std::function<bool()>>
   {
     int const m_previous_total_reserved_threads;// The number of threads that are reserved for all higher priority queues together.
     int const m_total_reserved_threads;         // The number of threads that are reserved for this queue, plus all higher priority queues, together.
@@ -155,14 +155,14 @@ class AIThreadPool
                                                 // The lowest priority queue must have a value of 0.
 
     PriorityQueue(int capacity, int previous_total_reserved_threads, int reserved_threads) :
-        AIObjectQueue<std::function<void()>>(capacity),
+        AIObjectQueue<std::function<bool()>>(capacity),
         m_previous_total_reserved_threads(previous_total_reserved_threads),
         m_total_reserved_threads(previous_total_reserved_threads + reserved_threads),
         m_available_workers(AIThreadPool::instance().number_of_workers() - m_total_reserved_threads)
       { }
 
     PriorityQueue(PriorityQueue&& rvalue) :
-        AIObjectQueue<std::function<void()>>(std::move(rvalue)),
+        AIObjectQueue<std::function<bool()>>(std::move(rvalue)),
         m_previous_total_reserved_threads(rvalue.m_previous_total_reserved_threads),
         m_total_reserved_threads(rvalue.m_total_reserved_threads),
         m_available_workers(rvalue.m_available_workers.load())

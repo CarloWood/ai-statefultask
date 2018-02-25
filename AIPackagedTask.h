@@ -302,7 +302,7 @@ bool AIPackagedTask<R(Args...)>::dispatch()
       }
       // Pass job to thread pool.
       m_phase = executing;
-      queue.move_in(std::function<void()>([this](){ this->invoke(); }));
+      queue.move_in(std::function<bool()>([this](){ this->invoke(); return false; }));
     } // Unlock queue.
     // Now that we added something to queue, wake up one thread if needed.
     queue_ref.notify_one();
