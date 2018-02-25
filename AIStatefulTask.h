@@ -581,7 +581,7 @@ class AIStatefulTask : public AIRefCount
 
   /*! @brief Called to step through the states.
    *
-   * If event == normal_run then engine is the engine this was called from.
+   * If event == normal_run then engine is the engine this was called from, unused otherwise (set to nullptr).
    */
   void multiplex(event_type event, AIEngine* engine = nullptr);
 
