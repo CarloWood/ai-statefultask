@@ -37,9 +37,6 @@
 #include "sys.h"
 #include "AIEngine.h"
 
-//! The auxiliary thread engine.
-AIEngine gAuxiliaryThreadEngine("gAuxiliaryThreadEngine");
-
 void AIEngine::add(AIStatefulTask* stateful_task)
 {
   Dout(dc::statefultask(stateful_task->mSMDebug), "Adding stateful task [" << (void*)stateful_task << "] to " << mName);

@@ -1,6 +1,9 @@
 #include "sys.h"
 #include "debug.h"
 #include "AIThreadPool.h"
+#ifdef CWDEBUG
+#include <libcwd/type_info.h>
+#endif
 
 //static
 std::atomic<AIThreadPool*> AIThreadPool::s_instance;
@@ -25,7 +28,7 @@ void AIThreadPool::Worker::main(int const self)
     std::this_thread::sleep_for(std::chrono::microseconds(10));
 
   std::function<bool()> f;
-  QueueHandle q;
+  AIQueueHandle q;
   q.set_to_zero();      // Zero is the highest priority queue.
   while (workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
   {
@@ -67,7 +70,7 @@ void AIThreadPool::Worker::main(int const self)
     if (!go_idle)
     {
       bool active = true;
-      QueueHandle next_q;
+      AIQueueHandle next_q;
 
       while (active)
       {
@@ -255,14 +258,15 @@ void AIThreadPool::change_number_of_threads_to(int requested_number_of_threads)
   }
 }
 
-AIThreadPool::QueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
+AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
 {
   DoutEntering(dc::threadpool, "AIThreadPool::new_queue(" << capacity << ", " << reserved_threads << ")");
   queues_t::wat queues_w(m_queues);
-  QueueHandle index(queues_w->size());
+  AIQueueHandle index(queues_w->size());
   int previous_reserved_threads = index.is_zero() ? 0 : (*queues_w)[index - 1].get_total_reserved_threads();
   queues_w->emplace_back(capacity, previous_reserved_threads, reserved_threads);
-  Dout(dc::threadpool, "Returning index " << index << "; size is now " << queues_w->size() << " for std::vector<> at " << (void*)&*queues_w);
+  Dout(dc::threadpool, "Returning index " << index << "; size is now " << queues_w->size() <<
+      " for " << libcwd::type_info_of(*queues_w).demangled_name() << " at " << (void*)&*queues_w);
   return index;
 }
 

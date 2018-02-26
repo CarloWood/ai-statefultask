@@ -119,7 +119,7 @@ class AIPackagedTask;   // not defined.
  *   AIPackagedTask<bool(int, double)> m_retrieve;              // Space holder for all variables involved.
  *   static condition_type constexpr retrieve_condition = 1;    // The condition bit to be used.
  *  public:
- *   MyTask(QueueHandle queue_handle) : m_retrieve(this, retrieve_condition, &foo, &Foo::retrieve, queue_handle) { }
+ *   MyTask(AIQueueHandle queue_handle) : m_retrieve(this, retrieve_condition, &foo, &Foo::retrieve, queue_handle) { }
  * ...
  * };
  * @endcode
@@ -157,7 +157,7 @@ class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
   enum { standby, deferred, executing, finished } m_phase;  // Keeps track of whether the job is already executing or even finished.
   AIStatefulTask::condition_type m_condition;
   AIDelayedFunction<R(Args...)> m_delayed_function;
-  AIThreadPool::QueueHandle m_queue_handle;
+  AIQueueHandle m_queue_handle;
 
  public:
   /*!
@@ -168,7 +168,7 @@ class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
    * @param fp A pointer to the function that needs to be called.
    * @param object_queue_handle A handle to the AIObjectQueue that the delayed function should be placed in.
    */
-  AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...), AIThreadPool::QueueHandle object_queue_handle) :
+  AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...), AIQueueHandle object_queue_handle) :
       AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp), m_queue_handle(object_queue_handle) { }
 
   /*!
@@ -181,7 +181,7 @@ class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
    * @param object_queue_handle A handle to the AIObjectQueue that the delayed function should be placed in.
    */
   template<class C>
-  AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfp)(Args...), AIThreadPool::QueueHandle object_queue_handle) :
+  AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfp)(Args...), AIQueueHandle object_queue_handle) :
       AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfp), m_queue_handle(object_queue_handle) { }
 
   //! Destructor.

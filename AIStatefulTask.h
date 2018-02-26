@@ -36,6 +36,7 @@
 
 #pragma once
 
+#include "AIQueueHandle.h"
 #include "utils/AIRefCount.h"
 #include "utils/macros.h"
 #include "threadsafe/aithreadsafe.h"
@@ -47,8 +48,6 @@
 
 class AICondition;
 class AIEngine;
-
-extern AIEngine gAuxiliaryThreadEngine;
 
 //! The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
 using AIWaitConditionFunc = std::function<bool()>;
@@ -115,14 +114,48 @@ class AIStatefulTask : public AIRefCount
     do_nothing                //!< Abort without notifying the parent task.
   };
 
+  struct Handler {
+    enum type_t {
+      idle_h,
+      immediate_h,
+      engine_h,
+      thread_pool_h
+    };
+    enum special_t {
+      idle = idle_h,
+      immediate = immediate_h
+    };
+    union Handle {
+      AIEngine* engine;                 // engine_h
+      AIQueueHandle queue_handle;       // thread_pool_h
+      Handle() { }
+      Handle(AIEngine* engine_) : engine(engine_) { }
+      Handle(AIQueueHandle queue_handle_) : queue_handle(queue_handle_) { }
+    };
+    Handle m_handle;
+    type_t m_type;
+    Handler() : m_type(idle_h) { }
+    Handler(special_t special) : m_type((type_t)special) { }
+    Handler(AIEngine* engine) : m_handle(engine), m_type(engine_h) { ASSERT(engine); }
+    Handler(AIQueueHandle queue_handle) : m_handle(queue_handle), m_type(thread_pool_h) { }
+    bool is_engine() const { return m_type == engine_h; }
+    AIQueueHandle get_queue_handle() const { return m_type == thread_pool_h ? m_handle.queue_handle : AIQueueHandle((std::size_t)0); }
+    operator bool() const { return m_type != idle_h; }        // Return true when this handler can be used to actually run in.
+    bool operator==(Handler handler) const {
+        return m_type == handler.m_type &&
+            (m_type != engine_h || m_handle.engine == handler.m_handle.engine) &&
+            (m_type != thread_pool_h || m_handle.queue_handle == handler.m_handle.queue_handle); }
+    friend std::ostream& operator<<(std::ostream& os, Handler const& handler);
+  };
+
  protected:
 #ifndef DOXYGEN
   struct multiplex_state_st {
     base_state_type base_state;
-    AIEngine* current_engine;         // Current engine.
+    Handler current_handler;            // Current handler.
     AIWaitConditionFunc wait_condition;
     condition_type conditions;
-    multiplex_state_st() : base_state(bs_reset), current_engine(nullptr), wait_condition(nullptr) { }
+    multiplex_state_st() : base_state(bs_reset), wait_condition(nullptr) { }
   };
 
   struct sub_state_st {
@@ -168,8 +201,8 @@ class AIStatefulTask : public AIRefCount
   std::function<void (bool)>mCallback;                // Pointer to signal/connection, or nullptr when not connected.
 
   // Engine stuff.
-  AIEngine* mDefaultEngine;           // Default engine.
-  AIEngine* mTargetEngine;            // Requested engine by a call to yield.
+  Handler mDefaultHandler;            // Default engine or queue.
+  Handler mTargetHandler;             // Requested engine by a call to yield.
   bool mYield;                        // True when any yield function was called, except for yield_if_not when the passed engine already matched.
 
 #ifdef DEBUG
@@ -199,7 +232,7 @@ class AIStatefulTask : public AIRefCount
    *
    * @param debug Write debug output for this task to dc::statefultask.
    */
-  AIStatefulTask(DEBUG_ONLY(bool debug)) : mDefaultEngine(nullptr), mTargetEngine(nullptr), mYield(false),
+  AIStatefulTask(DEBUG_ONLY(bool debug)) : mYield(false),
 #ifdef DEBUG
   mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
   mDebugSetStatePending(false), mDebugRefCalled(false),
@@ -233,10 +266,11 @@ class AIStatefulTask : public AIRefCount
    * a call back to a function <code>void cb_function(bool success)</code>. The parameter \c success will be
    * \c true when the task finished successfully, or \c false when it was aborted.
    *
+   * @param default_handler The default engine or thread pool queue that the task be added to.
    * @param cb_function The call back function. This function will be called with a single parameter with type \c bool.
-   * @param default_engine The default engine that the task should run in.
    */
-  void run(std::function<void (bool)> cb_function, AIEngine* default_engine = nullptr);
+  void run(Handler default_handler, std::function<void (bool)> cb_function);
+  void run(std::function<void (bool)> cb_function) { run(Handler::immediate, cb_function); }
 
   /*!
    * (Re)run a task with default engine \a default_engine (or \c nullptr if there is no preference),
@@ -244,19 +278,20 @@ class AIStatefulTask : public AIRefCount
    *
    * Upon an abort the parent can either still be signalled, also aborted or be left in limbo (do nothing).
    *
+   * @param default_handler The default engine or thread pool queue that the task be added to.
    * @param parent The parent task.
    * @param condition The condition of the parent that will be signalled.
    * @param on_abort What to do with the parent when this task is aborted.
-   * @param default_engine The default engine that the task should run in.
    */
-  void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent, AIEngine* default_engine = nullptr);
+  void run(Handler default_handler, AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent);
+  void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent) { run(Handler::immediate, parent, condition, on_abort); }
 
   /*!
    * Just run the bloody task (no call back).
    *
-   * @param default_engine The default engine that the task should run in.
+   * @param default_handler The default engine or thread pool queue that the task be added to.
    */
-  void run(AIEngine* default_engine = nullptr) { run(nullptr, 0, do_nothing, default_engine); }
+  void run(Handler default_handler = Handler::immediate) { run(default_handler, nullptr, 0, do_nothing); }
 
   /*!@}*/ // group_run
 
@@ -386,18 +421,18 @@ class AIStatefulTask : public AIRefCount
    * @brief Continue running from \a engine.
    *
    * The task will keep running in this engine until \c target is called again.
-   * Call <code>target(nullptr)</code> to return to running freely (with a default engine, etc, if one was given).
+   * Call <code>target(Handler::idle)</code> to return to running freely (with a default engine, etc, if one was given).
    *
-   * @param engine The required engine to run in.
+   * @param handler The required engine or thread pool queue to run in, or Handler::idle to turn the target off.
    */
-  void target(AIEngine* engine);
+  void target(Handler handler);
 
   /*!
    * @brief The above two combined.
    *
-   * @param engine The required engine to run in.
+   * @param handler The required engine or thread pool queue to run in.
    */
-  void yield(AIEngine* engine);
+  void yield(Handler handler);
 
   /*!
    * @brief Switch to \a engine and sleep for \a frames frames.
@@ -424,10 +459,10 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Do not really yield, unless the current engine is not \a engine.
    *
-   * @param engine The required engine to run in.
+   * @param handler The required engine or thread pool queue to run in.
    * @returns true if it switched engine.
    */
-  bool yield_if_not(AIEngine* engine);
+  bool yield_if_not(Handler handler);
 
   /*!@}*/ // group_yield
   /*!@}*/ // group_protected
@@ -506,10 +541,10 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Return true if we are added to the current engine.
    *
-   * @param engine The engine that this task is supposed to run in.
-   * @return True if this task is actually added to \a engine.
+   * @param handler The handler that this task is supposed to run in.
+   * @return True if this task is actually added to \a handler.
    */
-  bool active(AIEngine const* engine) const { return multiplex_state_type::crat(mState)->current_engine == engine; }
+  bool active(Handler handler) const { return multiplex_state_type::crat(mState)->current_handler == handler; }
 
   /*!
    * @brief Return true if the task finished.
@@ -583,7 +618,7 @@ class AIStatefulTask : public AIRefCount
    *
    * If event == normal_run then engine is the engine this was called from, unused otherwise (set to nullptr).
    */
-  void multiplex(event_type event, AIEngine* engine = nullptr);
+  void multiplex(event_type event, Handler handler = Handler::idle);
 
   state_type begin_loop();                            // Called from multiplex() at the start of a loop.
   void callback();                                    // Called when the task finished.

@@ -36,6 +36,7 @@
 
 #include "sys.h"
 #include "AIEngine.h"
+#include "AIThreadPool.h"
 
 //==================================================================
 // Overview
@@ -435,10 +436,12 @@ bool AIStatefulTask::waiting_or_aborting() const
   return state_r->base_state == bs_abort || ( state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle);
 }
 
-void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
+void AIStatefulTask::multiplex(event_type event, Handler handler)
 {
   // If this fails then you are using a pointer to a stateful task instead of an boost::intrusive_ptr<AIStatefulTask>.
   ASSERT(event == initial_run || ref_count() > 0);
+  // Paranoia; this can be removed after a while. As a result of this, handler is true when event == normal_run.
+  ASSERT(event != normal_run || handler);
 
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::multiplex(" << event_str(event) << ") [" << (void*)this << "]");
 
@@ -457,11 +460,14 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       return;
     }
 
-    if (event == normal_run && engine != state_r->current_engine)
+    if (!(event != normal_run || handler == state_r->current_handler))
     {
-      Dout(dc::statefultask(mSMDebug), "Leaving because current_engine isn't equal to calling engine [" << (void*)this << "]");
+      Dout(dc::statefultask(mSMDebug), "Leaving because current_handler isn't equal to calling handler [" << (void*)this << "]");
       return;
     }
+    // We get here and event == normal_run then handler == state_r->current_handler
+    // and as a result of the second ASSERT that means that state_r->current_handler
+    // isn't 'idle'.
 
     // multiplex(schedule_run) is only called from signal(condition) provided that
     // mSubState.idle & condition is non-zero, which is never true when idle is set to
@@ -651,8 +657,8 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
           mRunMutex.unlock();
           // bs_killed is handled when it is set. So, this must be a re-entry.
           // We can only get here when being called by an engine that we were added to before we were killed.
-          // This should already be have been set to nullptr to indicate that we want to be removed from that engine.
-          ASSERT(!multiplex_state_type::rat(mState)->current_engine);
+          // This should already be have been set to idle to indicate that we want to be removed from that engine.
+          ASSERT(!multiplex_state_type::rat(mState)->current_handler);
           // Do not call unref() twice.
           return;
       }
@@ -781,18 +787,28 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
 #endif
       }
 
-      // Figure out in which engine we should run.
-      AIEngine* engine = mTargetEngine ? mTargetEngine : (state_w->current_engine ? state_w->current_engine : mDefaultEngine);
-      // And the current engine we're running in.
-      AIEngine* current_engine = (event == normal_run) ? state_w->current_engine : nullptr;
+      // Figure out in which handler we should run, assuming we have to run at all.
+      // Because mDefaultHandler is never 'idle', handler will never be 'idle'.
+      Handler handler = mTargetHandler              ? mTargetHandler :
+                        state_w->current_handler    ? state_w->current_handler :
+                        mDefaultHandler;
+
+      // And the current handler we're running in.
+      Handler current_handler = (event == normal_run) ? state_w->current_handler : Handler(Handler::immediate);
+      // Since state_w->current_handler can't be idle when event == normal_run, current_handler will never be idle either.
+      ASSERT(current_handler);
 
       // Immediately run again if yield() wasn't called and it's OK to run in this thread.
-      // Note that when it's OK to run in any engine (mDefaultEngine is nullptr) then the last
-      // compare is also true when current_engine == nullptr.
-      keep_looping = need_new_run && !mYield && engine == current_engine;
+      keep_looping = need_new_run && !mYield && handler == current_handler;
       mYield = false;
 
-      Dout(dc::statefultask(mSMDebug && !keep_looping), (!need_new_run ? (state_w->current_engine ? "No need to run, removing from engine" : "No need to run") : "Need to run, adding to engine") << " [" << (void*)this << "]");
+      Dout(dc::statefultask(mSMDebug && !keep_looping),
+          (!need_new_run ? state_w->current_handler ? state_w->current_handler.is_engine() ? "No need to run, removing from engine"
+                                                                                           : "No need to run, removing from thread pool"
+                                                    : "No need to run"
+                         : handler.is_engine() ? "Need to run, adding to engine"
+                                               : "Need to run, adding to thread pool"
+          ) << " [" << (void*)this << "]");
 
       if (keep_looping)
       {
@@ -806,16 +822,42 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
       {
         if (need_new_run)
         {
-          // engine can be nullptr here if mDefaultEngine is nullptr and we called yield() from run() (current_engine is still nullptr).
-          if (!engine)
-            engine = &gAuxiliaryThreadEngine;
           // Add us to an engine if necessary.
-          if (engine != state_w->current_engine)
+          if (handler != state_w->current_handler)
           {
             // Mark that we want to run in this engine, and at the same time, that we don't want to run in the previous one.
-            state_w->current_engine = engine;
+            state_w->current_handler = handler;
             // Actually add the task to the engine.
-            engine->add(this);
+            if (handler.is_engine())
+              handler.m_handle.engine->add(this);
+            else
+            {
+              AIQueueHandle queue_handle = handler.get_queue_handle();
+              AIThreadPool& thread_pool{AIThreadPool::instance()};
+              auto queues_access = thread_pool.queues_read_access();
+              auto& queue = thread_pool.get_queue(queues_access, queue_handle);
+              int const capacity = queue.capacity();
+              int length;
+              {
+                auto access = queue.producer_access();
+                length = access.length();
+                if (length < capacity) // Buffer not full?
+                  access.move_in(
+                      [this]()
+                      {
+                        Handler const handler{multiplex_state_type::crat(mState)->current_handler};
+                        multiplex(normal_run, handler);
+                        return active(handler);
+                      }
+                  );
+              }
+              if (AI_UNLIKELY(length == capacity))
+              {
+                ASSERT(false); // FIXME
+              }
+              else
+                queue.notify_one();
+            }
           }
 #ifdef DEBUG
           // We are leaving the loop, but we're not idle. The task should re-enter multiplex() again.
@@ -826,7 +868,7 @@ void AIStatefulTask::multiplex(event_type event, AIEngine* engine)
         {
           // Remove this task from any engine,
           // causing the engine to remove us.
-          state_w->current_engine = nullptr;
+          state_w->current_handler = Handler::idle;
         }
 
 #ifdef DEBUG
@@ -888,12 +930,36 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop()
   return sub_state_w->run_state;
 }
 
-void AIStatefulTask::run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort, AIEngine* default_engine)
+std::ostream& operator<<(std::ostream& os, AIStatefulTask::Handler const& handler)
+{
+  switch (handler.m_type)
+  {
+    case AIStatefulTask::Handler::idle_h:
+      os << "<idle>";
+      break;
+    case AIStatefulTask::Handler::immediate_h:
+      os << "<immediate>";
+      break;
+    case AIStatefulTask::Handler::engine_h:
+      os << handler.m_handle.engine->name();
+      break;
+    case AIStatefulTask::Handler::thread_pool_h:
+      os << handler.m_handle.queue_handle;
+      break;
+  }
+  return os;
+}
+
+void AIStatefulTask::run(Handler default_handler, AIStatefulTask* parent, condition_type condition, on_abort_st on_abort)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(" <<
-      (void*)parent << ", condition = " << std::hex << condition << std::dec <<
+      "default_handler = " << default_handler <<
+      ", " << (void*)parent << ", condition = " << std::hex << condition << std::dec <<
       ", on_abort = " << ((on_abort == abort_parent) ? "abort_parent" : (on_abort == signal_parent) ? "signal_parent" : "do_nothing") <<
-      ", default_engine = " << (default_engine ? default_engine->name() : "nullptr") << ") [" << (void*)this << "]");
+      ") [" << (void*)this << "]");
+
+  // You can't request 'idle' as default handler.
+  ASSERT(default_handler);
 
 #ifdef DEBUG
   {
@@ -905,8 +971,8 @@ void AIStatefulTask::run(AIStatefulTask* parent, condition_type condition, on_ab
   }
 #endif
 
-  // Store the requested default engine.
-  mDefaultEngine = default_engine;
+  // Store the requested default handler.
+  mDefaultHandler = default_handler;
 
   // Initialize sleep timer.
   mSleep = 0;
@@ -932,9 +998,12 @@ void AIStatefulTask::run(AIStatefulTask* parent, condition_type condition, on_ab
   reset();
 }
 
-void AIStatefulTask::run(std::function<void (bool)> cb_function, AIEngine* default_engine)
+void AIStatefulTask::run(Handler default_handler, std::function<void (bool)> cb_function)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(<callback>, default_engine = " << default_engine->name() << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(default_handler = " << default_handler << ", <callback>) [" << (void*)this << "]");
+
+  // You can't request 'idle' as default handler.
+  ASSERT(default_handler);
 
 #ifdef DEBUG
   {
@@ -946,8 +1015,8 @@ void AIStatefulTask::run(std::function<void (bool)> cb_function, AIEngine* defau
   }
 #endif
 
-  // Store the requested default engine.
-  mDefaultEngine = default_engine;
+  // Store the requested default handler.
+  mDefaultHandler = default_handler;
 
   // Initialize sleep timer.
   mSleep = 0;
@@ -1274,9 +1343,9 @@ void AIStatefulTask::yield()
   mYield = true;
 }
 
-void AIStatefulTask::target(AIEngine* engine)
+void AIStatefulTask::target(Handler handler)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::target(" << (engine ? engine->name() : "nullptr") << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::target(" << handler << ") [" << (void*)this << "]");
 #ifdef DEBUG
   {
     multiplex_state_type::rat state_r(mState);
@@ -1284,22 +1353,24 @@ void AIStatefulTask::target(AIEngine* engine)
     ASSERT(mThreadId == std::this_thread::get_id());
   }
 #endif
-  mTargetEngine = engine;
+  mTargetHandler = handler;
 }
 
-void AIStatefulTask::yield(AIEngine* engine)
+void AIStatefulTask::yield(Handler handler)
 {
-  ASSERT(engine);
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield(" << engine->name() << ") [" << (void*)this << "]");
-  target(engine);
+  // Only yield to an actual AIEngine or AIQueueHandle.
+  // To turn off a target, use target(Handler::idle).
+  ASSERT(handler);
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield(" << handler << ") [" << (void*)this << "]");
+  target(handler);
   yield();
 }
 
-bool AIStatefulTask::yield_if_not(AIEngine* engine)
+bool AIStatefulTask::yield_if_not(Handler handler)
 {
-  if (engine && multiplex_state_type::rat(mState)->current_engine != engine)
+  if (handler && !(multiplex_state_type::rat(mState)->current_handler == handler))
   {
-    yield(engine);
+    yield(handler);
     return true;
   }
   return false;

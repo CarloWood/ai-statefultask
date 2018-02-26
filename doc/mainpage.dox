@@ -190,12 +190,13 @@ Debug(if (!dc::statefultask.is_on()) dc::statefultask.on());
 
 @anchor helloworld_example
 \htmlonly
-<p>Then there are two things that are needed for <span class="projectname">AIStatefulTask</span>:
+<p>Then at least one of two things are needed for <span class="projectname">AIStatefulTask</span>:
 <ul>
-<li>Call <code>AIAuxiliaryThread::start();</code> before running a Task, and
-call <code>AIAuxiliaryThread::stop();</code> before leaving main().
-<li>Having a main loop that calls <code>gMainThreadEngine.mainloop();</code> on a regular basis;
+<li>Create one or more AIEngine objects and use those as default handler for your tasks;
+and have a main loop calling <code>mainloop();</code> on each of those engines on a regular basis;
 for example as part of the 'idle' cycle of the main loop of <a href="https://www.gtkmm.org/en/documentation.html">gtkmm/glibmm</a>.
+<li>Create an AIThreadPool object and create one or more AIThreadPool::PriorityQueue objects, refered to by AIQueueHandle`s,
+and use those as default handler for your tasks.
 </ul>
 </p>
 
@@ -230,7 +231,7 @@ on the heap. There are two ways to do this:</p>
 // Here 'task' is usually just some automatic variable.
 MyTask* task = new MyTask(my_args);
 task->my_initialization(my_params); // Assuming MyTask needs this.
-task->run(callback_args);           // This will cause 'task' to
+task->run(handler, callback_args);  // This will cause 'task' to
                                     // be deleted when finished.
 // Do not use 'task' anymore here.
 @endcode
@@ -242,11 +243,13 @@ boost::intrusive_ptr<MyTask> m_task = new MyTask(my_args);
 
 // Then, every time you want to run it:
 m_task->my_initialization(my_params);
-m_task->run(callback_args);
+m_task->run(handler, callback_args);
 // The task object will be kept around until both,
 // 'm_task' is destructed and the task did finish.
 @endcode
 </ol>
+
+<p>In both cases <code>handler</code> is either an <code>AIEngine*</code> or a AIQueueHandle.</p>
 
 <p>Note that this allows the task to be re-used: it can simply be re-initialized and run again
 after it finished; there is no need to allocate memory on the heap and construct a Task
@@ -504,8 +507,8 @@ Simply running another task and waiting until it is finished:
 @code
   case MyTask_state30:
     m_task = new MyChildTask;
-    m_task->run(this, 2);       // 2 is just the condition bit to be used.
-    set_state(MyTask_state31);  // Continue with state31 once m_task has finished.
+    m_task->run(handler, this, 2);  // 2 is just the condition bit to be used.
+    set_state(MyTask_state31);      // Continue with state31 once m_task has finished.
     break;
 @endcode
 

@@ -30,21 +30,15 @@
 #pragma once
 
 #include "AIObjectQueue.h"
+#include "AIQueueHandle.h"
 #include "debug.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "threadsafe/AIReadWriteSpinLock.h"
 #include "threadsafe/aithreadid.h"
 #include "threadsafe/aithreadsafe.h"
-#include "utils/Vector.h"
 #include <thread>
 #include <cassert>
 #include <condition_variable>
-
-#ifndef DOXYGEN
-namespace ordering_category {
-struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
-} // namespace ordering_category
-#endif
 
 /*!
  * @brief The thread pool class.
@@ -69,12 +63,10 @@ struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
  * #endif
  *   Debug(NAMESPACE_DEBUG::init());
  *
- *   AIAuxiliaryThread::start();
  *   AIThreadPool thread_pool;
+ *   AIQueueHandle handler = thread_pool.new_queue(capacity);
  * ...
  *   // Use thread_pool or AIThreadPool::instance()
- *
- *   AIAuxiliaryThread::stop();
  * }
  * @endcode
  *
@@ -89,7 +81,7 @@ struct QueueHandle;	// Ordering category of AIThreadPool::QueueHandle;
  * @code
  * ... (see above)
  *   // Create a new queue with a capacity of 32 and default priority.
- *   AIThreadPool::QueueHandle queue_handle = thread_pool.new_queue(32);
+ *   AIQueueHandle queue_handle = thread_pool.new_queue(32);
  * 
  *   {
  *     // Get read access to AIThreadPool::m_queues.
@@ -279,11 +271,8 @@ class AIThreadPool
   void remove_threads(workers_t::rat& workers_r, int n);
 
  public:
-  //! The type of a queue handle as returned by new_queue.
-  using QueueHandle = utils::VectorIndex<ordering_category::QueueHandle>;
-
   //! The container type in which the queues are stored.
-  using queues_container_t = utils::Vector<PriorityQueue, QueueHandle>;
+  using queues_container_t = utils::Vector<PriorityQueue, AIQueueHandle>;
 
  private:
   static std::atomic<AIThreadPool*> s_instance;               // The only instance of AIThreadPool that should exist at a time.
@@ -364,7 +353,7 @@ class AIThreadPool
    *
    * @returns A handle for the new queue.
    */
-  QueueHandle new_queue(int capacity, int reserved_threads = 1);
+  AIQueueHandle new_queue(int capacity, int reserved_threads = 1);
 
   /*!
    * @brief Return a reference to the queue that belongs to \a queue_handle.
@@ -379,11 +368,11 @@ class AIThreadPool
    * same time".
    *
    * @param queues_r The read-lock object as returned by \ref queues_read_access.
-   * @param queue_handle A QueueHandle as returned by \ref new_queue.
+   * @param queue_handle An AIQueueHandle as returned by \ref new_queue.
    *
    * @returns A reference to AIThreadPool::PriorityQueue.
    */
-  queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, QueueHandle queue_handle) { return queues_r->at(queue_handle); }
+  queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, AIQueueHandle queue_handle) { return queues_r->at(queue_handle); }
 
   //------------------------------------------------------------------------
 

@@ -51,20 +51,23 @@
  *
  * Each of member functions @link group_run AIStatefulTask::run()@endlink end with a call to <code>AIStatefulTask::reset()</code>
  * which in turn calls <code>AIStatefulTask::multiplex(initial_run)</code>.
- * When a default engine was passed to \c run then \c multiplex adds the task to the queue of that engine. When no default engine was
- * passed to \c run then the task is being run immediately in the thread that called \c run and will <em>keep</em>
- * running until it is either aborted or one of @link AIStatefulTask::finish finish()@endlink, @link group_yield yield*()@endlink or @link group_wait wait*()@endlink
+ * When a default engine was passed to \c run then \c multiplex adds the task to the queue of that engine.
+ * When a thread pool queue was passed to \c run then the task is added to that queue of the thread pool.
+ * If the special AIQueueHandle immediate was passed to \c run then the task is being run immediately in the
+ * thread that called \c run and will <em>keep</em> running until it is either aborted or one of
+ * @link AIStatefulTask::finish finish()@endlink, @link group_yield yield*()@endlink or @link group_wait wait*()@endlink
  * is called!
  *
- * Moreover, every time a task without default engine (nor target engine) calls \c wait, then the task will continue running
- * immediately when some thread calls @link AIStatefulTask::signal signal()@endlink, and again <em>keep</em> running!
+ * Moreover, every time a task run with `immediate` as handler (and that didn't set a target engine) calls \c wait,
+ * then the task will continue running immediately when some thread calls @link AIStatefulTask::signal signal()@endlink,
+ * and again <em>keep</em> running!
  *
  * If you don't want a call to \c run and/or \c signal to take too long, or it would not be thread-safe to not run the task from
- * the main loop of a thread, then either pass a default engine or make sure the task
+ * the main loop of a thread, then either pass a default engine, a thread pool queue, or make sure the task
  * \htmlonly&dash;\endhtmlonly when (re)started \htmlonly&dash;\endhtmlonly always quickly calls <code>yield*()</code> or <code>wait*()</code> (again), etc.
  *
- * Note that if during such engineless state @link AIStatefulTask::yield yield()@endlink is called <em>without</em> passing an engine,
- * then the task will be added to the \ref gAuxiliaryThreadEngine.
+ * Note that if during such engineless and queueless state @link AIStatefulTask::yield yield()@endlink is called <em>without</em> passing an engine,
+ * then the task will be added to the highest priority queue of the thread pool.
  *
  * Sinds normally \htmlonly&dash;\endhtmlonly for some instance of AIEngine \htmlonly&dash;\endhtmlonly
  * it is the <em>same</em> thread that calls the AIEngine::mainloop member function in the main loop of that thread,
@@ -78,9 +81,9 @@
  *
  * Note that each @link AIStatefulTask task@endlink object keeps track of three
  * engine pointers:
- * * <code>AIStatefulTask::mTargetEngine&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Last engine to passed target() or yield*().</code>
- * * <code>AIStatefulTask::mState.current_engine // While non-idle, the first non-null engine from the top, or gAuxiliaryThreadEngine</code>.
- * * <code>AIStatefulTask::mDefaultEngine&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Engine passed to run().</code>
+ * * <code>AIStatefulTask::mTargetEngine&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Last engine to passed target() or yield*().</code>
+ * * <code>AIStatefulTask::mState.current_engine&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// While non-idle, the first non-null engine from the top, or gAuxiliaryThreadEngine</code>.
+ * * <code>AIStatefulTask::mDefaultHandler.m_handler.engine&nbsp;// Engine passed to run(), if any.</code>
  *
  * The first, \c mTargetEngine, is the engine that was passed to the last call of member
  * function AIStatefulTask::target (which is also called by the
