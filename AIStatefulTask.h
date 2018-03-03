@@ -2,7 +2,7 @@
  * @file
  * @brief Declaration of base class AIStatefulTask.
  *
- * Copyright (C) 2010 - 2013, 2017  Carlo Wood.
+ * @Copyright (C) 2010 - 2013, 2017  Carlo Wood.
  *
  * RSA-1024 0x624ACAD5 1997-01-26                    Sign & Encrypt
  * Fingerprint16 = 32 EC A7 B6 AC DB 65 A6  F6 F6 55 DD 1C DC FF 61
@@ -114,33 +114,64 @@ class AIStatefulTask : public AIRefCount
     do_nothing                //!< Abort without notifying the parent task.
   };
 
-  struct Handler {
+  /*!
+   * @brief Describes if, how and where to run a task.
+   *
+   * By constructing a Handler from Handler::idle, it describes that a task is <b>idle</b>,
+   * <b>or</b> that Handler is <b>not to be used</b> when other alternatives exist.
+   *
+   * By constructing a Handler from Handler::immediate, it describes that a task
+   * should run in the thread that calls run() or the thread that wakes up a task
+   * by calling signal(). Hence, this handler causes a task to run to until
+   * the first time it goes idle, or calls \c yield, before returning from \c run / \c signal respectively.
+   *
+   * When a Handler is constructed from an AIEngine pointer, then it describes that
+   * a task should run in that engine.
+   *
+   * Finally, a Handler can be constructed from \ref AIQueueHandle, describing that a
+   * task should run in the thread pool by adding it to the PriorityQueue of that
+   * handle.
+   */
+  struct Handler
+  {
+    //! The type of m_type.
     enum type_t {
-      idle_h,
-      immediate_h,
-      engine_h,
-      thread_pool_h
+      idle_h,           //!< An idle Handler.
+      immediate_h,      //!< An immediate Handler.
+      engine_h,         //!< An engine Handler.
+      thread_pool_h     //!< A thread pool Handler.
     };
+    //! A typed use by the constuctor Handler(special_t).
     enum special_t {
-      idle = idle_h,
-      immediate = immediate_h
+      idle = idle_h,            //!< Construct an idle Handler.
+      immediate = immediate_h   //!< Construct an immediate Handler.
     };
+    //! Contains extra data that depends on the type of the Handler.
     union Handle {
-      AIEngine* engine;                 // engine_h
-      AIQueueHandle queue_handle;       // thread_pool_h
+      AIEngine* engine;                 //!< The actual engine when this is an engine Handler.
+      AIQueueHandle queue_handle;       //!< The actual thread pool queue when this is a thread pool Handler.
+      //! Construct an uninitialized Handle.
       Handle() { }
+      //! Construct a Handle from an AIEngine pointer.
       Handle(AIEngine* engine_) : engine(engine_) { }
+      //! Construct a Handle from a thread pool handle.
       Handle(AIQueueHandle queue_handle_) : queue_handle(queue_handle_) { }
     };
-    Handle m_handle;
-    type_t m_type;
-    Handler() : m_type(idle_h) { }
+    Handle m_handle;    //!< Extra data that depends on m_type.
+    type_t m_type;      //!< The type of this Handler.
+    //! Construct a special Handler.
     Handler(special_t special) : m_type((type_t)special) { }
+    //! Construct a Handler from an AIEngine pointer.
     Handler(AIEngine* engine) : m_handle(engine), m_type(engine_h) { ASSERT(engine); }
+    //! Construct a Handler from an AIQueueHandle.
     Handler(AIQueueHandle queue_handle) : m_handle(queue_handle), m_type(thread_pool_h) { }
+    //! Return true if this is an engine Handler.
     bool is_engine() const { return m_type == engine_h; }
+    //! Return the AIQueueHandle to use (only call when appropriate).
     AIQueueHandle get_queue_handle() const { return m_type == thread_pool_h ? m_handle.queue_handle : AIQueueHandle((std::size_t)0); }
+    //! Return true when not idle / unused.
     operator bool() const { return m_type != idle_h; }        // Return true when this handler can be used to actually run in.
+    //! Return true when equivalent to \a handler.
     bool operator==(Handler handler) const {
         return m_type == handler.m_type &&
             (m_type != engine_h || m_handle.engine == handler.m_handle.engine) &&
@@ -155,7 +186,7 @@ class AIStatefulTask : public AIRefCount
     Handler current_handler;            // Current handler.
     AIWaitConditionFunc wait_condition;
     condition_type conditions;
-    multiplex_state_st() : base_state(bs_reset), wait_condition(nullptr) { }
+    multiplex_state_st() : base_state(bs_reset), current_handler(Handler::idle), wait_condition(nullptr) { }
   };
 
   struct sub_state_st {
@@ -232,7 +263,7 @@ class AIStatefulTask : public AIRefCount
    *
    * @param debug Write debug output for this task to dc::statefultask.
    */
-  AIStatefulTask(DEBUG_ONLY(bool debug)) : mYield(false),
+  AIStatefulTask(DEBUG_ONLY(bool debug)) : mDefaultHandler(Handler::idle), mTargetHandler(Handler::idle), mYield(false),
 #ifdef DEBUG
   mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
   mDebugSetStatePending(false), mDebugRefCalled(false),
@@ -262,28 +293,36 @@ class AIStatefulTask : public AIRefCount
    */
 
   /*!
-   * (Re)run a task with default engine \a default_engine (or \c nullptr if there is no preference), requesting
-   * a call back to a function <code>void cb_function(bool success)</code>. The parameter \c success will be
-   * \c true when the task finished successfully, or \c false when it was aborted.
+   * (Re)run a task with default handler \a default_handler, requesting
+   * a call back to a function <code>void cb_function(bool success)</code>.
+   * The parameter \c success will be \c true when the task finished successfully, or \c false when it was aborted.
    *
-   * @param default_handler The default engine or thread pool queue that the task be added to.
+   * @param default_handler The way that this task should be handled by default.
    * @param cb_function The call back function. This function will be called with a single parameter with type \c bool.
    */
   void run(Handler default_handler, std::function<void (bool)> cb_function);
+
+  /*!
+   * The same as above but use the 'immediate' Handler.
+   */
   void run(std::function<void (bool)> cb_function) { run(Handler::immediate, cb_function); }
 
   /*!
-   * (Re)run a task with default engine \a default_engine (or \c nullptr if there is no preference),
-   * requesting to signal the parent on condition \a condition when successfully finished.
+   * (Re)run a task with default handler \a default_handler, requesting
+   * to signal the parent on condition \a condition when successfully finished.
    *
    * Upon an abort the parent can either still be signalled, also aborted or be left in limbo (do nothing).
    *
-   * @param default_handler The default engine or thread pool queue that the task be added to.
+   * @param default_handler The way that this task should be handled by default.
    * @param parent The parent task.
    * @param condition The condition of the parent that will be signalled.
    * @param on_abort What to do with the parent when this task is aborted.
    */
   void run(Handler default_handler, AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent);
+
+  /*!
+   * The same as above but use the 'immediate' Handler.
+   */
   void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent) { run(Handler::immediate, parent, condition, on_abort); }
 
   /*!

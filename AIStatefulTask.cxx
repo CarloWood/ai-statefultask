@@ -2,7 +2,7 @@
  * @file
  * @brief Implementation of AIStatefulTask.
  *
- * Copyright (C) 2010 - 2013, 2017  Carlo Wood.
+ * @Copyright (C) 2010 - 2013, 2017  Carlo Wood.
  *
  * RSA-1024 0x624ACAD5 1997-01-26                    Sign & Encrypt
  * Fingerprint16 = 32 EC A7 B6 AC DB 65 A6  F6 F6 55 DD 1C DC FF 61
@@ -930,6 +930,7 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop()
   return sub_state_w->run_state;
 }
 
+//! Write a Handler to an ostream.
 std::ostream& operator<<(std::ostream& os, AIStatefulTask::Handler const& handler)
 {
   switch (handler.m_type)

@@ -59,4 +59,10 @@ a#details + h2.groupheader {
 div.textblock {
   border-bottom: 1px solid #879ECB;
   width: 100%;
+  max-width: 782px;             /* The width as used in div#mainpage + left + right margin of div.textblock p */
+}
+
+div.textblock p,h3 {
+  margin-left: 75px;            /* Left + right margin = left margin of div#mainpage */
+  margin-right: 75px;
 }

@@ -2,7 +2,7 @@
  * @file
  * @brief Declaration of class AIEngine.
  *
- * Copyright (C) 2010 - 2013, 2017  Carlo Wood.
+ * @Copyright (C) 2010 - 2013, 2017  Carlo Wood.
  *
  * RSA-1024 0x624ACAD5 1997-01-26                    Sign & Encrypt
  * Fingerprint16 = 32 EC A7 B6 AC DB 65 A6  F6 F6 55 DD 1C DC FF 61
@@ -49,61 +49,57 @@
  *
  * This object dispatches tasks from \ref mainloop().
  *
- * Each of member functions @link group_run AIStatefulTask::run()@endlink end with a call to <code>AIStatefulTask::reset()</code>
+ * Each of the member functions @link group_run AIStatefulTask::run()@endlink end with a call to <code>AIStatefulTask::reset()</code>
  * which in turn calls <code>AIStatefulTask::multiplex(initial_run)</code>.
  * When a default engine was passed to \c run then \c multiplex adds the task to the queue of that engine.
  * When a thread pool queue was passed to \c run then the task is added to that queue of the thread pool.
- * If the special AIQueueHandle immediate was passed to \c run then the task is being run immediately in the
+ * If the special \ref AIQueueHandle @link AIStatefulTask::Handler::immediate immediate@endlink was passed to \c run then the task is being run immediately in the
  * thread that called \c run and will <em>keep</em> running until it is either aborted or one of
  * @link AIStatefulTask::finish finish()@endlink, @link group_yield yield*()@endlink or @link group_wait wait*()@endlink
  * is called!
  *
- * Moreover, every time a task run with `immediate` as handler (and that didn't set a target engine) calls \c wait,
+ * Moreover, every time a task run with `immediate` as handler (and that didn't set a target handler) calls \c wait,
  * then the task will continue running immediately when some thread calls @link AIStatefulTask::signal signal()@endlink,
- * and again <em>keep</em> running!
+ * and again <em>keeps</em> running!
  *
  * If you don't want a call to \c run and/or \c signal to take too long, or it would not be thread-safe to not run the task from
- * the main loop of a thread, then either pass a default engine, a thread pool queue, or make sure the task
- * \htmlonly&dash;\endhtmlonly when (re)started \htmlonly&dash;\endhtmlonly always quickly calls <code>yield*()</code> or <code>wait*()</code> (again), etc.
+ * the main loop of a thread, then either pass a default engine, a thread pool queue, or (when the default handler is Handler::immediate)
+ * you've to make sure the task \htmlonly&dash;\endhtmlonly when (re)started \htmlonly&dash;\endhtmlonly quickly calls
+ * <code>yield*()</code> or <code>wait*()</code> (again), causing the task to be added to the highest priority queue of the thread pool.
  *
- * Note that if during such engineless and queueless state @link AIStatefulTask::yield yield()@endlink is called <em>without</em> passing an engine,
- * then the task will be added to the highest priority queue of the thread pool.
+ * Note that if during such engineless and queueless state @link AIStatefulTask::yield yield()@endlink is called <em>without</em>
+ * passing a handler, then the task will be added to the highest priority queue of the thread pool.
  *
  * Sinds normally \htmlonly&dash;\endhtmlonly for some instance of AIEngine \htmlonly&dash;\endhtmlonly
  * it is the <em>same</em> thread that calls the AIEngine::mainloop member function in the main loop of that thread,
  * there is a one-on-one relationship between a thread and an AIEngine object.
  *
  * Once a task is added to an engine then every time the thread of that engine returns to its main loop,
- * it processes one or more tasks in its queue until either &mdash; all tasks are finished, idle, moved to another engine
+ * it processes one or more tasks in its queue until either &mdash; all tasks are finished, idle, moved to another handler
  * or aborted &mdash; or, if a maximum duration was set, until more than @link AIEngine::AIEngine(char const*, float) max_duration@endlink
  * milliseconds was spent in the \c mainloop (this applies to new tasks, not a task whose \c multiplex_impl is already called
  * \htmlonly&mdash;\endhtmlonly \c a frequent call to @link AIStatefulTask::yield yield()@endlink is your friend there).
  *
- * Note that each @link AIStatefulTask task@endlink object keeps track of three
- * engine pointers:
- * * <code>AIStatefulTask::mTargetEngine&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Last engine to passed target() or yield*().</code>
- * * <code>AIStatefulTask::mState.current_engine&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// While non-idle, the first non-null engine from the top, or gAuxiliaryThreadEngine</code>.
- * * <code>AIStatefulTask::mDefaultHandler.m_handler.engine&nbsp;// Engine passed to run(), if any.</code>
+ * Note that each @link AIStatefulTask task@endlink object keeps track of three handlers:
+ * * <code>AIStatefulTask::mTargetHandler&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Last handler passed to target() or yield*().</code>
+ * * <code>AIStatefulTask::mState.current_handler&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// While idle <code>Handler::idle</code>, otherwise the first non-idle handler from the top (of this list of three), or Handler::immediate</code>.
+ * * <code>AIStatefulTask::mDefaultHandler&nbsp;// The handler passed to run() (that is 'immediate' when none was passed).</code>
  *
- * The first, \c mTargetEngine, is the engine that was passed to the last call of member
+ * The first, \c mTargetHandler, is the handler that was passed to the last call of member
  * function AIStatefulTask::target (which is also called by the
- * @link group_yield AIStatefulTask::yield*()@endlink member functions that take an engine as parameter).
- * It will be \c nullptr when \c target wasn't called yet, or when \c nullptr is
- * explicitly passed as engine to one of these member functions.
+ * @link group_yield AIStatefulTask::yield*()@endlink member functions that take an engine or handler as parameter).
+ * It will be \c idle when \c target wasn't called yet, or when <code>Handler::idle</code> is
+ * explicitly passed as handler to one of these member functions.
  *
- * The second, \c current_engine, is the engine that the task is added to \htmlonly&dash;\endhtmlonly for as long
- * as the task needs to be run. It is \c nullptr when task didn't run at all yet or doesn't need to run anymore (e.g., when it is idle).
- * As soon as this value is changed to a different value than the engine that the task
- * is currently added to then that engine will not run that task anymore and remove it from
- * its queue; it is therefore the canonical engine that the task runs in.
- * If a task goes idle, this value is set to \c nullptr; otherwise it is set to the
- * last engine that that task did run in, which is the first non-null engine from the top.
- * If all three are \c nullptr and the task isn't idle then the task is added to \ref gAuxiliaryThreadEngine
- * (this only happens when the task doesn't have a default engine (obviously) and calls <code>yield()</code>
- * without engine when it is first \c run or woken up by a call to \c signal (see above)).
+ * The second, \c current_handler, is the handler that the task is added to \htmlonly&dash;\endhtmlonly for as long
+ * as the task needs to be run. It is Handler::idle when task didn't run at all yet or doesn't need to run anymore (e.g., when it is idle).
+ * As soon as this value is changed to a different value than the handler that the task
+ * is currently active in then that handler will not run that task anymore and remove it from
+ * its queue (if any); it is therefore the canonical handler that the task runs in.
+ * If a task goes idle, this value is set to Handler::idle; otherwise it is set to the
+ * last handler that that task did run in, which is the first non-idle handler from the top for the short list above.
  *
- * The last, \c mDefaultEngine, is the engine that is passed to @link group_run run@endlink
- * and never changes. It might be \c nullptr (no default engine).
+ * The last, \c mDefaultHandler, is the handler that is passed to @link group_run run@endlink and never changes.
  */
 class AIEngine
 {
