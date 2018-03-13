@@ -1,4 +1,0 @@
-[submodule "doc/html"]
-	path = doc/html
-	url = github-carlo:CarloWood/ai-statefultask.git
-	branch = gh-pages
