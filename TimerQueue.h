@@ -43,9 +43,11 @@ namespace statefultask {
  */
 class TimerQueue
 {
+  using running_timers_type = std::deque<Timer*>;
+
  private:
   uint64_t m_sequence_offset;                   // The number of timers that were popped from m_running_timers.
-  std::deque<Timer*> m_running_timers;          // All running timers for the related interval.
+  running_timers_type m_running_timers;         // All running timers for the related interval.
 
  public:
   //! Construct an empty queue.
@@ -63,11 +65,19 @@ class TimerQueue
   }
 
   /*!
+   * @brief Check if a timer is current.
+   *
+   * @returns True if \a sequence is the value returned by a call to push() for a timer that is now at the front (will be returned by pop() next).
+   */
+  bool is_current(uint64_t sequence) const { return sequence == m_sequence_offset; }
+
+  /*!
    * @brief Cancelled a running timer.
    *
-   * The \a sequence passed must be returned by a previous call to push().
+   * The \a sequence passed must be returned by a previous call to push() and may not have expired.
+   * This implies that the queue cannot be empty.
    *
-   * @returns True if the cancelled Timer is the current timer.
+   * @returns True if the cancelled Timer was the current timer.
    */
   bool cancel(uint64_t sequence)
   {
@@ -77,73 +87,68 @@ class TimerQueue
     // Do not cancel a timer twice.
     ASSERT(m_running_timers[i]);
     m_running_timers[i] = nullptr;
-    return i == 0;
+    bool is_current = i == 0;
+    if (is_current)
+    {
+      // The cancelled timer is at the front of the queue. Remove it, and any subsequent cancelled timers.
+      do
+      {
+        ++m_sequence_offset;
+        m_running_timers.pop_front();
+      }
+      while (!m_running_timers.empty() && m_running_timers.front() == nullptr);       // Is the next timer also cancelled?
+    }
+    return is_current;
   }
 
   /*!
    * @brief Remove one timer from the front of the queue and return it.
    *
    * This function may only be called when the queue is not empty.
+   * The returned point will never be null.
    *
-   * @returns The current timer. Might be nullptr if the current timer was cancelled.
+   * @returns The current timer.
    */
   Timer* pop()
   {
-    // Do not call pop() when the queue is empty.
-    ASSERT(!m_running_timers.empty());
-    Timer* running_timer{m_running_timers.front()};
-    ++m_sequence_offset;
-    m_running_timers.pop_front();
-    return running_timer;
-  }
+    running_timers_type::iterator b = m_running_timers.begin();
+    running_timers_type::iterator const e = m_running_timers.end();
 
-  void pop_cancelled_timers()
-  {
-    // Do not call pop_cancelled_timers() when the queue is empty.
-    ASSERT(!m_running_timers.empty());
-    // Only call remove_cancelled_timers() after cancel() returned true;
-    ASSERT(!m_running_timers.front());
+    // Do not call pop() when the queue is empty.
+    ASSERT(b != e);
+
+    Timer* timer = *b;
+
     do
     {
       ++m_sequence_offset;
-      m_running_timers.pop_front();
+      ++b;
     }
-    while (!m_running_timers.empty() && m_running_timers.front() == nullptr);       // Is the next timer also cancelled?
+    while (b != e && *b == nullptr);   // Is the next timer cancelled?
+
+    // Erase the range [begin, b).
+    m_running_timers.erase(m_running_timers.begin(), b);
+
+    return timer;
   }
 
   /*!
    * @brief Return the next time point at which a timer of this interval will expire.
    */
-  Timer::time_point front() const
+  Timer::time_point next_expiration_point() const
   {
     if (m_running_timers.empty())
       return Timer::none;
     return m_running_timers.front()->get_expiration_point();
   }
 
-  // Return true if \a sequence is the value returned by a call to push() for
-  // a timer that is now at the front (will be returned by pop()).
-  bool is_current(uint64_t sequence) const { return sequence == m_sequence_offset; }
-
-  // Return the expiration point for the related interval that will expire next.
-  Timer::time_point next_expiration_point()
-  {
-    while (!m_running_timers.empty())
-    {
-      Timer::Timer* timer = m_running_timers.front();
-      if (timer)
-        return timer->get_expiration_point();
-      ++m_sequence_offset;
-      m_running_timers.pop_front();
-    }
-    return Timer::none;
-  }
+  //--------------------------------------------------------------------------
+  // Everything below is just for debugging.
 
   // Return true if are no running timers for the related interval.
   bool empty() const { return m_running_timers.empty(); }
 
-  // Only used for testing.
-  size_t size() const { return m_running_timers.size(); }
+  running_timers_type::size_type size() const { return m_running_timers.size(); }
 
   int cancelled_in_queue() const
   {
@@ -157,7 +162,6 @@ class TimerQueue
 
   auto begin() const { return m_running_timers.begin(); }
   auto end() const { return m_running_timers.end(); }
-
 };
 
 } // namespace statefultask
