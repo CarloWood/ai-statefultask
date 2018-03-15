@@ -60,16 +60,24 @@ class TimerQueue
    */
   uint64_t push(Timer* timer)
   {
+    uint64_t size = m_running_timers.size();
     m_running_timers.emplace_back(timer);
-    return m_running_timers.size() - 1 + m_sequence_offset;
+    return size + m_sequence_offset;
   }
 
   /*!
    * @brief Check if a timer is current.
    *
+   * This function might need to be called after calling push, in order
+   * to check if a newly added timer expires sooner than what we're
+   * currently waiting for.
+   *
    * @returns True if \a sequence is the value returned by a call to push() for a timer that is now at the front (will be returned by pop() next).
    */
-  bool is_current(uint64_t sequence) const { return sequence == m_sequence_offset; }
+  bool is_current(uint64_t sequence) const
+  {
+    return sequence == m_sequence_offset;
+  }
 
   /*!
    * @brief Cancelled a running timer.
@@ -81,23 +89,16 @@ class TimerQueue
    */
   bool cancel(uint64_t sequence)
   {
-    size_t i = sequence - m_sequence_offset;
+    uint64_t index = sequence - m_sequence_offset;
     // Sequence must be returned by a previous call to push() and the Timer may not already have expired.
-    ASSERT(0 <= i && i < m_running_timers.size());
+    ASSERT(index < m_running_timers.size());
     // Do not cancel a timer twice.
-    ASSERT(m_running_timers[i]);
-    m_running_timers[i] = nullptr;
-    bool is_current = i == 0;
+    ASSERT(m_running_timers[index]);
+    bool is_current = index == 0;
     if (is_current)
-    {
-      // The cancelled timer is at the front of the queue. Remove it, and any subsequent cancelled timers.
-      do
-      {
-        ++m_sequence_offset;
-        m_running_timers.pop_front();
-      }
-      while (!m_running_timers.empty() && m_running_timers.front() == nullptr);       // Is the next timer also cancelled?
-    }
+      pop();
+    else
+      m_running_timers[index] = nullptr;
     return is_current;
   }
 
@@ -134,23 +135,29 @@ class TimerQueue
 
   /*!
    * @brief Return the next time point at which a timer of this interval will expire.
+   *
+   * This function returns Timer::none if the queue is empty.
+   * This makes it suitable to be passed to increase_cache.
    */
   Timer::time_point next_expiration_point() const
   {
     if (m_running_timers.empty())
       return Timer::none;
+    // Note that front() is never a cancelled timer.
     return m_running_timers.front()->get_expiration_point();
   }
 
   //--------------------------------------------------------------------------
   // Everything below is just for debugging.
 
-  // Return true if are no running timers for the related interval.
-  bool empty() const { return m_running_timers.empty(); }
+  // Return true if there are no running timers for the related interval.
+  bool debug_empty() const { return m_running_timers.empty(); }
 
-  running_timers_type::size_type size() const { return m_running_timers.size(); }
+  // Return the number of elements in m_running_timers. This includes cancelled timers.
+  running_timers_type::size_type debug_size() const { return m_running_timers.size(); }
 
-  int cancelled_in_queue() const
+  // Return the number of element in m_running_timers that are cancelled.
+  int debug_cancelled_in_queue() const
   {
     int sz = 0;
     for (auto timer : m_running_timers)
@@ -158,10 +165,12 @@ class TimerQueue
     return sz;
   }
 
-  uint64_t get_sequence_offset() const { return m_sequence_offset; }
+  // Accessor for m_sequence_offset.
+  uint64_t debug_get_sequence_offset() const { return m_sequence_offset; }
 
-  auto begin() const { return m_running_timers.begin(); }
-  auto end() const { return m_running_timers.end(); }
+  // Allow iterating directly over all elements of m_running_timers.
+  auto debug_begin() const { return m_running_timers.begin(); }
+  auto debug_end() const { return m_running_timers.end(); }
 };
 
 } // namespace statefultask
