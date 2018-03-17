@@ -14,7 +14,11 @@ libstatefultask_la_SOURCES = \
 	AITimer.h \
 	AIThreadPool.cxx \
 	AIThreadPool.h \
-	AIStatefulTaskMutex.h
+	AIStatefulTaskMutex.h \
+	Timer.cxx \
+	Timer.h \
+	TimerQueue.h \
+	RunningTimers.h
 
 libstatefultask_la_CXXFLAGS = -std=c++11 @LIBCWD_R_FLAGS@
 libstatefultask_la_LIBADD = @LIBCWD_R_LIBS@
