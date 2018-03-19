@@ -24,7 +24,9 @@
 #pragma once
 
 #include "utils/nearest_power_of_two.h"
+#include "utils/Singleton.h"
 #include "TimerQueue.h"
+#include "debug.h"
 #include <array>
 
 namespace statefultask {
@@ -39,7 +41,7 @@ namespace statefultask {
 // only uses a handful of distinct intervals, so the size of
 // the tree/heap shrinks dramatically.
 //
-// Assume INTERVALS::number is 6, and thus tree_size == 8,
+// Assume the number of different intervals is 6, and thus tree_size == 8,
 // then the structure of the data in RunningTimers could look like:
 //
 // Tournament tree (tree index:tree index)
@@ -57,22 +59,28 @@ namespace statefultask {
 // such that m_cache[in] contains the smallest time_point value of the two.
 // m_cache[in] contains a copy of the top of m_queues[in].
 //
-template<class INTERVALS>
-class RunningTimers
+class RunningTimers : public Singleton<RunningTimers>
 {
+  friend_Instance;
+ private:
+  RunningTimers();
+  ~RunningTimers();
+  RunningTimers(RunningTimers const&) = delete;
+
  protected:
-  static int constexpr tree_size = utils::nearest_power_of_two(INTERVALS::number);
+  static int constexpr number = 39;
+  static int constexpr tree_size = utils::nearest_power_of_two(number);
 
   std::array<uint8_t, tree_size> m_tree;
   std::array<Timer::time_point, tree_size> m_cache;
-  std::array<TimerQueue, INTERVALS::number> m_queues;
+  utils::Array<TimerQueue, number, TimerQueueIndex> m_queues;
 
   static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
   {
     return index >> 1;
   }
 
-  static int constexpr interval_to_parent_index(Timer::interval_t in)   // Used in increase_cache and decrease_cache.
+  static int constexpr interval_to_parent_index(int in)                 // Used in increase_cache and decrease_cache.
   {
     return (in + tree_size) >> 1;
   }
@@ -87,7 +95,7 @@ class RunningTimers
     return index << 1;
   }
 
-  void decrease_cache(Timer::interval_t interval, Timer::time_point tp)
+  void decrease_cache(int interval, Timer::time_point tp)
   {
     //std::cout << "Calling decrease_cache(" << interval << ", " << tp.time_since_epoch().count() << ")" << std::endl;
     assert(tp <= m_cache[interval]);
@@ -105,7 +113,7 @@ class RunningTimers
     }
   }
 
-  void increase_cache(Timer::interval_t interval, Timer::time_point tp)
+  void increase_cache(int interval, Timer::time_point tp)
   {
     //std::cout << "Calling increase_cache(" << interval << ", " << tp.time_since_epoch().count() << ")" << std::endl;
     assert(tp >= m_cache[interval]);
@@ -113,8 +121,8 @@ class RunningTimers
 
     int parent_ti = interval_to_parent_index(interval); // Let 'parent_ti' be the index of the parent node in the tree above 'interval'.
 
-    Timer::interval_t in = interval;                    // Let 'in' be the interval whose value is changed with respect to m_tree[parent_ti].
-    Timer::interval_t si = in ^ 1;                      // Let 'si' be the interval of the current sibling of in.
+    int in = interval;                                  // Let 'in' be the interval whose value is changed with respect to m_tree[parent_ti].
+    int si = in ^ 1;                                    // Let 'si' be the interval of the current sibling of in.
     for(;;)
     {
       Timer::time_point sv = m_cache[si];
@@ -134,41 +142,51 @@ class RunningTimers
   }
 
  public:
-  RunningTimers();
-
   // For debugging. Expire the next timer.
   void expire_next();
+
+  int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
+  TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }
 
   // Return true if \a handle is the next timer to expire.
   bool is_current(Timer::Handle const& handle) const
   {
-    return m_tree[1] == handle.m_interval && m_queues[handle.m_interval].is_current(handle.m_sequence);
+    return m_tree[1] == to_cache_index(handle.m_interval) && m_queues[handle.m_interval].is_current(handle.m_sequence);
   }
 
   // Add \a timer to the list of running timers, using \a interval as timeout.
-  Timer::Handle push(Timer::interval_t interval, Timer* timer)
+  Timer::Handle push(TimerQueueIndex interval, Timer* timer)
   {
-    assert(0 <= interval && interval < INTERVALS::number);
+    assert(0 <= interval.get_value() && interval.get_value() < number);
     uint64_t sequence = m_queues[interval].push(timer);
     if (m_queues[interval].is_current(sequence))
-      decrease_cache(interval, timer->get_expiration_point());
-    return {interval, sequence};
+      decrease_cache(to_cache_index(interval), timer->get_expiration_point());
+    Timer::Handle handle{interval, sequence};
+    if (is_current(handle))
+      update_running_timer();
+    return handle;
   }
 
   //! Cancel the timer associated with handle.
-  bool cancel(Timer::Handle const handle)
+  void cancel(Timer::Handle const& handle)
   {
     TimerQueue& queue{m_queues[handle.m_interval]};
 
     if (!queue.cancel(handle.m_sequence))       // Not the current timer for this interval?
-      return false;                             // Then not the current timer.
+      return;                                   // Then not the current timer.
 
-    increase_cache(handle.m_interval, queue.next_expiration_point());
+    increase_cache(to_cache_index(handle.m_interval), queue.next_expiration_point());
 
-    // Return true if the cancelled timer is the currently running timer.
-    return m_tree[1] == handle.m_interval;
+    // Call update_running_timer if the cancelled timer is the currently running timer.
+    if (m_tree[1] == to_cache_index(handle.m_interval))
+      update_running_timer();
   }
 
+  void update_running_timer()
+  {
+  }
+
+#ifdef CWDEBUG
   //--------------------------------------------------------------------------
   // Everything below is just for debugging.
 
@@ -187,35 +205,7 @@ class RunningTimers
       sz += queue.debug_cancelled_in_queue();
     return sz;
   }
+#endif
 };
-
-template<class INTERVALS>
-RunningTimers<INTERVALS>::RunningTimers()
-{
-  for (Timer::interval_t interval = 0; interval < tree_size; ++interval)
-  {
-    m_cache[interval] = Timer::none;
-    int parent_ti = interval_to_parent_index(interval);
-    m_tree[parent_ti] = interval & ~1;
-  }
-  for (int index = tree_size / 2 - 1; index > 0; --index)
-  {
-    m_tree[index] = m_tree[left_child_of(index)];
-  }
-}
-
-template<class INTERVALS>
-void RunningTimers<INTERVALS>::expire_next()
-{
-  int const interval = m_tree[1];                             // The interval of the timer that will expire next.
-  statefultask::TimerQueue& queue{m_queues[interval]};
-
-  Timer* timer = queue.pop();
-
-  // Execute the algorithm for cache value becoming greater.
-  increase_cache(interval, queue.next_expiration_point());
-
-  timer->expire();
-}
 
 } // namespace statefultask

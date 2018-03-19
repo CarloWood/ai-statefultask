@@ -27,8 +27,20 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include "utils/Array.h"
 
 namespace statefultask {
+
+#ifndef DOXYGEN
+namespace ordering_category {
+struct TimerQueue;	// Ordering category of TimerQueue;
+} // namespace ordering_category
+#endif
+
+//! The type of an index for RunningTimers::m_queues.
+using TimerQueueIndex = utils::ArrayIndex<ordering_category::TimerQueue>;
+
+class TimerQueue;
 
 /*!
  * @brief A timer.
@@ -36,27 +48,35 @@ namespace statefultask {
 
 struct Timer
 {
-  using interval_t = int;
   using clock_type = std::chrono::high_resolution_clock;
   using time_point = std::chrono::time_point<clock_type>;
 
   // Use a value far in the future to represent 'no timer' (aka, a "timer" that will never expire).
   static time_point constexpr none{time_point::duration(std::numeric_limits<time_point::rep>::max())};
 
+  struct Interval
+  {
+    TimerQueueIndex index;
+    time_point::duration duration;
+    Interval() { }
+    Interval(TimerQueueIndex index_, time_point::duration duration_) : index(index_), duration(duration_) { }
+    Interval(Interval const& interval) : index(interval.index), duration(interval.duration) { }
+  };
+
   struct Handle
   {
     uint64_t m_sequence;        //!< A unique sequence number for Timer's with this interval. Only valid when running.
-    interval_t m_interval;      //!< Interval index; -1 means 'not running'.
+    TimerQueueIndex m_interval; //!< Interval index is_undefined means 'not running'.
 
     //! Default constructor. Construct a handle for a "not running timer".
-    Handle() : m_interval(-1) { }
+    Handle() { }
 
     //! Construct a Handle for a running timer with interval \a interval and number sequence \a sequence.
-    constexpr Handle(interval_t interval, uint64_t sequence) : m_sequence(sequence), m_interval(interval) { }
+    constexpr Handle(TimerQueueIndex interval, uint64_t sequence) : m_sequence(sequence), m_interval(interval) { }
 
     //! 
-    bool is_running() const { return m_interval >= 0; }
-    void set_not_running() { m_interval = -1; }
+    bool is_running() const { return !m_interval.undefined(); }
+    void set_not_running() { m_interval.set_to_undefined(); }
   };
 
   Handle m_handle;                      //!< If m_handle.is_running() returns true then this timer is running
@@ -68,7 +88,7 @@ struct Timer
   ~Timer() { stop(); }
 
   //! Start this timer.
-  void start(interval_t interval, std::function<void()> call_back, int n);
+  void start(Interval interval, std::function<void()> call_back, time_point now);
 
   //! Stop this timer if it is (still) running.
   void stop();
@@ -80,6 +100,12 @@ struct Timer
     m_call_back();
   }
 
+ private:
+  friend class TimerQueue;
+  // Called by RunningTimers upon destruction. Causes a later call to stop() not to access RunningTimers anymore.
+  void set_not_running();
+
+ public:
   // Accessors.
 
   //! Return the handle of this timer.

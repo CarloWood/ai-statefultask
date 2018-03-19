@@ -30,6 +30,8 @@
 
 namespace statefultask {
 
+class RunningTimers;
+
 /*!
  * @brief A queue of running (possibly cancelled) timers, all of the same interval.
  *
@@ -147,6 +149,16 @@ class TimerQueue
     return m_running_timers.front()->get_expiration_point();
   }
 
+ private:
+  friend class RunningTimers;
+  void set_not_running()
+  {
+    for (Timer* timer : m_running_timers)
+      if (timer)
+        timer->set_not_running();
+  }
+
+ public:
   //--------------------------------------------------------------------------
   // Everything below is just for debugging.
 

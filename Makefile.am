@@ -18,6 +18,7 @@ libstatefultask_la_SOURCES = \
 	Timer.cxx \
 	Timer.h \
 	TimerQueue.h \
+	RunningTimers.cxx \
 	RunningTimers.h
 
 libstatefultask_la_CXXFLAGS = -std=c++11 @LIBCWD_R_FLAGS@
