@@ -25,11 +25,15 @@
 #include "debug.h"
 #include "Timer.h"
 #include "RunningTimers.h"
+#include <cassert>
 
 namespace statefultask {
 
 //static
 Timer::time_point constexpr statefultask::Timer::none;
+
+//static
+bool Timer::Interval::s_constructed = false;
 
 void Timer::start(Interval interval, std::function<void()> call_back, time_point now)
 {
@@ -53,5 +57,53 @@ void Timer::set_not_running()
 {
   m_handle.set_not_running();
 }
+
+void Indexes::add(Timer::time_point::rep period, Index* index)
+{
+  DoutEntering(dc::notice, "Indexes::add(" << period << ", ...)");
+
+  // Until all static objects are constructed, the index of an interval
+  // can not be determined. Creating a Timer::Interval before reaching
+  // main() is therefore doomed to have an incorrect 'index' field.
+  //
+  // The correct way to use Interval's by either instantiating global
+  // variables of type Interval<count, Unit> and use those by name, or
+  // simply pass them as a temporary to Timer::start directly.
+  //
+  // For example:
+  //
+  // statefultask::Interval<10, milliseconds> period_10ms;
+  //
+  // And then use
+  //
+  //   timer.start(period_10ms, ...);
+  //
+  // Or use it directly
+  //
+  //   timer.start(statefultask::Interval<10, milliseconds>(), ...);
+  //
+  // Do not contruct a Timer::Interval object before reaching main().
+  assert(!Timer::Interval::s_constructed);
+
+  m_intervals.resize(0);
+  m_map.emplace(period, index);
+  int in = -1;
+  Timer::time_point::rep last = 0;
+  for (auto i = m_map.begin(); i != m_map.end(); ++i)
+  {
+    if (i->first > last)
+    {
+      ++in;
+      m_intervals.push_back(i->first);
+    }
+    i->second->m_index = in;
+    last = i->first;
+  }
+  RunningTimers::instantiate().initialize(m_intervals.size());
+}
+
+namespace {
+SingletonInstance<Indexes> dummy __attribute__ ((__unused__));
+} // namespace
 
 } // namespace statefultask

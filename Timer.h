@@ -27,7 +27,10 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include "utils/Array.h"
+#include "utils/Vector.h"
+#include "utils/Singleton.h"
+#include "debug.h"
+#include <libcwd/type_info.h>
 
 namespace statefultask {
 
@@ -37,15 +40,14 @@ struct TimerQueue;	// Ordering category of TimerQueue;
 } // namespace ordering_category
 #endif
 
-//! The type of an index for RunningTimers::m_queues.
-using TimerQueueIndex = utils::ArrayIndex<ordering_category::TimerQueue>;
+//! The type of an index into RunningTimers::m_queues.
+using TimerQueueIndex = utils::VectorIndex<ordering_category::TimerQueue>;
 
 class TimerQueue;
 
 /*!
  * @brief A timer.
  */
-
 struct Timer
 {
   using clock_type = std::chrono::high_resolution_clock;
@@ -58,9 +60,10 @@ struct Timer
   {
     TimerQueueIndex index;
     time_point::duration duration;
+    static bool s_constructed;
     Interval() { }
-    Interval(TimerQueueIndex index_, time_point::duration duration_) : index(index_), duration(duration_) { }
-    Interval(Interval const& interval) : index(interval.index), duration(interval.duration) { }
+    Interval(TimerQueueIndex index_, time_point::duration duration_) : index(index_), duration(duration_) { s_constructed = true; }
+    Interval(Interval const& interval) : index(interval.index), duration(interval.duration) { s_constructed |= !index.undefined(); }
   };
 
   struct Handle
@@ -114,5 +117,58 @@ struct Timer
   //! Return the point at which this timer will expire. Only valid when is_running.
   time_point get_expiration_point() const { return m_expiration_point; }
 };
+
+class Index;
+
+class Indexes : public Singleton<Indexes>
+{
+  friend_Instance;
+
+ private:
+  Indexes() = default;
+  ~Indexes() = default;
+  Indexes(Indexes const&) = delete;
+
+  std::multimap<Timer::time_point::rep, Index*> m_map;
+  std::vector<Timer::time_point::rep> m_intervals;
+
+ public:
+  void add(Timer::time_point::rep period, Index* index);
+  size_t number() const { return m_intervals.size(); }
+  Timer::time_point::duration period(int index) const { return Timer::time_point::duration{m_intervals[index]}; }
+};
+
+class Index
+{
+ private:
+  friend class Indexes;
+  std::size_t m_index;
+
+ public:
+  operator std::size_t() const { return m_index; }
+};
+
+template<Timer::time_point::rep period>
+struct Register : public Index
+{
+  Register() { Indexes::instantiate().add(period, this); }
+};
+
+template<Timer::time_point::rep count, typename Unit>
+struct Interval
+{
+  static constexpr Timer::time_point::rep period = std::chrono::duration_cast<Timer::time_point::duration>(Unit{count}).count();
+  static Register<period> index;
+  Interval() { }
+  operator Timer::Interval() const { return {TimerQueueIndex(index), Timer::time_point::duration{period}}; }
+};
+
+//static
+template<Timer::time_point::rep count, typename Unit>
+constexpr Timer::time_point::rep Interval<count, Unit>::period;
+
+//static
+template<Timer::time_point::rep count, typename Unit>
+Register<Interval<count, Unit>::period> Interval<count, Unit>::index;
 
 } // namespace statefultask

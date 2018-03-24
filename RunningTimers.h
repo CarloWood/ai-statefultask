@@ -46,11 +46,11 @@ namespace statefultask {
 //
 // Tournament tree (tree index:tree index)
 // m_tree:                                              1:4
-//                                             /                  \
+//                                             /                  \                             .
 //                                  2:0                                     3:4
-//                              /         \                             /         \
+//                              /         \                             /         \             .
 //                        4:0                 5:3                 6:4                 7:6
-//                      /     \             /     \             /     \             /     \
+//                      /     \             /     \             /     \             /     \     .
 // m_cache:           18  no_timer       102        55        10        60  no_timer  no_timer
 // index of m_cache:   0         1         2         3         4         5         6         7
 //
@@ -68,12 +68,11 @@ class RunningTimers : public Singleton<RunningTimers>
   RunningTimers(RunningTimers const&) = delete;
 
  protected:
-  static int constexpr number = 39;
-  static int constexpr tree_size = utils::nearest_power_of_two(number);
+  static int constexpr tree_size = 64;                                  // Allow at most 64 different time intervals (so that m_tree fits in a single cache line).
 
   std::array<uint8_t, tree_size> m_tree;
   std::array<Timer::time_point, tree_size> m_cache;
-  utils::Array<TimerQueue, number, TimerQueueIndex> m_queues;
+  utils::Vector<TimerQueue, TimerQueueIndex> m_queues;
 
   static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
   {
@@ -97,7 +96,7 @@ class RunningTimers : public Singleton<RunningTimers>
 
   void decrease_cache(int interval, Timer::time_point tp)
   {
-    //std::cout << "Calling decrease_cache(" << interval << ", " << tp.time_since_epoch().count() << ")" << std::endl;
+    //DoutEntering(dc::notice, "RunningTimers::decrease_cache(" << interval << ", " << tp.time_since_epoch().count() << ")");
     assert(tp <= m_cache[interval]);
     m_cache[interval] = tp;                             // Replace no_timer with tp.
     // We just put a SMALLER value in the cache at position interval than what there was before.
@@ -115,7 +114,8 @@ class RunningTimers : public Singleton<RunningTimers>
 
   void increase_cache(int interval, Timer::time_point tp)
   {
-    //std::cout << "Calling increase_cache(" << interval << ", " << tp.time_since_epoch().count() << ")" << std::endl;
+    //DoutEntering(dc::notice, "Calling increase_cache(" << interval << ", " << tp.time_since_epoch().count() << ")");
+    //Dout(dc::notice, "m_cache[" << interval << "] = " << m_cache[interval].time_since_epoch().count());
     assert(tp >= m_cache[interval]);
     m_cache[interval] = tp;
 
@@ -157,7 +157,7 @@ class RunningTimers : public Singleton<RunningTimers>
   // Add \a timer to the list of running timers, using \a interval as timeout.
   Timer::Handle push(TimerQueueIndex interval, Timer* timer)
   {
-    assert(0 <= interval.get_value() && interval.get_value() < number);
+    assert(interval.get_value() < m_queues.size());
     uint64_t sequence = m_queues[interval].push(timer);
     if (m_queues[interval].is_current(sequence))
       decrease_cache(to_cache_index(interval), timer->get_expiration_point());
@@ -180,6 +180,12 @@ class RunningTimers : public Singleton<RunningTimers>
     // Call update_running_timer if the cancelled timer is the currently running timer.
     if (m_tree[1] == to_cache_index(handle.m_interval))
       update_running_timer();
+  }
+
+  void initialize(size_t number_of_intervals)
+  {
+    ASSERT(number_of_intervals <= (size_t)tree_size);
+    m_queues.resize(number_of_intervals);
   }
 
   void update_running_timer()
