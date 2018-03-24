@@ -135,7 +135,7 @@ class Indexes : public Singleton<Indexes>
  public:
   void add(Timer::time_point::rep period, Index* index);
   size_t number() const { return m_intervals.size(); }
-  Timer::time_point::duration period(int index) const { return Timer::time_point::duration{m_intervals[index]}; }
+  Timer::time_point::duration duration(int index) const { return Timer::time_point::duration{m_intervals[index]}; }
 };
 
 class Index

@@ -72,11 +72,11 @@ void Indexes::add(Timer::time_point::rep period, Index* index)
   //
   // For example:
   //
-  // statefultask::Interval<10, milliseconds> period_10ms;
+  // statefultask::Interval<10, milliseconds> interval_10ms;
   //
   // And then use
   //
-  //   timer.start(period_10ms, ...);
+  //   timer.start(interval_10ms, ...);
   //
   // Or use it directly
   //
