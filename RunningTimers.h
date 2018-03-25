@@ -142,8 +142,9 @@ class RunningTimers : public Singleton<RunningTimers>
   }
 
  public:
-  // For debugging. Expire the next timer.
-  void expire_next();
+  // Do call backs on all timers that expire on or before \a now.
+  // Returns the time to wait before calling this function again.
+  Timer::time_point::duration expire_next(Timer::time_point now);
 
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }

@@ -17,17 +17,27 @@ RunningTimers::RunningTimers()
   }
 }
 
-void RunningTimers::expire_next()
+Timer::time_point::duration RunningTimers::expire_next(Timer::time_point now)
 {
-  int const interval = m_tree[1];                             // The interval of the timer that will expire next.
-  statefultask::TimerQueue& queue{m_queues[to_queues_index(interval)]};
+  Timer::time_point::duration duration;
+  while (true)
+  {
+    int interval = m_tree[1];                   // The interval of the timer that will expire next.
+    Timer::time_point next = m_cache[interval]; // The time at which it will expire.
+    duration = next - now;                      // How long it takes for the next timer to expire.
 
-  Timer* timer = queue.pop();
+    if (duration.count() > 0)
+      break;
 
-  // Execute the algorithm for cache value becoming greater.
-  increase_cache(interval, queue.next_expiration_point());
-
-  timer->expire();
+    // Pop the timer from the queue.
+    statefultask::TimerQueue& queue{m_queues[to_queues_index(interval)]};
+    Timer* timer = queue.pop();
+    // Update m_cache.
+    increase_cache(interval, queue.next_expiration_point());
+    // Do the call back.
+    timer->expire();
+  }
+  return duration;
 }
 
 RunningTimers::~RunningTimers()

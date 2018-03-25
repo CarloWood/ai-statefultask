@@ -32,16 +32,18 @@ namespace statefultask {
 //static
 Timer::time_point constexpr statefultask::Timer::none;
 
+#ifdef CWDEBUG
 //static
-bool Timer::Interval::s_constructed = false;
+bool Timer::s_interval_constructed = false;
+#endif
 
 void Timer::start(Interval interval, std::function<void()> call_back, time_point now)
 {
   // Call stop() first.
   ASSERT(!m_handle.is_running());
-  m_expiration_point = now + interval.duration;
+  m_expiration_point = now + interval.m_duration;
   m_call_back = call_back;
-  m_handle = RunningTimers::instance().push(interval.index, this);
+  m_handle = RunningTimers::instance().push(interval.m_index, this);
 }
 
 void Timer::stop()
@@ -60,7 +62,7 @@ void Timer::set_not_running()
 
 void Indexes::add(Timer::time_point::rep period, Index* index)
 {
-  DoutEntering(dc::notice, "Indexes::add(" << period << ", ...)");
+  //DoutEntering(dc::notice, "Indexes::add(" << period << ", ...)");
 
   // Until all static objects are constructed, the index of an interval
   // can not be determined. Creating a Timer::Interval before reaching
@@ -83,7 +85,7 @@ void Indexes::add(Timer::time_point::rep period, Index* index)
   //   timer.start(statefultask::Interval<10, milliseconds>(), ...);
   //
   // Do not contruct a Timer::Interval object before reaching main().
-  assert(!Timer::Interval::s_constructed);
+  ASSERT(!Timer::s_interval_constructed);
 
   m_intervals.resize(0);
   m_map.emplace(period, index);

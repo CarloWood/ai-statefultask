@@ -23,14 +23,17 @@
 
 #pragma once
 
+#include "utils/Vector.h"
+#include "utils/Singleton.h"
+#include "debug.h"
+#ifdef CWDEBUG
+#include <libcwd/type_info.h>
+#endif
 #include <limits>
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include "utils/Vector.h"
-#include "utils/Singleton.h"
-#include "debug.h"
-#include <libcwd/type_info.h>
+#include <map>
 
 namespace statefultask {
 
@@ -44,26 +47,68 @@ struct TimerQueue;	// Ordering category of TimerQueue;
 using TimerQueueIndex = utils::VectorIndex<ordering_category::TimerQueue>;
 
 class TimerQueue;
+class RunningTimers;
 
-/*!
- * @brief A timer.
- */
-struct Timer
+#ifndef DOXYGEN
+struct TimerTypes
 {
   using clock_type = std::chrono::high_resolution_clock;
   using time_point = std::chrono::time_point<clock_type>;
+};
+#endif
 
+template<TimerTypes::time_point::rep count, typename Unit>
+struct Interval;
+
+/*!
+ * @brief A timer.
+ *
+ * Allows a callback to some <code>std::function<void()></code> that can
+ * be specified during construction or while calling the \ref start member function.
+ *
+ * The \ref start member function must be passed an Interval object.
+ */
+struct Timer
+{
+  using clock_type = TimerTypes::clock_type;    //!< The underlaying clock type.
+  using time_point = TimerTypes::time_point;    //!< The underlaying time point.
+
+#if defined(CWDEBUG) && !defined(DOXYGEN)
+  static bool s_interval_constructed;
+#endif
+
+#ifndef DOXYGEN
+ private:
+  friend class RunningTimers;
   // Use a value far in the future to represent 'no timer' (aka, a "timer" that will never expire).
   static time_point constexpr none{time_point::duration(std::numeric_limits<time_point::rep>::max())};
 
+ public:
+  /*!
+   * @brief A timer interval.
+   *
+   * A Timer::Interval can only be instantiated from a <code>statefultask::Interval<count, Unit></code>
+   * and only after main() is already reached. Normally you just want to pass a
+   * <code>statefultask::Interval<count, Unit></code> directly to \ref start.
+   */
   struct Interval
   {
-    TimerQueueIndex index;
-    time_point::duration duration;
-    static bool s_constructed;
+   private:
+    friend class Timer;         // Timer::start needs read access.
+    TimerQueueIndex m_index;
+    time_point::duration m_duration;
+
+    template<TimerTypes::time_point::rep count, typename Unit>
+    friend struct statefultask::Interval;
+    Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { Debug(Timer::s_interval::constructed = true); }
     Interval() { }
-    Interval(TimerQueueIndex index_, time_point::duration duration_) : index(index_), duration(duration_) { s_constructed = true; }
-    Interval(Interval const& interval) : index(interval.index), duration(interval.duration) { s_constructed |= !index.undefined(); }
+
+   public:
+    //! A copy constructor is provided, but doesn't seem needed.
+    Interval(Interval const& interval) : m_index(interval.m_index), m_duration(interval.m_duration) { Debug(Timer::s_interval_constructed |= !m_index.undefined()); }
+
+    //! \internal For debugging purposes mainly.
+    time_point::duration duration() { return m_duration; }
   };
 
   struct Handle
@@ -81,12 +126,15 @@ struct Timer
     bool is_running() const { return !m_interval.undefined(); }
     void set_not_running() { m_interval.set_to_undefined(); }
   };
+#endif
 
+ private:
   Handle m_handle;                      //!< If m_handle.is_running() returns true then this timer is running
                                         //   and m_handle can be used to find the corresponding Timer object.
   time_point m_expiration_point;        //!< The time at which we should expire (only valid when this is a running timer).
   std::function<void()> m_call_back;    //!< The callback function (only valid when this is a running timer).
 
+ public:
   //! Destruct the timer. If it is (still) running, stop it.
   ~Timer() { stop(); }
 
