@@ -28,6 +28,7 @@
 #include "TimerQueue.h"
 #include "debug.h"
 #include <array>
+#include <csignal>
 
 namespace statefultask {
 
@@ -73,6 +74,9 @@ class RunningTimers : public Singleton<RunningTimers>
   std::array<uint8_t, tree_size> m_tree;
   std::array<Timer::time_point, tree_size> m_cache;
   utils::Vector<TimerQueue, TimerQueueIndex> m_queues;
+  timer_t m_timer;
+  sigset_t m_sigalrm_set;
+  sigset_t m_prev_sigset;
 
   static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
   {
@@ -143,8 +147,19 @@ class RunningTimers : public Singleton<RunningTimers>
 
  public:
   // Do call backs on all timers that expire on or before \a now.
-  // Returns the time to wait before calling this function again.
-  Timer::time_point::duration expire_next(Timer::time_point now);
+  // Returns the next time that this function needs to be called again.
+  bool expire_next(Timer::time_point now);
+
+  // Wait for a signal and returns true if one was caught.
+  void wait_for_expire()
+  {
+    // Put this thread to sleep until a (timer) signal is received.
+    Dout(dc::notice, "wait_for_expire(): calling sigsuspend.");
+    sigdelset(&m_prev_sigset, SIGALRM); // Make sure we wake up on pending SIGALRM signals.
+    sigsuspend(&m_prev_sigset);
+    ASSERT(errno == EINTR);
+    Dout(dc::notice, "wait_for_expire(): returning from sigsuspend.");
+  }
 
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }

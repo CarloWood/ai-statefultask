@@ -78,10 +78,8 @@ struct Timer
 #endif
 
 #ifndef DOXYGEN
- private:
-  friend class RunningTimers;
   // Use a value far in the future to represent 'no timer' (aka, a "timer" that will never expire).
-  static time_point constexpr none{time_point::duration(std::numeric_limits<time_point::rep>::max())};
+  static time_point constexpr s_none{time_point::duration(std::numeric_limits<time_point::rep>::max())};
 
  public:
   /*!
@@ -100,7 +98,7 @@ struct Timer
 
     template<TimerTypes::time_point::rep count, typename Unit>
     friend struct statefultask::Interval;
-    Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { Debug(Timer::s_interval::constructed = true); }
+    Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { Debug(Timer::s_interval_constructed = true); }
     Interval() { }
 
    public:
@@ -135,11 +133,23 @@ struct Timer
   std::function<void()> m_call_back;    //!< The callback function (only valid when this is a running timer).
 
  public:
+  Timer() = default;
+  Timer(std::function<void()> call_back) : m_call_back(call_back) { }
+
   //! Destruct the timer. If it is (still) running, stop it.
   ~Timer() { stop(); }
 
-  //! Start this timer.
+  //! Start this timer providing a (new) call back function.
   void start(Interval interval, std::function<void()> call_back, time_point now);
+
+  //! Convenience function that calls clock_type::now() for you.
+  void start(Interval interval, std::function<void()> call_back) { start(interval, call_back, clock_type::now()); }
+
+  //! Start this timer using a previously assigned call back function.
+  void start(Interval interval, time_point now);
+
+  //! Convenience function that calls clock_type::now() for you.
+  void start(Interval interval) { start(interval, clock_type::now()); }
 
   //! Stop this timer if it is (still) running.
   void stop();
@@ -150,6 +160,9 @@ struct Timer
     m_handle.set_not_running();
     m_call_back();
   }
+
+  // Return the current time in the appropriate type.
+  static time_point now() { return clock_type::now(); }
 
  private:
   friend class TimerQueue;

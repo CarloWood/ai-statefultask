@@ -144,7 +144,7 @@ class TimerQueue
   Timer::time_point next_expiration_point() const
   {
     if (m_running_timers.empty())
-      return Timer::none;
+      return Timer::s_none;
     // Note that front() is never a cancelled timer.
     return m_running_timers.front()->get_expiration_point();
   }

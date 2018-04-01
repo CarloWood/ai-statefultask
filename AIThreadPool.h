@@ -110,11 +110,11 @@
  * I.e., in the above code, the lifetime of <code>queues_access</code>
  * must exceed the lifetime of <code>queue_access</code>.
  *
- * This is necessary because as soon as that read lock is released,
- * some other thread can call AIThreadPool::new_queue would
- * resize <code>AIThreadPool::m_queues</code>, the underlaying vector of
- * <code>AIObjectQueue<std::function<bool()>></code> objects and
- * possibly move the AIObjectQueue objects in memory, invalidating the
+ * This is necessary because as soon as that read lock is released
+ * some other thread can call AIThreadPool::new_queue causing a
+ * resize of <code>AIThreadPool::m_queues</code>, the underlaying vector of
+ * <code>AIObjectQueue<std::function<bool()>></code> objects,
+ * possibly moving the AIObjectQueue objects in memory, invalidating the
  * returned reference to the queue.
  *
  * @sa AIObjectQueue
@@ -128,11 +128,18 @@ class AIThreadPool
   using worker_container_t = std::vector<Worker>;
   using workers_t = aithreadsafe::Wrapper<worker_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
-  // Number of idle workers.
-  static std::atomic_int s_idle;
-
   // Condition variable mutex.
+  // This mutex also protects s_have_timer_thread, s_idle_timer_thread and the consistency of s_idle_threads.
   static std::mutex s_idle_mutex;
+
+  // Number of idle workers.
+  static std::atomic_int s_idle_threads;
+
+  // We have a thread that takes care of the timers.
+  static bool s_have_timer_thread;
+
+  // The timer thread is idle.
+  static bool s_idle_timer_thread;
 
   // Condition variable.
   static std::condition_variable s_idle_cv;
@@ -178,14 +185,58 @@ class AIThreadPool
      */
     void notify_one() const
     {
+      // Suppose that m_previous_total_reserved_threads is 2 here. That means that there are two threads
+      // that we're not allowed to use for this queue. Suppose that s_idle_threads equals 3. That means
+      // that there are three threads that can be woken up, but we're only allowed to wake up one.
+      // Since 3 > 2, the while condition is true and this thread enters the while loop.
+      // If at that point some other thread also enters this while loop and decrements s_idle_threads
+      // then the compare_exchange_weak will fail in this thread and we'd start from the start, this
+      // time with s_idle_threads equal to 2. If s_idle_threads is both decremented and incremented
+      // by yet another thread, then that's perfectly fine: in that case we are still allowed to wake
+      // up a thread for this queue.
       int idle;
-      while ((idle = s_idle.load(std::memory_order_relaxed)) > m_previous_total_reserved_threads) // This line takes 0.9...0.97 ns.
+      while ((idle = s_idle_threads.load(std::memory_order_relaxed)) > m_previous_total_reserved_threads) // This line takes 0.9...0.97 ns.
       {
-        if (!s_idle.compare_exchange_weak(idle, idle - 1, std::memory_order_relaxed, std::memory_order_relaxed))
-          continue;
-        // Taking this lock is only necessary when idle == 1, but adding a test for that makes things 1% slower due to branch misprediction.
+        // Decrement s_idle_threads by one.
+        // Note that s_idle_threads is the only variable that is accessed outside the critical region of s_idle_mutex
+        // and there does not need to be synchronized with any other variable. Therefore it is enough to use
+        // std::memory_order_relaxed for all accesses to it.
+        if (!s_idle_threads.compare_exchange_weak(idle, idle - 1, std::memory_order_relaxed, std::memory_order_relaxed))
+          continue;     // s_idle_threads changed in the meantime; try again from the start.
+        // A thread that reached this point is allowed to wake up a thread.
+        // A possible scenario could be:
+        //                              m_previous_total_reserved_threads
+        // Queue1: 1 reserved thread.               0
+        // Queue2: 1 reserved thread.               1
+        // Queue3: this thread/queue.               2
+        // Let s_idle_threads be 3.
+        // Thread A enters the while loop of queue3 (because 3 > 2)
+        // Thread B enters the while loop of queue1 (because 3 > 0)
+        // Thread C enters the while loop of queue1 (because 3 > 0)
+        // Thread D enters the while loop of queue2 (because 3 > 1)
+        // Thread A decrements s_idle_threads from 3 to 2.
+        // Thread B tries to decrement s_idle_threads, s_idle_threads isn't 3 anymore, so it starts at the top and enters the while loop of queue3 again (because 2 > 0).
+        // Thread C tries to decrement s_idle_threads, s_idle_threads isn't 3 anymore, so it starts at the top and enters the while loop of queue3 again (because 2 > 0).
+        // Thread D tries to decrement s_idle_threads, s_idle_threads isn't 3 anymore, so it starts at the top and enters the while loop of queue3 again (because 2 > 1).
+        // Thread B decrements s_idle_threads from 2 to 1.
+        // Thread C tries to decrement s_idle_threads, s_idle_threads isn't 2 anymore, so it starts at the top and enters the while loop of queue3 again (because 1 > 0).
+        // Thread D tries to decrement s_idle_threads, s_idle_threads isn't 2 anymore, so it starts at the top and fails to enter the while loop.
+        // Thread C decrements s_idle_threads from 1 to 0.
+        // Thread A obtains the lock on s_idle_mutex (this prevents that we call s_idle_cv.notify_one() while another
+        // thread is inbetween the increment of s_idle_threads and the call to s_idle_cv.wait()), calls notify_one() and wakes up a thread,
+        // and finally unlocks s_idle_mutex.
+        // Thread B and C to the same. So in total three threads are woken up.
+        // The first thread that is woken up will handle a task from Queue1, the second will handle a task from Queue1
+        // and the third will handle a task from Queue2. The task in Queue3 is not handled until all three woken
+        // threads are idle again (the first two being reserved for Queue1 and Queue2).
         std::unique_lock<std::mutex> lk(s_idle_mutex);
-        s_idle_cv.notify_one();                                                         // This lines turns out to take 19.5 microseconds!
+        if (!s_idle_timer_thread || idle > 1)           // Is there guaranteed at least one thread waiting on s_idle_cv?
+          s_idle_cv.notify_one();                       // This lines turns out to take 19.5 microseconds!
+        else                                            // Otherwise there is guaranteed one thread waiting on a signal.
+        {
+          s_idle_timer_thread = false;
+
+        }
         break;
       }
     }
@@ -350,6 +401,14 @@ class AIThreadPool
    *
    * @param capacity The capacity of the new queue.
    * @param reserved_threads The number of threads that are rather idle than work on lower priority queues.
+   *
+   * The new queue is of a lower priority than all previously created queues.
+   * The priority is determined by two things: the order in which queues are
+   * searched for new tasks and the fact that \a reserved_threads threads
+   * won't work on tasks of a lower priority (if any). Hence, passing a value
+   * of zero to \a reserved_threads only has influence on the order in which
+   * the tasks are processed, while using a larger value reduces the number
+   * of threads that will work on lower priority tasks.
    *
    * @returns A handle for the new queue.
    */

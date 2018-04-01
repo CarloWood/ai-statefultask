@@ -22,7 +22,7 @@ libstatefultask_la_SOURCES = \
 	RunningTimers.h
 
 libstatefultask_la_CXXFLAGS = -std=c++11 @LIBCWD_R_FLAGS@
-libstatefultask_la_LIBADD = @LIBCWD_R_LIBS@
+libstatefultask_la_LIBADD = -lrt @LIBCWD_R_LIBS@
 
 # --------------- Maintainer's Section
 

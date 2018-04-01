@@ -30,7 +30,7 @@
 namespace statefultask {
 
 //static
-Timer::time_point constexpr statefultask::Timer::none;
+Timer::time_point constexpr statefultask::Timer::s_none;
 
 #ifdef CWDEBUG
 //static
@@ -43,6 +43,16 @@ void Timer::start(Interval interval, std::function<void()> call_back, time_point
   ASSERT(!m_handle.is_running());
   m_expiration_point = now + interval.m_duration;
   m_call_back = call_back;
+  m_handle = RunningTimers::instance().push(interval.m_index, this);
+}
+
+void Timer::start(Interval interval, time_point now)
+{
+  // Call stop() first.
+  ASSERT(!m_handle.is_running());
+  // Only use this on Timer objects that were constructed with a call back function.
+  ASSERT(m_call_back);
+  m_expiration_point = now + interval.m_duration;
   m_handle = RunningTimers::instance().push(interval.m_index, this);
 }
 
