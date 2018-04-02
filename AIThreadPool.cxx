@@ -176,27 +176,8 @@ void AIThreadPool::Worker::main(int const self)
     }
     else
     {
-      // A thread that enters this block has nothing to do.
-      // If a thread enters it that is the "only thread" in this block,
-      // meaning that any thread that hasn't left this block yet will
-      // leave it in order to check for another task and then reenter
-      // it later once there is nothing to do again, then that thread
-      // is responsible for handling timer events.
-      // If other threads entered this block then they do not handle
-      // timer events.
-      // When a new task is added to the queue, and there are "other threads"
-      // then one of those threads is woken up and shall leave this block,
-      // while if there are no "other threads" then the first thread
-      // that is handling timer events is woken up instead.
-      // If a timer event happens while there are no threads in this
-      // block then the event should be ignored because the first thread
-      // that will enter this block will check for expired timers anyway.
-      // If a timer event happens while there is at least one thread
-      // in this block, then that thread has to re-check for expired
-      // timer events. Since a timer event is a signal, and the signal
-      // is only interesting when it happens after we called expire_next()
-      //
       std::unique_lock<std::mutex> lk(s_idle_mutex);
+      // A thread that enters this block has nothing to do.
       if (!s_have_timer_thread)
       {
         s_have_timer_thread = true;
@@ -207,7 +188,7 @@ void AIThreadPool::Worker::main(int const self)
           //This thread is responsible for the next timer to expire, if any.                                            //
           Timer::time_point now = Timer::now();                                                                         //
           // Handle expired timers and get the next expiration point, if any.                                           //
-          if (RunningTimers::instance().expire_next(now))                                                               //
+          if (true /*RunningTimers::instance().expire_next(now)*/)                                                               //
           {                                                                                                             //
             // There is a running timer. Wait for it to expire.                                                         //
             //                                                                                                          //

@@ -4,7 +4,7 @@
 
 extern "C" void sigalrm_handler(int)
 {
-  Dout(dc::notice, "Calling sigalarm_handler()");
+  Dout(dc::notice, "Calling sigalrm_handler()");
 }
 
 namespace statefultask {
@@ -39,49 +39,52 @@ RunningTimers::RunningTimers()
   timer_create(CLOCK_MONOTONIC, nullptr, &m_timer);
 }
 
-bool RunningTimers::expire_next(Timer::time_point now)
+// Check if there is a next timer,
+//   if so, check if it is expired,
+//     if so, return a pointer to the expired timer.
+//     Otherwise set the new expiration point and return nullptr.
+//   If there are no running timers, return nullptr.
+//
+// This function must be thread-safe.
+Timer* RunningTimers::next_expired(Timer::time_point now)
 {
-  // Block the SIGALRM signal so that it will be pending instead of being handled
-  // immediately when the timer expires before we're actively waiting for it.
-  if (AI_UNLIKELY(sigprocmask(SIG_BLOCK, &m_sigalrm_set, &m_prev_sigset) == -1))
-    assert(false);
+  std::unique_lock<std::mutex> lk(m_mutex);
+  int interval = m_tree[1];                   // The interval of the timer that will expire next.
+  Timer::time_point next = m_cache[interval]; // The time at which it will expire.
+  Timer::time_point::duration duration = next - now;
 
-  Timer::time_point::duration duration;
-  while (true)
+  if (duration.count() > 0)
   {
-    int interval = m_tree[1];                   // The interval of the timer that will expire next.
-    Timer::time_point next = m_cache[interval]; // The time at which it will expire.
-    duration = next - now;
-
-    if (duration.count() > 0)
+    if (next != Timer::s_none)
     {
-      if (next == Timer::s_none)
-        return false;
-      break;
+      struct itimerspec new_value;
+      memset(&new_value.it_interval, 0, sizeof(struct timespec));
+      // This rounds down since duration is positive.
+      auto s = std::chrono::duration_cast<std::chrono::seconds>(duration);
+      new_value.it_value.tv_sec = s.count();
+      auto ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(duration - s);
+      new_value.it_value.tv_nsec = ns.count();
+      Dout(dc::notice, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
+#ifdef CWDEBUG
+      // Signals should be blocked when we get here.
+      static sigset_t blocked_signals;
+      if (AI_UNLIKELY(sigprocmask(SIG_BLOCK, nullptr, &blocked_signals) == -1))
+        assert(false);
+      ASSERT(sigismember(&blocked_signals, SIGALRM));
+#endif
+      if (AI_UNLIKELY(timer_settime(m_timer, 0, &new_value, nullptr) == -1))
+        assert(false);
     }
-
-    // Pop the timer from the queue.
-    statefultask::TimerQueue& queue{m_queues[to_queues_index(interval)]};
-    Timer* timer = queue.pop();
-    // Update m_cache.
-    increase_cache(interval, queue.next_expiration_point());
-    // Do the call back.
-    timer->expire();
+    return nullptr;
   }
 
-  struct itimerspec new_value;
-  memset(&new_value.it_interval, 0, sizeof(struct timespec));
-  // This rounds down since duration is positive.
-  auto s = std::chrono::duration_cast<std::chrono::seconds>(duration);
-  new_value.it_value.tv_sec = s.count();
-  auto ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(duration - s);
-  new_value.it_value.tv_nsec = ns.count();
-  Dout(dc::notice, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
-  if (AI_UNLIKELY(timer_settime(m_timer, 0, &new_value, nullptr) == -1))
-    assert(false);
-
-  // A timer was set.
-  return true;
+  // Pop the expired timer from the queue.
+  statefultask::TimerQueue& queue{m_queues[to_queues_index(interval)]};
+  Timer* timer = queue.pop();
+  // Update m_cache.
+  increase_cache(interval, queue.next_expiration_point());
+  // Do the call back.
+  return timer;
 }
 
 RunningTimers::~RunningTimers()

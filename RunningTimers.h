@@ -29,6 +29,7 @@
 #include "debug.h"
 #include <array>
 #include <csignal>
+#include <mutex>
 
 namespace statefultask {
 
@@ -71,6 +72,7 @@ class RunningTimers : public Singleton<RunningTimers>
  protected:
   static int constexpr tree_size = 64;                                  // Allow at most 64 different time intervals (so that m_tree fits in a single cache line).
 
+  std::mutex m_mutex;                                                   // Protects (the consistency of) m_tree and m_cache.
   std::array<uint8_t, tree_size> m_tree;
   std::array<Timer::time_point, tree_size> m_cache;
   utils::Vector<TimerQueue, TimerQueueIndex> m_queues;
@@ -98,29 +100,15 @@ class RunningTimers : public Singleton<RunningTimers>
     return index << 1;
   }
 
-  void decrease_cache(int interval, Timer::time_point tp)
+  //=====================================================================================
+  // DANGER: do not change the two functions below! They are extremely sensitive to bugs!
+  // They were created by trial and error in a testsuite that brute force tested all 1500
+  // possibilities. If you make any change you WILL break it.
+  //=====================================================================================
+  //
+  void increase_cache(int interval, Timer::time_point tp)       // m_mutex must be locked.
   {
-    //DoutEntering(dc::notice, "RunningTimers::decrease_cache(" << interval << ", " << tp.time_since_epoch().count() << ")");
-    assert(tp <= m_cache[interval]);
-    m_cache[interval] = tp;                             // Replace no_timer with tp.
-    // We just put a SMALLER value in the cache at position interval than what there was before.
-    // Therefore all we have to do is overwrite parents with our interval until the time_point
-    // value of the parent is less than tp.
-    int parent_ti = interval_to_parent_index(interval); // Let 'parent_ti' be the index of the parent node in the tree above 'interval'.
-    while (tp <= m_cache[m_tree[parent_ti]])            // m_tree[parent_ti] is the content of that node. m_cache[m_tree[parent_ti]] is the value.
-    {
-      m_tree[parent_ti] = interval;                     // Update that tree node.
-      if (parent_ti == 1)                               // If this was the top-most node in the tree then we're done.
-        break;
-      parent_ti = parent_of(parent_ti);                 // Set 'i' to be the index of the parent node in the tree above 'i'.
-    }
-  }
-
-  void increase_cache(int interval, Timer::time_point tp)
-  {
-    //DoutEntering(dc::notice, "Calling increase_cache(" << interval << ", " << tp.time_since_epoch().count() << ")");
-    //Dout(dc::notice, "m_cache[" << interval << "] = " << m_cache[interval].time_since_epoch().count());
-    assert(tp >= m_cache[interval]);
+    ASSERT(tp >= m_cache[interval]);
     m_cache[interval] = tp;
 
     int parent_ti = interval_to_parent_index(interval); // Let 'parent_ti' be the index of the parent node in the tree above 'interval'.
@@ -145,10 +133,29 @@ class RunningTimers : public Singleton<RunningTimers>
     }
   }
 
+  void decrease_cache(int interval, Timer::time_point tp)       // m_mutex must be locked.
+  {
+    ASSERT(tp <= m_cache[interval]);
+    m_cache[interval] = tp;                             // Replace no_timer with tp.
+    // We just put a SMALLER value in the cache at position interval than what there was before.
+    // Therefore all we have to do is overwrite parents with our interval until the time_point
+    // value of the parent is less than tp.
+    int parent_ti = interval_to_parent_index(interval); // Let 'parent_ti' be the index of the parent node in the tree above 'interval'.
+    while (tp <= m_cache[m_tree[parent_ti]])            // m_tree[parent_ti] is the content of that node. m_cache[m_tree[parent_ti]] is the value.
+    {
+      m_tree[parent_ti] = interval;                     // Update that tree node.
+      if (parent_ti == 1)                               // If this was the top-most node in the tree then we're done.
+        break;
+      parent_ti = parent_of(parent_ti);                 // Set 'i' to be the index of the parent node in the tree above 'i'.
+    }
+  }
+  //=====================================================================================
+
  public:
-  // Do call backs on all timers that expire on or before \a now.
-  // Returns the next time that this function needs to be called again.
-  bool expire_next(Timer::time_point now);
+  // Returns the first expired Timer, if any. Also sets the hardware timer to raise a signal
+  // when the next Timer will expire when there isn't an already expired Timer right now.
+  // If a non-null value is returned, call Timer::expire() on it.
+  Timer* next_expired(Timer::time_point now);
 
   // Wait for a signal and returns true if one was caught.
   void wait_for_expire()
@@ -164,25 +171,6 @@ class RunningTimers : public Singleton<RunningTimers>
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }
 
-  // Return true if \a handle is the next timer to expire.
-  bool is_current(Timer::Handle const& handle) const
-  {
-    return m_tree[1] == to_cache_index(handle.m_interval) && m_queues[handle.m_interval].is_current(handle.m_sequence);
-  }
-
-  // Add \a timer to the list of running timers, using \a interval as timeout.
-  Timer::Handle push(TimerQueueIndex interval, Timer* timer)
-  {
-    assert(interval.get_value() < m_queues.size());
-    uint64_t sequence = m_queues[interval].push(timer);
-    if (m_queues[interval].is_current(sequence))
-      decrease_cache(to_cache_index(interval), timer->get_expiration_point());
-    Timer::Handle handle{interval, sequence};
-    if (is_current(handle))
-      update_running_timer();
-    return handle;
-  }
-
   //! Cancel the timer associated with handle.
   void cancel(Timer::Handle const& handle)
   {
@@ -191,19 +179,45 @@ class RunningTimers : public Singleton<RunningTimers>
     if (!queue.cancel(handle.m_sequence))       // Not the current timer for this interval?
       return;                                   // Then not the current timer.
 
-    increase_cache(to_cache_index(handle.m_interval), queue.next_expiration_point());
+    int cache_index = to_cache_index(handle.m_interval);
+    Timer::time_point expiration_point = queue.next_expiration_point();
+
+    std::unique_lock<std::mutex> lk(m_mutex);
+    bool is_current = m_tree[1] == cache_index;
+    increase_cache(cache_index, expiration_point);
 
     // Call update_running_timer if the cancelled timer is the currently running timer.
-    if (m_tree[1] == to_cache_index(handle.m_interval))
+    if (is_current)
       update_running_timer();
+  }
+
+  // Add \a timer to the list of running timers, using \a interval as timeout.
+  Timer::Handle push(TimerQueueIndex interval, Timer* timer)
+  {
+    assert(interval.get_value() < m_queues.size());
+    uint64_t sequence = m_queues[interval].push(timer);
+    bool const is_current = m_queues[interval].is_current(sequence);
+    Timer::Handle handle{interval, sequence};
+    if (is_current)
+    {
+      int cache_index = to_cache_index(interval);
+      Timer::time_point expiration_point = timer->get_expiration_point();
+      std::unique_lock<std::mutex> lk(m_mutex);
+      decrease_cache(cache_index, expiration_point);
+      if (m_tree[1] == cache_index)
+        update_running_timer();
+    }
+    return handle;
   }
 
   void initialize(size_t number_of_intervals)
   {
     ASSERT(number_of_intervals <= (size_t)tree_size);
+    // No need to lock m_mutex here because initialize this only called before we even reached main().
     m_queues.resize(number_of_intervals);
   }
 
+ private:
   void update_running_timer()
   {
   }
