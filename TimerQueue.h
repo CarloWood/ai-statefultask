@@ -108,7 +108,7 @@ class TimerQueue
    * @brief Remove one timer from the front of the queue and return it.
    *
    * This function may only be called when the queue is not empty.
-   * The returned point will never be null.
+   * The returned pointer will never be null.
    *
    * @returns The current timer.
    */
@@ -132,6 +132,7 @@ class TimerQueue
     // Erase the range [begin, b).
     m_running_timers.erase(m_running_timers.begin(), b);
 
+    timer->removed();
     return timer;
   }
 

@@ -25,6 +25,7 @@
 
 #include "utils/nearest_power_of_two.h"
 #include "utils/Singleton.h"
+#include "threadsafe/aithreadsafe.h"
 #include "TimerQueue.h"
 #include "debug.h"
 #include <array>
@@ -75,10 +76,19 @@ class RunningTimers : public Singleton<RunningTimers>
   std::mutex m_mutex;                                                   // Protects (the consistency of) m_tree and m_cache.
   std::array<uint8_t, tree_size> m_tree;
   std::array<Timer::time_point, tree_size> m_cache;
+
+  // m_queues doesn't need a mutex because it is initialized before main() and then never changed anymore.
   utils::Vector<TimerQueue, TimerQueueIndex> m_queues;
-  timer_t m_timer;
-  sigset_t m_sigalrm_set;
-  sigset_t m_prev_sigset;
+
+  struct Current {
+    timer_t posix_timer;
+    sigset_t sigalrm_set;
+    sigset_t prev_sigset;
+    Timer* timer;                                                       // The timer that is currently being waited on.
+    Current();
+  };
+  using current_t = aithreadsafe::Wrapper<Current, aithreadsafe::policy::Primitive<std::mutex>>;
+  current_t m_current;
 
   static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
   {
@@ -152,11 +162,15 @@ class RunningTimers : public Singleton<RunningTimers>
   //=====================================================================================
 
  public:
+  // Return access type for m_current.
+  current_t::wat access_current() { return m_current; }
+
   // Returns the first expired Timer, if any. Also sets the hardware timer to raise a signal
   // when the next Timer will expire when there isn't an already expired Timer right now.
   // If a non-null value is returned, call Timer::expire() on it.
-  Timer* next_expired(Timer::time_point now);
+  Timer* next_expired(current_t::wat const& current_w, Timer::time_point now);
 
+#if 0
   // Wait for a signal and returns true if one was caught.
   void wait_for_expire()
   {
@@ -167,6 +181,7 @@ class RunningTimers : public Singleton<RunningTimers>
     ASSERT(errno == EINTR);
     Dout(dc::notice, "wait_for_expire(): returning from sigsuspend.");
   }
+#endif
 
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }
@@ -174,8 +189,22 @@ class RunningTimers : public Singleton<RunningTimers>
   //! Cancel the timer associated with handle.
   void cancel(Timer::Handle const& handle)
   {
-    TimerQueue& queue{m_queues[handle.m_interval]};
+    if (AI_UNLIKELY(!handle.is_running()))
+    {
+      Dout(dc::warning, "Calling cancel() for a timer that isn't running.");
+      return;
+    }
 
+    if (handle.is_removed())    // A timer that is running but already removed is the current timer.
+    {
+      current_t::wat current_w{m_current};
+      ASSERT(current_w->timer->handle().m_interval == handle.m_interval);
+      current_w->timer = nullptr;
+      update_running_timer();
+      return;
+    }
+
+    TimerQueue& queue{m_queues[handle.m_interval]};
     if (!queue.cancel(handle.m_sequence))       // Not the current timer for this interval?
       return;                                   // Then not the current timer.
 

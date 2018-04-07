@@ -135,6 +135,9 @@ class AIThreadPool
   // Number of idle workers.
   static std::atomic_int s_idle_threads;
 
+  // Number of threads that need to wake up.
+  static int s_to_be_woken;
+
   // We have a thread that takes care of the timers.
   static bool s_have_timer_thread;
 
@@ -203,7 +206,7 @@ class AIThreadPool
         // std::memory_order_relaxed for all accesses to it.
         if (!s_idle_threads.compare_exchange_weak(idle, idle - 1, std::memory_order_relaxed, std::memory_order_relaxed))
           continue;     // s_idle_threads changed in the meantime; try again from the start.
-        // A thread that reached this point is allowed to wake up a thread.
+        // A thread that reached this point is allowed to wake up one thread.
         // A possible scenario could be:
         //                              m_previous_total_reserved_threads
         // Queue1: 1 reserved thread.               0
@@ -230,13 +233,8 @@ class AIThreadPool
         // and the third will handle a task from Queue2. The task in Queue3 is not handled until all three woken
         // threads are idle again (the first two being reserved for Queue1 and Queue2).
         std::unique_lock<std::mutex> lk(s_idle_mutex);
-        if (!s_idle_timer_thread || idle > 1)           // Is there guaranteed at least one thread waiting on s_idle_cv?
-          s_idle_cv.notify_one();                       // This lines turns out to take 19.5 microseconds!
-        else                                            // Otherwise there is guaranteed one thread waiting on a signal.
-        {
-          s_idle_timer_thread = false;
-
-        }
+        ++s_to_be_woken;
+        s_idle_cv.notify_one();                       // This lines turns out to take 19.5 microseconds!
         break;
       }
     }

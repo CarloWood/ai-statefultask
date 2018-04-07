@@ -123,6 +123,8 @@ struct Timer
     //! 
     bool is_running() const { return !m_interval.undefined(); }
     void set_not_running() { m_interval.set_to_undefined(); }
+    bool is_removed() const { return m_sequence == std::numeric_limits<uint64_t>::max(); }
+    void set_removed() { m_sequence = std::numeric_limits<uint64_t>::max(); }
   };
 #endif
 
@@ -159,6 +161,12 @@ struct Timer
   {
     m_handle.set_not_running();
     m_call_back();
+  }
+
+  //! Called when this timer is removed from the queue.
+  void removed()
+  {
+    m_handle.set_removed();
   }
 
   // Return the current time in the appropriate type.

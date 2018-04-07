@@ -42,6 +42,9 @@ std::atomic<AIThreadPool*> AIThreadPool::s_instance;
 std::atomic_int AIThreadPool::s_idle_threads;
 
 //static
+int AIThreadPool::s_to_be_woken;
+
+//static
 bool AIThreadPool::s_have_timer_thread;
 
 //static
@@ -68,6 +71,25 @@ void AIThreadPool::Worker::main(int const self)
   q.set_to_zero();      // Zero is the highest priority queue.
   while (workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
   {
+    // First check if there have any timers expired.
+    {
+      // Use the same 'now' for subsequent calls; timers that expire after
+      // we already reached this point will have to wait their turn.
+      Timer::time_point now = Timer::clock_type::now();
+      Timer* timer;
+      while (true)
+      {
+        {
+          auto current_w{RunningTimers::instance().access_current()};
+          if (current_w->timer ||       // Don't call next_expired when we're already waiting for the next timer to expire.
+              !(timer = RunningTimers::instance().next_expired(current_w, now)))
+            break;
+        }
+        // Do call back on expired timer.
+        timer->expire();
+      }
+    }
+
     bool empty;
     bool go_idle = false;
     { // Lock the queue for other consumer threads.
@@ -176,53 +198,22 @@ void AIThreadPool::Worker::main(int const self)
     }
     else
     {
-      std::unique_lock<std::mutex> lk(s_idle_mutex);
+      Dout(dc::notice, "Calling s_idle_cv.wait(lk).");
       // A thread that enters this block has nothing to do.
-      if (!s_have_timer_thread)
       {
-        s_have_timer_thread = true;
-        // Only one thread at a time can be in this block.                                                              //
-        lk.unlock();                                                                                                    // The "timer thread".
-        while (true)                                                                                                    //
-        {                                                                                                               //
-          //This thread is responsible for the next timer to expire, if any.                                            //
-          Timer::time_point now = Timer::now();                                                                         //
-          // Handle expired timers and get the next expiration point, if any.                                           //
-          if (true /*RunningTimers::instance().expire_next(now)*/)                                                               //
-          {                                                                                                             //
-            // There is a running timer. Wait for it to expire.                                                         //
-            //                                                                                                          //
-            // Atomically increment s_idle_threads and go into the wait state                                           //
-            // (atomically, because only one thread at a time can get here (due to s_have_timer_thread)                 //
-            //  and signals are blocked at this point until we enter sigsuspend()).                                     //
-            lk.lock();                                                                                                  //
-            s_idle_threads.fetch_add(1, std::memory_order_relaxed);                                                     //
-            s_idle_timer_thread = true;                                                                                 //
-            lk.unlock();                                                                                                //
-            RunningTimers::instance().wait_for_expire();                                                                //
-            continue;                                                                                                   //
-          }                                                                                                             //
-          break;                                                                                                        //
-        }                                                                                                               //
-        lk.lock();                                                                                                      //
-        s_have_timer_thread = false;                                                                                    //
-        // We were woken up to process a task from a queue.
-      }
-      else
-      {
-        Dout(dc::notice, "Calling s_idle_cv.wait(lk) for other thread.");
+        std::unique_lock<std::mutex> lk(s_idle_mutex);
         // Atomically increment s_idle_threads and go into the wait state.
         // The requirement we have here is that a thread that sees this increment will
         // not be able to obtain the lock on s_idle_mutex before this threads releases
         // it again inside s_idle_cv.wait(lk). In other words, a thread that sees the
         // increment must also see the mutex being locked. For that it is sufficient
         // that the increment is done with std::memory_order_relaxed.
-        s_idle_threads.fetch_add(1, std::memory_order_relaxed);
-        s_idle_cv.wait(lk);
-        // One thread is woken up by AIThreadPool::notify_one(), which did the
-        // decrement of s_idle_threads.
-        Dout(dc::notice, "Returning from s_idle_cv.wait(lk) for other thread.");
+        s_idle_threads.fetch_add(1, std::memory_order_relaxed);                 // This allows notify_one() to call be called, but only after release the lock
+        s_idle_cv.wait(lk, []() { return s_to_be_woken > 0; });  // here.
+        --s_to_be_woken;
       }
+      // One thread is woken up by AIThreadPool::notify_one(), which did the decrement of s_idle_threads.
+      Dout(dc::notice, "Returning from s_idle_cv.wait(lk).");
     }
   }
 
@@ -267,7 +258,12 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
   int t = workers_r->size();
   for (int i = 0; i < n; ++i)
     workers_r->at(--t).quit();
-  s_idle_cv.notify_all();
+  // Wake up all threads, so the ones that need to quit can quit.
+  {
+    std::unique_lock<std::mutex> lk(s_idle_mutex);
+    s_to_be_woken = s_idle_threads.load(std::memory_order_relaxed);
+    s_idle_cv.notify_all();
+  }
   // If the relaxed stores to the m_quit's is very slow then we might
   // be calling join() on threads before they can see their m_quit
   // flag being set. This is not a problem. However, theoretically
