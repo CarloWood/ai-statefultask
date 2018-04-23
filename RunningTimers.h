@@ -78,17 +78,19 @@ class RunningTimers : public Singleton<RunningTimers>
   std::array<Timer::time_point, tree_size> m_cache;
 
   // m_queues doesn't need a mutex because it is initialized before main() and then never changed anymore.
-  utils::Vector<TimerQueue, TimerQueueIndex> m_queues;
+  using timer_queue_t = aithreadsafe::Wrapper<TimerQueue, aithreadsafe::policy::Primitive<std::mutex>>;
+  utils::Vector<timer_queue_t, TimerQueueIndex> m_queues;
 
   struct Current {
-    timer_t posix_timer;
-    sigset_t sigalrm_set;
-    sigset_t prev_sigset;
+    timer_t posix_timer;                                                // The POSIX per-process timer.
     Timer* timer;                                                       // The timer that is currently being waited on.
+    bool need_update;                                                   // Set when a call to update_current_timer is necessary.
+
     Current();
   };
   using current_t = aithreadsafe::Wrapper<Current, aithreadsafe::policy::Primitive<std::mutex>>;
   current_t m_current;
+  sigset_t m_blocked_signals;
 
   static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
   {
@@ -165,23 +167,26 @@ class RunningTimers : public Singleton<RunningTimers>
   // Return access type for m_current.
   current_t::wat access_current() { return m_current; }
 
-  // Returns the first expired Timer, if any. Also sets the hardware timer to raise a signal
-  // when the next Timer will expire when there isn't an already expired Timer right now.
-  // If a non-null value is returned, call Timer::expire() on it.
-  Timer* next_expired(current_t::wat const& current_w, Timer::time_point now);
+  /*!
+   * This function may only be called when current_w->need_update is
+   * set and current_w->timer is not set.
+   *
+   * If there is a running Timer that has expired at or before \a now,
+   * then current_w->need_update and current_w->timer are left set and
+   * unset respectively and the expired Timer is returned.
+   * Call Timer::expire on the returned Timer in that case.
+   *
+   * Otherwise current_w->need_update is cleared and nullptr is returned.
+   * current_w->need_update must be set again when a new timer is added.
+   *
+   * If there is no running timer then current_w->timer remains unset.
+   * Otherwise current_w->timer is set to the next timer that will
+   * expire and the hardware timer is set to raise the SIGALRM signal
+   * when that Timer expires.
+   */
+  Timer* update_current_timer(current_t::wat& current_w, Timer::time_point now);
 
-#if 0
-  // Wait for a signal and returns true if one was caught.
-  void wait_for_expire()
-  {
-    // Put this thread to sleep until a (timer) signal is received.
-    Dout(dc::notice, "wait_for_expire(): calling sigsuspend.");
-    sigdelset(&m_prev_sigset, SIGALRM); // Make sure we wake up on pending SIGALRM signals.
-    sigsuspend(&m_prev_sigset);
-    ASSERT(errno == EINTR);
-    Dout(dc::notice, "wait_for_expire(): returning from sigsuspend.");
-  }
-#endif
+  void wait_for_signals();
 
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }
@@ -204,16 +209,29 @@ class RunningTimers : public Singleton<RunningTimers>
       return;
     }
 
-    TimerQueue& queue{m_queues[handle.m_interval]};
-    if (!queue.cancel(handle.m_sequence))       // Not the current timer for this interval?
-      return;                                   // Then not the current timer.
-
+    Timer::time_point expiration_point;
     int cache_index = to_cache_index(handle.m_interval);
-    Timer::time_point expiration_point = queue.next_expiration_point();
+    {
+      timer_queue_t::wat queue_w(m_queues[handle.m_interval]);
+      // If cancel() returns true then it locked m_mutex.
+      if (!queue_w->cancel(handle.m_sequence, m_mutex))    // Not the current timer for this interval?
+        return;                                            // Then not the current timer.
 
-    std::unique_lock<std::mutex> lk(m_mutex);
+      // m_mutex is now locked.
+
+      // At this point the cancelled timer is at the front of the queue;
+      // because of that we need to update (increase) the corresponding cache value.
+      // The queue is kept locked during this process to assure that 'expiration_point'
+      // for this cache_index isn't changed by having that THAT timer be cancelled
+      // as well.
+
+      expiration_point = queue_w->next_expiration_point();
+    } // Unlock the queue to new timers can be added. There is no danger that the front timer
+      // will be cancelled because it is required to own m_mutex for that.
+
     bool is_current = m_tree[1] == cache_index;
     increase_cache(cache_index, expiration_point);
+    m_mutex.unlock();
 
     // Call update_running_timer if the cancelled timer is the currently running timer.
     if (is_current)
@@ -221,29 +239,15 @@ class RunningTimers : public Singleton<RunningTimers>
   }
 
   // Add \a timer to the list of running timers, using \a interval as timeout.
-  Timer::Handle push(TimerQueueIndex interval, Timer* timer)
-  {
-    assert(interval.get_value() < m_queues.size());
-    uint64_t sequence = m_queues[interval].push(timer);
-    bool const is_current = m_queues[interval].is_current(sequence);
-    Timer::Handle handle{interval, sequence};
-    if (is_current)
-    {
-      int cache_index = to_cache_index(interval);
-      Timer::time_point expiration_point = timer->get_expiration_point();
-      std::unique_lock<std::mutex> lk(m_mutex);
-      decrease_cache(cache_index, expiration_point);
-      if (m_tree[1] == cache_index)
-        update_running_timer();
-    }
-    return handle;
-  }
+  Timer::Handle push(TimerQueueIndex interval, Timer* timer);
 
   void initialize(size_t number_of_intervals)
   {
     ASSERT(number_of_intervals <= (size_t)tree_size);
     // No need to lock m_mutex here because initialize this only called before we even reached main().
-    m_queues.resize(number_of_intervals);
+    // Just construct a completely new vector, because we can't resize a vector with mutexes.
+    utils::Vector<timer_queue_t, TimerQueueIndex> new_queues(number_of_intervals);
+    m_queues.swap(new_queues);
   }
 
  private:
@@ -259,7 +263,7 @@ class RunningTimers : public Singleton<RunningTimers>
   {
     size_t sz = 0;
     for (auto&& queue : m_queues)
-      sz += queue.debug_size();
+      sz += timer_queue_t::crat(queue)->debug_size();
     return sz;
   }
 
@@ -267,7 +271,7 @@ class RunningTimers : public Singleton<RunningTimers>
   {
     int sz = 0;
     for (auto&& queue : m_queues)
-      sz += queue.debug_cancelled_in_queue();
+      sz += timer_queue_t::crat(queue)->debug_cancelled_in_queue();
     return sz;
   }
 #endif

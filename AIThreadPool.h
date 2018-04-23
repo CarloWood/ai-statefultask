@@ -95,7 +95,7 @@
  *       if (length < 32) // Buffer not full?
  *       {
  *         // Place a lambda in the queue.
- *         queue_access.move_in([](){ std::cout << "Hello pool!\n"; });
+ *         queue_access.move_in([](){ std::cout << "Hello pool!\n"; return false; });
  *       }
  *     } // Release producer accesses, so another thread can write to this queue again.
  *     // This function must be called every time move_in was called
@@ -234,7 +234,8 @@ class AIThreadPool
         // threads are idle again (the first two being reserved for Queue1 and Queue2).
         std::unique_lock<std::mutex> lk(s_idle_mutex);
         ++s_to_be_woken;
-        s_idle_cv.notify_one();                       // This lines turns out to take 19.5 microseconds!
+        Dout(dc::notice, "s_idle_threads = " << idle);
+        s_idle_cv.notify_one();                       // This lines turns out to take up to 19.5 microseconds!
         break;
       }
     }
@@ -327,7 +328,7 @@ class AIThreadPool
   static std::atomic<AIThreadPool*> s_instance;               // The only instance of AIThreadPool that should exist at a time.
   // m_queues is seldom write locked and very often read locked, so use AIReadWriteSpinLock.
   using queues_t = aithreadsafe::Wrapper<queues_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteSpinLock>>;
-  queues_t m_queues;                                          // List of queues. 
+  queues_t m_queues;                                          // Vector of PriorityQueue`s.
   std::thread::id m_constructor_id;                           // Thread id of the thread that created and/or moved AIThreadPool.
   int m_max_number_of_threads;                                // Current capacity of m_workers.
   bool m_pillaged;                                            // If true, this object was moved and the destructor should do nothing.
@@ -430,6 +431,23 @@ class AIThreadPool
    * @returns A reference to AIThreadPool::PriorityQueue.
    */
   queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, AIQueueHandle queue_handle) { return queues_r->at(queue_handle); }
+
+  /*!
+   * @brief If there is any thread idle, wake it up.
+   */
+  void notify_one()
+  {
+    int idle;
+    while ((idle = s_idle_threads.load(std::memory_order_relaxed)) > 0)
+    {
+      if (!s_idle_threads.compare_exchange_weak(idle, idle - 1, std::memory_order_relaxed, std::memory_order_relaxed))
+        continue;
+      std::unique_lock<std::mutex> lk(s_idle_mutex);
+      ++s_to_be_woken;
+      s_idle_cv.notify_one();
+      break;
+    }
+  }
 
   //------------------------------------------------------------------------
 

@@ -280,8 +280,8 @@ class AIObjectQueue
   void reallocate(int capacity)
   {
     // Buffer may not be in use (these locks also protect access to the buffer itself).
-    std::unique_lock<std::mutex> lock1(m_producer_mutex);
-    std::unique_lock<std::mutex> lock2(m_consumer_mutex);
+    std::lock_guard<std::mutex> lock1(m_producer_mutex);
+    std::lock_guard<std::mutex> lock2(m_consumer_mutex);
     // Allow reallocation.
     if (m_capacity) deallocate_();
     allocate_(capacity);

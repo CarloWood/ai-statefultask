@@ -58,6 +58,14 @@ class TimerQueue
   /*!
    * @brief Add a new timer to the end of the queue.
    *
+   * The TimerQueue must be locked before calling push(), and
+   * without releasing that lock the result should be passed
+   * to is_current() to check if m_running_timers was empty.
+   * If that is the case then RunningTimers::m_mutex must
+   * be locked before releasing the lock on this queue.
+   * timer->get_expiration_point() can subsequently be
+   * used to update RunningTimers::m_cache.
+   *
    * @returns An ever increasing sequence number starting with 0.
    */
   uint64_t push(Timer* timer)
@@ -82,14 +90,20 @@ class TimerQueue
   }
 
   /*!
-   * @brief Cancelled a running timer.
+   * @brief Cancel a running timer.
    *
    * The \a sequence passed must be returned by a previous call to push() and may not have expired.
    * This implies that the queue cannot be empty.
    *
+   * If this function returns true then the mutex \a m has been locked
+   * and RunningTimers needs updating.
+   *
+   * @param sequence : The sequence number of a previously pushed timer.
+   * @param m : A reference to RunningTimers::m_mutex.
+   *
    * @returns True if the cancelled Timer was the current timer.
    */
-  bool cancel(uint64_t sequence)
+  bool cancel(uint64_t sequence, std::mutex& m)
   {
     uint64_t index = sequence - m_sequence_offset;
     // Sequence must be returned by a previous call to push() and the Timer may not already have expired.
@@ -98,10 +112,26 @@ class TimerQueue
     ASSERT(m_running_timers[index]);
     bool is_current = index == 0;
     if (is_current)
-      pop();
+      pop(m);
     else
       m_running_timers[index] = nullptr;
     return is_current;
+  }
+
+  /*!
+   * @brief Return the timer at the front of the queue.
+   *
+   * This function may only be called when the queue is not empty.
+   * RunningTimers::m_mutex must be locked before calling this function.
+   * The returned pointer will never be null.
+   *
+   * @returns The current timer.
+   */
+  Timer* peek()
+  {
+    // Do not call peek() when the queue is empty.
+    ASSERT(!m_running_timers.empty());
+    return m_running_timers.front();
   }
 
   /*!
@@ -110,9 +140,13 @@ class TimerQueue
    * This function may only be called when the queue is not empty.
    * The returned pointer will never be null.
    *
+   * Afterwards, the mutex \a m is locked.
+   *
+   * @param m : A reference to RunningTimers::m_mutex.
+   *
    * @returns The current timer.
    */
-  Timer* pop()
+  Timer* pop(std::mutex& m)
   {
     running_timers_type::iterator b = m_running_timers.begin();
     running_timers_type::iterator const e = m_running_timers.end();
@@ -129,10 +163,13 @@ class TimerQueue
     }
     while (b != e && *b == nullptr);   // Is the next timer cancelled?
 
+    // Mark this timer as being removed.
+    timer->removed();
+
     // Erase the range [begin, b).
+    m.lock();
     m_running_timers.erase(m_running_timers.begin(), b);
 
-    timer->removed();
     return timer;
   }
 
@@ -141,6 +178,10 @@ class TimerQueue
    *
    * This function returns Timer::none if the queue is empty.
    * This makes it suitable to be passed to increase_cache.
+   *
+   * RunningTimers::m_mutex must be locked before calling this function.
+   * The returned expiration point can be used to update RunningTimers::m_cache
+   * while keeping m_mutex locked.
    */
   Timer::time_point next_expiration_point() const
   {
