@@ -45,77 +45,71 @@ std::atomic_int AIThreadPool::s_idle_threads;
 int AIThreadPool::s_to_be_woken;
 
 //static
-bool AIThreadPool::s_have_timer_thread;
+std::atomic_int AIThreadPool::s_call_update_current_timer;
 
 //static
-bool AIThreadPool::s_idle_timer_thread;
-
-//static
-std::mutex AIThreadPool::s_idle_mutex;
-
-//static
-std::condition_variable AIThreadPool::s_idle_cv;
+sem_t AIThreadPool::s_tasks;
 
 //static
 void AIThreadPool::Worker::main(int const self)
 {
   Debug(NAMESPACE_DEBUG::init_thread());
   Dout(dc::threadpool, "Thread started.");
+  AIThreadPool& thread_pool{AIThreadPool::instance()};
+
+  // Unblock the POSIX signals that are used by the timer.
+  sigprocmask(SIG_UNBLOCK, RunningTimers::instance().get_timer_sigset(), nullptr);
 
   // Wait until we have at least one queue.
-  while (AIThreadPool::instance().queues_read_access()->size() == 0)
+  while (thread_pool.queues_read_access()->size() == 0)
     std::this_thread::sleep_for(std::chrono::microseconds(10));
 
   std::function<bool()> f;
   AIQueueHandle q;
   q.set_to_zero();      // Zero is the highest priority queue.
-  while (workers_t::rat(AIThreadPool::instance().m_workers)->at(self).running())
+  while (workers_t::rat(thread_pool.m_workers)->at(self).running())
   {
     Dout(dc::notice, "Beginning of thread pool main loop for queue " << q);
 
-    if (q.is_zero())    // Only check timers when checking the highest priority queue.
+    Timer::time_point now;
+    int need_timer_thread;
+    while ((need_timer_thread = s_call_update_current_timer.load()) > 0)
     {
+      if (!s_call_update_current_timer.compare_exchange_weak(need_timer_thread, need_timer_thread - 1))
+        continue;
       // First check if there have any timers expired.
-      Timer::time_point now;
       Timer* expired_timer;
-      while (true)
       {
+        auto current_w{RunningTimers::instance().access_current()};
+        // Don't call update_current_timer when we're still waiting for the current timer to expire.
+        // The reasoning here is: if the FIRST timer to expire didn't expire yet,
+        // then we'll have no expired timers at all.
+        if (AI_UNLIKELY(current_w->timer))
         {
-          auto current_w{RunningTimers::instance().access_current()};
-          // Don't call update_current_timer when we're still waiting for the current timer to expire.
-          // The reasoning here is: if the FIRST timer to expire didn't expire yet,
-          // then we'll have no expired timers at all.
-          if (current_w->timer || !current_w->need_update)
-          {
-            Dout(dc::notice, "Not calling update_current_timer because current_w->timer = " <<
-                (void*)current_w->timer << " and current_w->need_update  = " << (current_w->need_update ? "true" : "false"));
-            break;
-          }
-          // Use the same 'now' for subsequent calls; timers that expire after
-          // we already reached this point will have to wait their turn.
-          if (!now.time_since_epoch().count())
-            now = Timer::clock_type::now();
-          // Is there a(nother) timer that has expired before `now`?
-          // The call to update_current_timer might unlock current_w in the middle (and relock it before returning),
-          // but only after clearing current_w->need_update. This is to flush any threads that are hanging
-          // at the declaration of current_w above as soon as possible.
-          if (!(expired_timer = RunningTimers::instance().update_current_timer(current_w, now)))
-          {
-            // There is no timer, or
-            // This thread just called timer_settime, set current_w->timer and cleared current_w->need_update.
-            // Other threads won't call update_current_timer anymore until that timer expired.
-            break;
-          }
+          Dout(dc::notice, "Not calling update_current_timer because current_w->timer = " << (void*)current_w->timer);
+          break;
         }
-        // Do the call back with RunningTimers::m_current unlocked.
-        expired_timer->expire();
-      }
+        // Use the same 'now' for subsequent calls; timers that expire after
+        // we already reached this point will have to wait their turn.
+        if (!now.time_since_epoch().count())
+          now = Timer::clock_type::now();
+        // Is there a(nother) timer that has expired before `now`?
+        if (!(expired_timer = RunningTimers::instance().update_current_timer(current_w, now)))
+        {
+          // There is no timer, or
+          // This thread just called timer_settime and set current_w->timer.
+          // Other threads won't call update_current_timer anymore until that timer expired.
+          break;
+        }
+      } // Do the call back with RunningTimers::m_current unlocked.
+      call_update_current_timer();         // Keep calling update_current_timer until it returns nullptr.
+      expired_timer->expire();
     }
 
     bool empty;
     bool go_idle = false;
     { // Lock the queue for other consumer threads.
-      auto queues_r = AIThreadPool::instance().queues_read_access();
+      auto queues_r = thread_pool.queues_read_access();
       // Obtain a reference to queue `q`.
       queues_container_t::value_type const& queue = (*queues_r)[q];
       {
@@ -167,7 +161,7 @@ void AIThreadPool::Worker::main(int const self)
         // Determine the next queue to handle: the highest priority queue that doesn't have all reserved threads idle.
         next_q = q;
         { // Get read access to AIThreadPool::m_queues.
-          auto queues_r = AIThreadPool::instance().queues_read_access();
+          auto queues_r = thread_pool.queues_read_access();
           // See if any higher priority queues need our help.
           while (next_q != queues_r->ibegin())
           {
@@ -227,59 +221,16 @@ void AIThreadPool::Worker::main(int const self)
     else
     {
       // A thread that enters this block has nothing to do.
-      bool pending;
+      Dout(dc::notice, "Entering sem_wait()");
+      s_idle_threads.fetch_add(1);
+      int res = sem_wait(&s_tasks);
+      s_idle_threads.fetch_sub(1);
+      if (RunningTimers::instance().a_timer_expired())
       {
         auto current_w{RunningTimers::instance().access_current()};
-        // Is there current timer that we need to wait for?
-        if ((pending = !current_w->need_update && current_w->timer))
-        {
-          Dout(dc::notice, "2. need_update = true");
-          current_w->need_update = true;        // Stop other threads from setting 'pending'.
-        }
-        // Note that for each time current_w->need_update is cleared (inside update_current_timer)
-        // exactly one thread will end up with pending set to true.
-        // Also, as soon as update_current_timer sets current_w->need_update no other thread will
-        // enter update_current_timer until the found timer expires and current_w->timer is
-        // set to nullptr again (inside wait_for_signals()).
+        current_w->timer = nullptr;     // The timer expired.
       }
-      if (pending)
-      {
-        ASSERT(!s_have_timer_thread);
-        {
-          std::lock_guard<std::mutex> lk(s_idle_mutex);
-          s_have_timer_thread = true;
-          s_idle_threads.fetch_add(1, std::memory_order_relaxed);         // This allows a signal to be raised, but only after releasing the lock
-        }                                                                 // here.
-        // If a signal is raised right here, it is blocked, but will be queued
-        // and will still be picked up by sigsuspend in the call to wait_for_signals().
-        // Put this thread to sleep until a (timer) signal is received.
-        RunningTimers::instance().wait_for_signals();
-        {
-          std::lock_guard<std::mutex> lk(s_idle_mutex);
-          s_have_timer_thread = false;          // Woken up by SIGALRM.
-          //--s_to_be_woken;
-        }
-        auto current_w{RunningTimers::instance().access_current()};
-        current_w->timer = nullptr;             // The current timer expired.
-      }
-      else
-      {
-        Dout(dc::notice, "Calling s_idle_cv.wait(lk).");
-        {
-          std::unique_lock<std::mutex> lk(s_idle_mutex);
-          // Atomically increment s_idle_threads and go into the wait state.
-          // The requirement we have here is that a thread that sees this increment will
-          // not be able to obtain the lock on s_idle_mutex before this threads releases
-          // it again inside s_idle_cv.wait(lk). In other words, a thread that sees the
-          // increment must also see the mutex being locked. For that it is sufficient
-          // that the increment is done with std::memory_order_relaxed.
-          s_idle_threads.fetch_add(1, std::memory_order_relaxed);         // This allows notify_one() to call be called, but only after releasing the lock
-          s_idle_cv.wait(lk, []() { return s_to_be_woken > 0; });         // here.
-          --s_to_be_woken;
-        }
-        // One thread is woken up by AIThreadPool::notify_one(), which did the decrement of s_idle_threads.
-        Dout(dc::notice, "Returning from s_idle_cv.wait(lk).");
-      }
+      Dout(dc::notice, "Leaving sem_wait() with " << res);
     }
   }
 
@@ -321,15 +272,12 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
   // of m_workers_r_to_w_mutex; so we're OK.
 
   // Call quit() on the n last threads in the container.
-  int t = workers_r->size();
+  int const number_of_threads = workers_r->size();
   for (int i = 0; i < n; ++i)
-    workers_r->at(--t).quit();
+    workers_r->at(number_of_threads - 1 - i).quit();
   // Wake up all threads, so the ones that need to quit can quit.
-  {
-    std::lock_guard<std::mutex> lk(s_idle_mutex);
-    s_to_be_woken = s_idle_threads.load(std::memory_order_relaxed);
-    s_idle_cv.notify_all();
-  }
+  for (int i = 0; i < number_of_threads; ++i)
+    sem_post(&s_tasks);
   // If the relaxed stores to the m_quit's is very slow then we might
   // be calling join() on threads before they can see their m_quit
   // flag being set. This is not a problem. However, theoretically
@@ -364,6 +312,9 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
   // Allow access to the thread pool from everywhere without having to pass it around.
   s_instance = this;
 
+  // Thread-shared semaphore; no current tasks.
+  sem_init(&s_tasks, 0, 0);
+
   workers_t::wat workers_w(m_workers);
   assert(workers_w->empty());                    // Paranoia; even in the case of constructing a second AIThreadPool
                                                  // after destructing the first, this should be the case here.
@@ -383,6 +334,10 @@ AIThreadPool::~AIThreadPool()
     workers_t::rat workers_r(m_workers);
     remove_threads(workers_r, workers_r->size());
   }
+
+  // Destroy the semaphore.
+  sem_destroy(&s_tasks);
+
   // Allow construction of another AIThreadPool.
   s_instance = nullptr;
 }

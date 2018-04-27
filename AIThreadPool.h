@@ -39,6 +39,7 @@
 #include <thread>
 #include <cassert>
 #include <condition_variable>
+#include <semaphore.h>
 
 /*!
  * @brief The thread pool class.
@@ -128,24 +129,17 @@ class AIThreadPool
   using worker_container_t = std::vector<Worker>;
   using workers_t = aithreadsafe::Wrapper<worker_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
-  // Condition variable mutex.
-  // This mutex also protects s_have_timer_thread, s_idle_timer_thread and the consistency of s_idle_threads.
-  static std::mutex s_idle_mutex;
-
   // Number of idle workers.
   static std::atomic_int s_idle_threads;
 
   // Number of threads that need to wake up.
   static int s_to_be_woken;
 
-  // We have a thread that takes care of the timers.
-  static bool s_have_timer_thread;
+  // Number of times that update_RunningTimers::update_current_timer() needs to be called.
+  static std::atomic_int s_call_update_current_timer;
 
-  // The timer thread is idle.
-  static bool s_idle_timer_thread;
-
-  // Condition variable.
-  static std::condition_variable s_idle_cv;
+  // The number of potentially unhandled tasks.
+  static sem_t s_tasks;
 
   struct PriorityQueue : public AIObjectQueue<std::function<bool()>>
   {
@@ -188,56 +182,7 @@ class AIThreadPool
      */
     void notify_one() const
     {
-      // Suppose that m_previous_total_reserved_threads is 2 here. That means that there are two threads
-      // that we're not allowed to use for this queue. Suppose that s_idle_threads equals 3. That means
-      // that there are three threads that can be woken up, but we're only allowed to wake up one.
-      // Since 3 > 2, the while condition is true and this thread enters the while loop.
-      // If at that point some other thread also enters this while loop and decrements s_idle_threads
-      // then the compare_exchange_weak will fail in this thread and we'd start from the start, this
-      // time with s_idle_threads equal to 2. If s_idle_threads is both decremented and incremented
-      // by yet another thread, then that's perfectly fine: in that case we are still allowed to wake
-      // up a thread for this queue.
-      int idle;
-      while ((idle = s_idle_threads.load(std::memory_order_relaxed)) > m_previous_total_reserved_threads) // This line takes 0.9...0.97 ns.
-      {
-        // Decrement s_idle_threads by one.
-        // Note that s_idle_threads is the only variable that is accessed outside the critical region of s_idle_mutex
-        // and there does not need to be synchronized with any other variable. Therefore it is enough to use
-        // std::memory_order_relaxed for all accesses to it.
-        if (!s_idle_threads.compare_exchange_weak(idle, idle - 1, std::memory_order_relaxed, std::memory_order_relaxed))
-          continue;     // s_idle_threads changed in the meantime; try again from the start.
-        // A thread that reached this point is allowed to wake up one thread.
-        // A possible scenario could be:
-        //                              m_previous_total_reserved_threads
-        // Queue1: 1 reserved thread.               0
-        // Queue2: 1 reserved thread.               1
-        // Queue3: this thread/queue.               2
-        // Let s_idle_threads be 3.
-        // Thread A enters the while loop of queue3 (because 3 > 2)
-        // Thread B enters the while loop of queue1 (because 3 > 0)
-        // Thread C enters the while loop of queue1 (because 3 > 0)
-        // Thread D enters the while loop of queue2 (because 3 > 1)
-        // Thread A decrements s_idle_threads from 3 to 2.
-        // Thread B tries to decrement s_idle_threads, s_idle_threads isn't 3 anymore, so it starts at the top and enters the while loop of queue3 again (because 2 > 0).
-        // Thread C tries to decrement s_idle_threads, s_idle_threads isn't 3 anymore, so it starts at the top and enters the while loop of queue3 again (because 2 > 0).
-        // Thread D tries to decrement s_idle_threads, s_idle_threads isn't 3 anymore, so it starts at the top and enters the while loop of queue3 again (because 2 > 1).
-        // Thread B decrements s_idle_threads from 2 to 1.
-        // Thread C tries to decrement s_idle_threads, s_idle_threads isn't 2 anymore, so it starts at the top and enters the while loop of queue3 again (because 1 > 0).
-        // Thread D tries to decrement s_idle_threads, s_idle_threads isn't 2 anymore, so it starts at the top and fails to enter the while loop.
-        // Thread C decrements s_idle_threads from 1 to 0.
-        // Thread A obtains the lock on s_idle_mutex (this prevents that we call s_idle_cv.notify_one() while another
-        // thread is inbetween the increment of s_idle_threads and the call to s_idle_cv.wait()), calls notify_one() and wakes up a thread,
-        // and finally unlocks s_idle_mutex.
-        // Thread B and C to the same. So in total three threads are woken up.
-        // The first thread that is woken up will handle a task from Queue1, the second will handle a task from Queue1
-        // and the third will handle a task from Queue2. The task in Queue3 is not handled until all three woken
-        // threads are idle again (the first two being reserved for Queue1 and Queue2).
-        std::unique_lock<std::mutex> lk(s_idle_mutex);
-        ++s_to_be_woken;
-        Dout(dc::notice, "s_idle_threads = " << idle);
-        s_idle_cv.notify_one();                       // This lines turns out to take up to 19.5 microseconds!
-        break;
-      }
+      sem_post(&s_tasks);
     }
   };
 
@@ -433,20 +378,14 @@ class AIThreadPool
   queues_container_t::value_type const& get_queue(queues_t::rat& queues_r, AIQueueHandle queue_handle) { return queues_r->at(queue_handle); }
 
   /*!
-   * @brief If there is any thread idle, wake it up.
+   * @brief Cause a call to RunningTimers::update_current_timer() (possibly by another thread).
+   * Called from the timer signal handler.
    */
-  void notify_one()
+  static void call_update_current_timer()
   {
-    int idle;
-    while ((idle = s_idle_threads.load(std::memory_order_relaxed)) > 0)
-    {
-      if (!s_idle_threads.compare_exchange_weak(idle, idle - 1, std::memory_order_relaxed, std::memory_order_relaxed))
-        continue;
-      std::unique_lock<std::mutex> lk(s_idle_mutex);
-      ++s_to_be_woken;
-      s_idle_cv.notify_one();
-      break;
-    }
+    s_call_update_current_timer.fetch_add(1);
+    if (sem_trywait(&s_tasks) == -1 && errno == EAGAIN)
+      sem_post(&s_tasks);
   }
 
   //------------------------------------------------------------------------

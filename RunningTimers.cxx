@@ -4,14 +4,16 @@
 #include "utils/macros.h"
 #include <new>
 
-extern "C" void sigalrm_handler(int)
+extern "C" void timer_signal_handler(int)
 {
-  Dout(dc::notice, "Calling sigalrm_handler()");
+  Dout(dc::notice, "Calling timer_signal_handler()");
+  statefultask::RunningTimers::instance().set_a_timer_expired();
+  AIThreadPool::call_update_current_timer();
 }
 
 namespace statefultask {
 
-RunningTimers::RunningTimers()
+RunningTimers::RunningTimers() : m_timer_signum(SIGRTMIN), m_a_timer_expired(false)
 {
   // Initialize m_cache and m_tree.
   for (int interval = 0; interval < tree_size; ++interval)
@@ -24,26 +26,38 @@ RunningTimers::RunningTimers()
   for (int index = tree_size / 2 - 1; index > 0; --index)
     m_tree[index] = m_tree[left_child_of(index)];
 
-  // Call sigalrm_handler when the SIGALRM signal is caught by a thread.
+  // Call timer_signal_handler when the m_timer_signum signal is caught by a thread.
   struct sigaction action;
   std::memset(&action, 0, sizeof(struct sigaction));
-  action.sa_handler = sigalrm_handler; 
-  if (sigaction(SIGALRM, &action, NULL) == -1) 
+  action.sa_handler = timer_signal_handler;
+  if (sigaction(m_timer_signum, &action, NULL) == -1)
+  {
+    perror("sigaction");
     assert(false);
-  // Block the SIGALRM signal.
-  sigemptyset(&m_blocked_signals);
-  sigaddset(&m_blocked_signals, SIGALRM);
-  sigprocmask(SIG_BLOCK, &m_blocked_signals, nullptr);
+  }
+  // Block the signals used by the thread pool (it is unblocked again for thread pool threads).
+  sigemptyset(&m_timer_sigset);
+  sigaddset(&m_timer_sigset, m_timer_signum);
+  sigprocmask(SIG_BLOCK, &m_timer_sigset, nullptr);
 }
 
-RunningTimers::Current::Current() : timer(nullptr), need_update(false)
+RunningTimers::Current::Current() : timer(nullptr)
 {
   // Create a monotonic timer.
-  timer_create(CLOCK_MONOTONIC, nullptr, &posix_timer);
+  struct sigevent sigevent;
+  std::memset(&sigevent, 0, sizeof(struct sigevent));
+  sigevent.sigev_notify = SIGEV_SIGNAL;
+  sigevent.sigev_signo = RunningTimers::instance().m_timer_signum;
+  if (timer_create(CLOCK_MONOTONIC, &sigevent, &posix_timer) == -1)
+  {
+    perror("timer_create");
+    DoutFatal(dc::fatal|error_cf, "timer_create");
+  }
 }
 
 Timer::Handle RunningTimers::push(TimerQueueIndex interval, Timer* timer)
 {
+  DoutEntering(dc::notice, "RunningTimers::push(" << interval << ", " << (void*)timer << ")");
   assert(interval.get_value() < m_queues.size());
   uint64_t sequence;
   bool is_current;
@@ -70,13 +84,7 @@ Timer::Handle RunningTimers::push(TimerQueueIndex interval, Timer* timer)
     if (is_current)
     {
       update_running_timer();
-      current_t::wat current_w{m_current};
-      if (!current_w->need_update && !current_w->timer)
-      {
-        Dout(dc::notice, "3. need_update = true");
-        current_w->need_update = true;
-        AIThreadPool::instance().notify_one();
-      }
+      AIThreadPool::instance().call_update_current_timer();
     }
   }
   return handle;
@@ -86,8 +94,8 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
 {
   DoutEntering(dc::notice, "RunningTimers::update_current_timer(current_w, " << now.time_since_epoch().count() << ")");
 
-  // Don't call this function while we have a current timer or when need_update isn't set.
-  ASSERT(current_w->need_update && current_w->timer == nullptr);
+  // Don't call this function while we have a current timer.
+  ASSERT(current_w->timer == nullptr);
   bool need_update_cleared_and_current_unlocked = false;
 
   // Initialize interval, next and timer to correspond to the Timer in RunningTimers
@@ -107,17 +115,13 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
       m_mutex.unlock();
       if (AI_UNLIKELY(need_update_cleared_and_current_unlocked))
         current_w.relock(m_current);          // Lock m_current again.
-      Dout(dc::notice, "1. need_update = false");
-      current_w->need_update = false;         // Block subsequent calls to update_current_timer.
-      // current_w->need_update and current_w->timer are unset.
+      // current_w->timer is unset.
       Dout(dc::notice, "No timers.");
       return nullptr;                         // There is no next timer.
     }
 
     if (AI_LIKELY(!need_update_cleared_and_current_unlocked))
     {
-      Dout(dc::notice, "2. need_update = false");
-      current_w->need_update = false;         // Block subsequent calls to update_current_timer.
       current_w.unlock();                     // Unlock m_current.
       need_update_cleared_and_current_unlocked = true;
     }
@@ -138,9 +142,7 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
       increase_cache(interval, queue_w->next_expiration_point());
       m_mutex.unlock();
       current_w.relock(m_current);            // Lock m_current again.
-      Dout(dc::notice, "1. need_update = true");
-      current_w->need_update = true;          // Allow calls to update_current_timer again.
-      // current_w->need_update is true and current_w->timer is unset.
+      // current_w->timer is unset.
       Dout(dc::notice, "Expired timer.");
       return timer;                           // Do the call back.
     }
@@ -161,27 +163,17 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
 
   // Update the POSIX timer.
   Dout(dc::notice, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
-  if (AI_UNLIKELY(sigprocmask(SIG_BLOCK, nullptr, &m_blocked_signals) == -1))
-    assert(false);
-  // SIGALRM should already be blocked when we get here. Don't unblock SIGALRM anywhere except in wait_for_signals().
-  ASSERT(sigismember(&m_blocked_signals, SIGALRM));
   current_w.relock(m_current);                  // Lock m_current again.
+  sigprocmask(SIG_BLOCK, &m_timer_sigset, nullptr);
   bool pending = timer_settime(current_w->posix_timer, 0, &new_value, nullptr) == 0;
   ASSERT(pending);
   current_w->timer = timer;
+  m_a_timer_expired = false;
+  sigprocmask(SIG_UNBLOCK, &m_timer_sigset, nullptr);
 
-  // Return nullptr, but this time with current_w->need_update false and current_w->timer set.
+  // Return nullptr, but this time with current_w->timer set.
   Dout(dc::notice, "Timer started.");
   return nullptr;
-}
-
-void RunningTimers::wait_for_signals()
-{
-  Dout(dc::notice, "Calling sigsuspend.");
-  sigdelset(&m_blocked_signals, SIGALRM);               // Wait for SIGALRM.
-  sigsuspend(&m_blocked_signals);
-  ASSERT(errno == EINTR);
-  Dout(dc::notice, "Returning from sigsuspend.");
 }
 
 RunningTimers::~RunningTimers()

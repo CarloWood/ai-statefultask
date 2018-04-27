@@ -84,13 +84,14 @@ class RunningTimers : public Singleton<RunningTimers>
   struct Current {
     timer_t posix_timer;                                                // The POSIX per-process timer.
     Timer* timer;                                                       // The timer that is currently being waited on.
-    bool need_update;                                                   // Set when a call to update_current_timer is necessary.
 
     Current();
   };
   using current_t = aithreadsafe::Wrapper<Current, aithreadsafe::policy::Primitive<std::mutex>>;
+  int m_timer_signum;
+  sigset_t m_timer_sigset;
+  std::atomic_bool m_a_timer_expired;
   current_t m_current;
-  sigset_t m_blocked_signals;
 
   static int constexpr parent_of(int index)                             // Used in increase_cache and decrease_cache.
   {
@@ -181,12 +182,14 @@ class RunningTimers : public Singleton<RunningTimers>
    *
    * If there is no running timer then current_w->timer remains unset.
    * Otherwise current_w->timer is set to the next timer that will
-   * expire and the hardware timer is set to raise the SIGALRM signal
+   * expire and the hardware timer is set to raise the s_timer_signum signal
    * when that Timer expires.
    */
   Timer* update_current_timer(current_t::wat& current_w, Timer::time_point now);
 
-  void wait_for_signals();
+  sigset_t const* get_timer_sigset() const { return &m_timer_sigset; }
+  void set_a_timer_expired() { ASSERT(!m_a_timer_expired); m_a_timer_expired = true; }
+  bool a_timer_expired() { bool expected = true; return m_a_timer_expired.compare_exchange_strong(expected, false); }
 
   int to_cache_index(TimerQueueIndex index) const { return index.get_value(); }
   TimerQueueIndex to_queues_index(int index) const { return TimerQueueIndex(index); }
