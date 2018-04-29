@@ -37,9 +37,16 @@
 #include "threadsafe/aithreadid.h"
 #include "threadsafe/aithreadsafe.h"
 #include <thread>
+#include <atomic>
 #include <cassert>
 #include <condition_variable>
 #include <semaphore.h>
+
+#if defined(CWDEBUG) && !defined(DOXYGEN)
+NAMESPACE_DEBUG_CHANNELS_START
+extern channel_ct action;
+NAMESPACE_DEBUG_CHANNELS_END
+#endif
 
 /*!
  * @brief The thread pool class.
@@ -129,17 +136,119 @@ class AIThreadPool
   using worker_container_t = std::vector<Worker>;
   using workers_t = aithreadsafe::Wrapper<worker_container_t, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
-  // Number of idle workers.
-  static std::atomic_int s_idle_threads;
+  class Action
+  {
+    struct Semaphore
+    {
+      sem_t m_semaphore;
 
-  // Number of threads that need to wake up.
-  static int s_to_be_woken;
+      Semaphore()
+      {
+        sem_init(&m_semaphore, 0 , 0);
+        Dout(dc::action, "Semaphore initialized with count = 0");
+      }
 
-  // Number of times that update_RunningTimers::update_current_timer() needs to be called.
-  static std::atomic_int s_call_update_current_timer;
+      ~Semaphore()
+      {
+        sem_destroy(&m_semaphore);
+      }
 
-  // The number of potentially unhandled tasks.
-  static sem_t s_tasks;
+#ifdef CWDEBUG
+      friend std::ostream& operator<<(std::ostream& os, Semaphore& semaphore)
+      {
+        int count;
+        sem_getvalue(&semaphore.m_semaphore, &count);
+        return os << "semaphore count = " << count;
+      }
+#endif
+    };
+
+    static Semaphore s_semaphore;       // Global semaphore to wake up all threads of the thread pool.
+    std::atomic_int m_required;         // Counter for the number of actions required for this specific task.
+#ifdef CWDEBUG
+    std::string m_name;
+#endif
+
+   public:
+    Action(DEBUG_ONLY(std::string name)) : m_required(0) COMMA_DEBUG_ONLY(m_name(name)) { }
+    Action(Action&& rvalue) : m_required(0) COMMA_DEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_required == 0); }
+
+    void still_required()
+    {
+      DEBUG_ONLY(int val =) m_required.fetch_add(1);
+      Dout(dc::action, m_name << " Action::still_required(): m_required " << val << " --> " << val + 1);
+    }
+
+    void required()
+    {
+      DEBUG_ONLY(int val =) m_required.fetch_add(1);
+      sem_post(&s_semaphore.m_semaphore);
+      Dout(dc::action, m_name << " Action::required(): m_required " << val << " --> " << val + 1 << "; After calling sem_post, " << s_semaphore);
+    }
+
+    static void wakeup()
+    {
+      sem_post(&s_semaphore.m_semaphore);
+      Dout(dc::action, "Action::wakeup(): After calling sem_post, " << s_semaphore);
+    }
+
+    int available(int& duty)
+    {
+      DoutEntering(dc::action|continued_cf, m_name << " Action::available(" << duty << ") : ");
+      int queued;
+      while ((queued = m_required.load()) > 0)
+      {
+        if (!m_required.compare_exchange_weak(queued, queued - 1))
+          continue;
+        if (duty++)
+        {
+          int res;
+          do
+          {
+            res = sem_trywait(&s_semaphore.m_semaphore);
+          }
+          while (AI_UNLIKELY(res == -1 && errno == EINTR));
+#ifdef CWDEBUG
+          if (res == -1)
+          {
+            // It is possible that the semaphore count was zero if the task
+            // that we just claimed also woke up a non-idle thread. That
+            // thread now will have to go around the loop doing nothing.
+            ASSERT(errno == EAGAIN);
+            Dout(dc::action|error_cf, "sem_trywait: count was already 0");
+          }
+          else
+          {
+            Dout(dc::action, "After calling sem_trywait, " << s_semaphore);
+          }
+#endif
+        }
+        Dout(dc::finish, "m_required " << queued << " --> " << queued - 1);
+        return queued;
+      }
+      Dout(dc::finish, "no");
+      return 0;
+    }
+
+    static void wait()
+    {
+      DoutEntering(dc::action, "Action::wait()");
+      // Loop until sem_wait return 0, because if it returns -1
+      // due to a signal then we can't rely on it that that was
+      // our timer signal (it could be any signal). Nor am I
+      // sure that it is portable to rely upon sem_wait returning
+      // at all when a signal handler was called.
+      int res;
+      do
+      {
+        res = sem_wait(&s_semaphore.m_semaphore);
+        // Other errors never happen, do they?
+        ASSERT(res == 0 || errno == EINTR);
+      }
+      while (res == -1);
+      Dout(dc::action, "After calling sem_wait, " << s_semaphore);
+    }
+  };
 
   struct PriorityQueue : public AIObjectQueue<std::function<bool()>>
   {
@@ -149,12 +258,18 @@ class AIThreadPool
                                                 // (number of worker threads minus m_total_reserved_threads minus the number of
                                                 //  worker threads that already work on lower priority queues).
                                                 // The lowest priority queue must have a value of 0.
+    // m_task_action is mutable because it must be changed in const member functions:
+    // The 'const' there means 'by multiple threads at the same time' (aka "read access").
+    // The non-const member functions of Action are thread-safe.
+    mutable Action m_task_action;               // Keep track of number of actions required (number of tasks in the queue).
 
     PriorityQueue(int capacity, int previous_total_reserved_threads, int reserved_threads) :
         AIObjectQueue<std::function<bool()>>(capacity),
         m_previous_total_reserved_threads(previous_total_reserved_threads),
         m_total_reserved_threads(previous_total_reserved_threads + reserved_threads),
         m_available_workers(AIThreadPool::instance().number_of_workers() - m_total_reserved_threads)
+        COMMA_DEBUG_ONLY(m_task_action("\"Task queue #" + std::to_string(m_previous_total_reserved_threads) + "\""))
+            // m_previous_total_reserved_threads happens to be equal to the queue number, provided each queue on reserves one thread :/.
       { }
 
     PriorityQueue(PriorityQueue&& rvalue) :
@@ -162,6 +277,7 @@ class AIThreadPool
         m_previous_total_reserved_threads(rvalue.m_previous_total_reserved_threads),
         m_total_reserved_threads(rvalue.m_total_reserved_threads),
         m_available_workers(rvalue.m_available_workers.load())
+        COMMA_DEBUG_ONLY(m_task_action(std::move(rvalue.m_task_action)))
       { }
 
     void available_workers_add(int n) { m_available_workers.fetch_add(n, std::memory_order_relaxed); }
@@ -176,13 +292,39 @@ class AIThreadPool
      * @brief Wake up one thread to process the just added function, if needed.
      *
      * When the threads of the thread pool have nothing to do, they go to
-     * sleep by waiting on a condition variable. Call this function every
-     * time a new message was added to a queue in order to make sure that
-     * there is a thread that will handle it.
+     * sleep by waiting on a semaphore. Call this function every time a new
+     * message was added to a queue in order to make sure that there is a
+     * thread that will handle it.
+     *
+     * This function is const because it is OK if multiple threads call it at
+     * the same time and therefore accessed as part of getting a "read" lock,
+     * which only gives const access.
      */
     void notify_one() const
     {
-      sem_post(&s_tasks);
+      Dout(dc::notice, "Calling m_task_action.required() [Task queue #" << m_previous_total_reserved_threads << "]");
+      m_task_action.required();
+    }
+
+    void still_required() const
+    {
+      Dout(dc::notice, "Calling m_task_action.still_required() [Task queue #" << m_previous_total_reserved_threads << "]");
+      m_task_action.still_required();
+    }
+
+    /*!
+     * @brief If a task is available then take ownership.
+     *
+     * If this function returns true then the current thread is responsible
+     * for executing one task from the queue.
+     *
+     * This function is const because it is OK if multiple threads call it at
+     * the same time and therefore accessed as part of getting a "read" lock,
+     * which only gives const access.
+     */
+    bool task_available(int& duty) const
+    {
+      return m_task_action.available(duty);
     }
   };
 
@@ -242,6 +384,12 @@ class AIThreadPool
     static int get_handle();
     bool running() const { return !m_quit.load(std::memory_order_acquire); } // We are running as long as m_quit isn't set.
   };
+
+  // Number of idle workers.
+  static std::atomic_int s_idle_threads;
+
+  // Number of times that update_RunningTimers::update_current_timer() needs to be called.
+  static Action s_call_update_current_timer;
 
   // Define a read/write lock protected container with all Worker`s.
   //
@@ -383,9 +531,8 @@ class AIThreadPool
    */
   static void call_update_current_timer()
   {
-    s_call_update_current_timer.fetch_add(1);
-    if (sem_trywait(&s_tasks) == -1 && errno == EAGAIN)
-      sem_post(&s_tasks);
+    Dout(dc::notice, "Calling s_call_update_current_timer.required()");
+    s_call_update_current_timer.required();
   }
 
   //------------------------------------------------------------------------

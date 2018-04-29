@@ -6,7 +6,7 @@
 
 extern "C" void timer_signal_handler(int)
 {
-  Dout(dc::notice, "Calling timer_signal_handler()");
+  DoutEntering(dc::notice, "timer_signal_handler()");
   statefultask::RunningTimers::instance().set_a_timer_expired();
   AIThreadPool::call_update_current_timer();
 }

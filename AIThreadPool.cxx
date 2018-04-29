@@ -42,13 +42,7 @@ std::atomic<AIThreadPool*> AIThreadPool::s_instance;
 std::atomic_int AIThreadPool::s_idle_threads;
 
 //static
-int AIThreadPool::s_to_be_woken;
-
-//static
-std::atomic_int AIThreadPool::s_call_update_current_timer;
-
-//static
-sem_t AIThreadPool::s_tasks;
+AIThreadPool::Action AIThreadPool::s_call_update_current_timer DEBUG_ONLY(("\"Timer\""));
 
 //static
 void AIThreadPool::Worker::main(int const self)
@@ -67,16 +61,16 @@ void AIThreadPool::Worker::main(int const self)
   std::function<bool()> f;
   AIQueueHandle q;
   q.set_to_zero();      // Zero is the highest priority queue.
+  int duty = 0;
   while (workers_t::rat(thread_pool.m_workers)->at(self).running())
   {
-    Dout(dc::notice, "Beginning of thread pool main loop for queue " << q);
+    Dout(dc::notice, "Beginning of thread pool main loop (q = " << q << ')');
 
     Timer::time_point now;
-    int need_timer_thread;
-    while ((need_timer_thread = s_call_update_current_timer.load()) > 0)
+    while (s_call_update_current_timer.available(duty))
     {
-      if (!s_call_update_current_timer.compare_exchange_weak(need_timer_thread, need_timer_thread - 1))
-        continue;
+      Dout(dc::notice, "Took ownership of timer action.");
+
       // First check if there have any timers expired.
       Timer* expired_timer;
       {
@@ -106,24 +100,33 @@ void AIThreadPool::Worker::main(int const self)
       expired_timer->expire();
     }
 
-    bool empty;
     bool go_idle = false;
     { // Lock the queue for other consumer threads.
       auto queues_r = thread_pool.queues_read_access();
       // Obtain a reference to queue `q`.
       queues_container_t::value_type const& queue = (*queues_r)[q];
+      bool empty = !queue.task_available(duty);
+      if (!empty)
       {
+        Dout(dc::notice, "Took ownership of queue " << q << " action.");
+
         // Obtain and lock consumer access this queue.
         auto access = queue.consumer_access();
+#ifdef CWDEBUG
         // The number of messages in the queue.
         int length = access.length();
-        empty = length == 0;
-        // If the queue is not empty, move one object from the queue to `f`.
-        if (!empty)
-          f = access.move_out();
+        ASSERT(length > 0);
+#endif
+        // Move one object from the queue to `f`.
+        f = access.move_out();
       }
-      if (empty)
+      else
       {
+        // Note that at this point it is possible that queue.consumer_access().length() > 0 (aka, the queue is NOT empty);
+        // if that is the case than another thread is between the lines 'bool empty = !queue.task_available(duty)'
+        // and 'auto access = queue.consumer_access()'. I.e. it took ownership of the task but didn't extract it from
+        // the queue yet.
+
         // Process lower priority queues if any.
         // We are not available anymore to work on lower priority queues: we're already going to work on them.
         // However, go idle if we're not allowed to process queues with a lower priority.
@@ -131,7 +134,7 @@ void AIThreadPool::Worker::main(int const self)
           queue.increment_active_workers();             // Undo the above decrement.
         else if (!(go_idle = ++q == queues_r->iend()))  // If there is no lower priority queue left, then just go idle.
         {
-          Dout(dc::notice, "Continueing with next queue.");
+          Dout(dc::notice, "Continuing with next queue.");
           continue;                                     // Otherwise, handle the lower priority queue.
         }
         if (go_idle)
@@ -204,12 +207,22 @@ void AIThreadPool::Worker::main(int const self)
           if (active)
           {
             queues_container_t::value_type const& queue = (*queues_r)[q];
-            auto pa = queue.producer_access();
-            int length = pa.length();
-            if (length < queue.capacity() && (next_q != q || length > 0))
+            bool put_back;
             {
-              // Put f() back into q.
-              pa.move_in(std::move(f));
+              auto pa = queue.producer_access();
+              int length = pa.length();
+              put_back = length < queue.capacity() && (next_q != q || length > 0);
+              if (put_back)
+              {
+                // Put f() back into q.
+                pa.move_in(std::move(f));
+              }
+            } // Unlock queue.
+            if (put_back)
+            {
+              // Don't call required() because that also wakes up a thread
+              // while this thread already goes to the top of the loop again.
+              queue.still_required();
               break;
             }
             // Otherwise, call f() again.
@@ -218,19 +231,25 @@ void AIThreadPool::Worker::main(int const self)
       }
       q = next_q;
     }
-    else
+    else // go_idle
     {
+      Dout(dc::action(duty == 0), "Thread had nothing to do.");
+
       // A thread that enters this block has nothing to do.
-      Dout(dc::notice, "Entering sem_wait()");
       s_idle_threads.fetch_add(1);
-      int res = sem_wait(&s_tasks);
+      Action::wait();
       s_idle_threads.fetch_sub(1);
       if (RunningTimers::instance().a_timer_expired())
       {
         auto current_w{RunningTimers::instance().access_current()};
         current_w->timer = nullptr;     // The timer expired.
       }
-      Dout(dc::notice, "Leaving sem_wait() with " << res);
+
+      // We just left sem_wait(); reset 'duty' to count how many task we perform
+      // for this single wake-up. Calling available() with a duty larger than
+      // zero will call sem_trywait in an attempt to decrease the semaphore
+      // count alongside the Action::m_required atomic counter.
+      duty = 0;
     }
   }
 
@@ -277,7 +296,7 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
     workers_r->at(number_of_threads - 1 - i).quit();
   // Wake up all threads, so the ones that need to quit can quit.
   for (int i = 0; i < number_of_threads; ++i)
-    sem_post(&s_tasks);
+    Action::wakeup();
   // If the relaxed stores to the m_quit's is very slow then we might
   // be calling join() on threads before they can see their m_quit
   // flag being set. This is not a problem. However, theoretically
@@ -312,9 +331,6 @@ AIThreadPool::AIThreadPool(int number_of_threads, int max_number_of_threads) :
   // Allow access to the thread pool from everywhere without having to pass it around.
   s_instance = this;
 
-  // Thread-shared semaphore; no current tasks.
-  sem_init(&s_tasks, 0, 0);
-
   workers_t::wat workers_w(m_workers);
   assert(workers_w->empty());                    // Paranoia; even in the case of constructing a second AIThreadPool
                                                  // after destructing the first, this should be the case here.
@@ -334,9 +350,6 @@ AIThreadPool::~AIThreadPool()
     workers_t::rat workers_r(m_workers);
     remove_threads(workers_r, workers_r->size());
   }
-
-  // Destroy the semaphore.
-  sem_destroy(&s_tasks);
 
   // Allow construction of another AIThreadPool.
   s_instance = nullptr;
@@ -380,8 +393,12 @@ AIQueueHandle AIThreadPool::new_queue(int capacity, int reserved_threads)
   return index;
 }
 
+//static
+AIThreadPool::Action::Semaphore AIThreadPool::Action::s_semaphore;
+
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 channel_ct threadpool("THREADPOOL");
+channel_ct action("ACTION");
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
