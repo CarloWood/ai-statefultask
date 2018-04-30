@@ -6,9 +6,10 @@
 
 extern "C" void timer_signal_handler(int)
 {
-  DoutEntering(dc::notice, "timer_signal_handler()");
+  //write(1, "\nEntering timer_signal_handler()\n", 33);
   statefultask::RunningTimers::instance().set_a_timer_expired();
   AIThreadPool::call_update_current_timer();
+  //write(1, "\nLeaving timer_signal_handler()\n", 32);
 }
 
 namespace statefultask {
@@ -136,9 +137,9 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
     duration = next - now;
     if (duration.count() <= 0)                // Did this timer already expire?
     {
-      Dout(dc::notice, "Timer " << (void*)timer << " expired " << -std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count() << " ns ago.");
       m_mutex.unlock();
       timer = queue_w->pop(m_mutex);
+      Dout(dc::notice|flush_cf, "Timer " << (void*)timer << " expired " << -std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count() << " ns ago.");
       increase_cache(interval, queue_w->next_expiration_point());
       m_mutex.unlock();
       current_w.relock(m_current);            // Lock m_current again.
@@ -162,7 +163,7 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
   new_value.it_value.tv_nsec = ns.count();
 
   // Update the POSIX timer.
-  Dout(dc::notice, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
+  Dout(dc::notice|flush_cf, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
   current_w.relock(m_current);                  // Lock m_current again.
   sigprocmask(SIG_BLOCK, &m_timer_sigset, nullptr);
   bool pending = timer_settime(current_w->posix_timer, 0, &new_value, nullptr) == 0;
@@ -172,7 +173,7 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
   sigprocmask(SIG_UNBLOCK, &m_timer_sigset, nullptr);
 
   // Return nullptr, but this time with current_w->timer set.
-  Dout(dc::notice, "Timer started.");
+  Dout(dc::notice|flush_cf, "Timer " << (void*)timer << " started.");
   return nullptr;
 }
 

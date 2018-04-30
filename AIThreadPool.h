@@ -32,6 +32,7 @@
 #include "AIObjectQueue.h"
 #include "AIQueueHandle.h"
 #include "debug.h"
+#include "signal_safe_printf.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "threadsafe/AIReadWriteSpinLock.h"
 #include "threadsafe/aithreadid.h"
@@ -154,11 +155,16 @@ class AIThreadPool
       }
 
 #ifdef CWDEBUG
-      friend std::ostream& operator<<(std::ostream& os, Semaphore& semaphore)
+      int get_count()
       {
         int count;
-        sem_getvalue(&semaphore.m_semaphore, &count);
-        return os << "semaphore count = " << count;
+        sem_getvalue(&m_semaphore, &count);
+        return count;
+      }
+
+      friend std::ostream& operator<<(std::ostream& os, Semaphore& semaphore)
+      {
+        return os << "semaphore count = " << semaphore.get_count();
       }
 #endif
     };
@@ -181,9 +187,10 @@ class AIThreadPool
 
     void required()
     {
-      DEBUG_ONLY(int val =) m_required.fetch_add(1);
+      /*DEBUG_ONLY(int val =)*/ m_required.fetch_add(1);
       sem_post(&s_semaphore.m_semaphore);
-      Dout(dc::action, m_name << " Action::required(): m_required " << val << " --> " << val + 1 << "; After calling sem_post, " << s_semaphore);
+      //signal_safe_printf("\n%s Action::required(): m_required %d --> %d; After calling sem_post, semaphore count = %d\n",
+      //    m_name.c_str(), val, val + 1, s_semaphore.get_count());
     }
 
     static void wakeup()
@@ -531,7 +538,7 @@ class AIThreadPool
    */
   static void call_update_current_timer()
   {
-    Dout(dc::notice, "Calling s_call_update_current_timer.required()");
+    //write(1, "\nCalling s_call_update_current_timer.required()\n", 48);
     s_call_update_current_timer.required();
   }
 

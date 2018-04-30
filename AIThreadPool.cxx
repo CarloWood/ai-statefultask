@@ -74,7 +74,17 @@ void AIThreadPool::Worker::main(int const self)
       // First check if there have any timers expired.
       Timer* expired_timer;
       {
+        // If this is (still) true then it wasn't reset by a thread that was
+        // woken up by the signal handler, which means nothing except that
+        // we were not just woken up.
+        bool last_timer_expired = RunningTimers::instance().a_timer_expired();
         auto current_w{RunningTimers::instance().access_current()};
+        if (last_timer_expired)
+        {
+          // This most likely happens when all threads were busy when the timer signal went off.
+          Dout(dc::notice|flush_cf, "Timer " << (void*)current_w->timer << " did not wake up this thread.");
+          current_w->timer = nullptr;     // The timer expired.
+        }
         // Don't call update_current_timer when we're still waiting for the current timer to expire.
         // The reasoning here is: if the FIRST timer to expire didn't expire yet,
         // then we'll have no expired timers at all.
@@ -242,6 +252,7 @@ void AIThreadPool::Worker::main(int const self)
       if (RunningTimers::instance().a_timer_expired())
       {
         auto current_w{RunningTimers::instance().access_current()};
+        Dout(dc::notice|flush_cf, "Timer " << (void*)current_w->timer << " woke up a thread.");
         current_w->timer = nullptr;     // The timer expired.
       }
 
