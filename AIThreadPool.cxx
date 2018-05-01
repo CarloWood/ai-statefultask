@@ -58,11 +58,16 @@ void AIThreadPool::Worker::main(int const self)
   while (thread_pool.queues_read_access()->size() == 0)
     std::this_thread::sleep_for(std::chrono::microseconds(10));
 
-  std::function<bool()> f;
-  AIQueueHandle q;
-  q.set_to_zero();      // Zero is the highest priority queue.
-  int duty = 0;
-  while (workers_t::rat(thread_pool.m_workers)->at(self).running())
+  AIQueueHandle q;              // The current / next queue that this thread is processing.
+  q.set_to_zero();              // Start with the highest priority queue (zero).
+  std::function<bool()> task;   // The current / last task (moved out of the queue) that this thread is executing / executed.
+  int duty = 0;                 // The number of tasks / actions that this thread performed since it woke up from sem_wait().
+
+  std::atomic_bool quit{false}; // Keep this boolean outside of the Worker so it isn't necessary to lock m_workers every loop.
+  workers_t::wat(thread_pool.m_workers)->at(self).running(&quit);
+
+  // The thread will keep running until Worker::quit() is called.
+  while (!quit.load(std::memory_order_relaxed))
   {
     Dout(dc::notice, "Beginning of thread pool main loop (q = " << q << ')');
 
@@ -127,8 +132,8 @@ void AIThreadPool::Worker::main(int const self)
         int length = access.length();
         ASSERT(length > 0);
 #endif
-        // Move one object from the queue to `f`.
-        f = access.move_out();
+        // Move one object from the queue to `task`.
+        task = access.move_out();
       }
       else
       {
@@ -154,7 +159,7 @@ void AIThreadPool::Worker::main(int const self)
           while (q != queues_r->ibegin())
             (*queues_r)[--q].increment_active_workers();
         }
-      } // Not empty - not idle - need to invoke the functor f().
+      } // Not empty - not idle - need to invoke the functor task().
     } // Unlock the queue.
 
     if (!go_idle)
@@ -167,9 +172,9 @@ void AIThreadPool::Worker::main(int const self)
       while (active)
       {
         // ***************************************************
-        active = f();   // Invoke the functor.               *
+        active = task();   // Invoke the functor.            *
         // ***************************************************
-        Dout(dc::notice, "f() returned " << active);
+        Dout(dc::notice, "task() returned " << active);
 
         // Determine the next queue to handle: the highest priority queue that doesn't have all reserved threads idle.
         next_q = q;
@@ -197,15 +202,9 @@ void AIThreadPool::Worker::main(int const self)
             // to the higher priority queue the next time.
             //
             // Nevertheless, this defines the canonical meaning of s_idle_threads:
-            // It must be the number of threads are readily available to start
-            // working on higher priority queues; which in itself means, can be
-            // woken up instantly by a call to AIThreadPool::notify_one().
-            // Since the thread that is performing timer call backs is not
-            // readily available to be woken up for higher priority queues, it
-            // should not contribute to the value of s_idle_threads. But since
-            // the thread that is responsible for timer signals can be woken up
-            // to handle a task, it DOES contribute to s_idle_threads while it
-            // is suspended waiting for signals.
+            // It must be the number of threads that are readily available to start
+            // working on higher priority queues; which in itself means "can be
+            // woken up instantly by a call to AIThreadPool::notify_one()".
             if (s_idle_threads.load(std::memory_order_relaxed) >= queue.get_total_reserved_threads())
             {
               ++next_q;   // Stay on the last queue.
@@ -224,8 +223,8 @@ void AIThreadPool::Worker::main(int const self)
               put_back = length < queue.capacity() && (next_q != q || length > 0);
               if (put_back)
               {
-                // Put f() back into q.
-                pa.move_in(std::move(f));
+                // Put task() back into q.
+                pa.move_in(std::move(task));
               }
             } // Unlock queue.
             if (put_back)
@@ -235,7 +234,7 @@ void AIThreadPool::Worker::main(int const self)
               queue.still_required();
               break;
             }
-            // Otherwise, call f() again.
+            // Otherwise, call task() again.
           }
         }
       }
@@ -308,11 +307,11 @@ void AIThreadPool::remove_threads(workers_t::rat& workers_r, int n)
   // Wake up all threads, so the ones that need to quit can quit.
   for (int i = 0; i < number_of_threads; ++i)
     Action::wakeup();
-  // If the relaxed stores to the m_quit's is very slow then we might
-  // be calling join() on threads before they can see their m_quit
-  // flag being set. This is not a problem. However, theoretically
-  // the store could be delayed forever, so to be formerly correct,
-  // lets flush all stores here before calling join().
+  // If the relaxed stores to the quit atomic_bool`s is very slow
+  // then we might be calling join() on threads before they can see
+  // the flag being set. This should not be a problem but theoretically
+  // the store could be delayed forever, so to be formerly correct
+  // lets flush all stores here- before calling join().
   std::atomic_thread_fence(std::memory_order_release);
   // Join the n last threads in the container.
   for (int i = 0; i < n; ++i)
