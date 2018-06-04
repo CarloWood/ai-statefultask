@@ -816,7 +816,13 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
         waiting = state_w->wait_condition != nullptr;
         state = state_w->base_state;
         run_state = begin_loop();
-        event = normal_run;
+        if (event != normal_run)
+        {
+          // I don't think current_handler is set for not-normal_run's. If this fails then it might be needed to leave current_handler alone.
+          ASSERT(!state_w->current_handler);
+          event = normal_run;
+          state_w->current_handler = Handler::immediate;
+        }
       }
       else
       {
@@ -1279,6 +1285,8 @@ void AIStatefulTask::abort()
     sub_state_type::wat sub_state_w(mSubState);
     // Mark that we are aborted, iff we didn't already finish.
     sub_state_w->aborted = !sub_state_w->finished;
+    // Schedule a new run when this task is waiting.
+    is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle;
     // No longer say we woke up when signal() is called.
     if (sub_state_w->idle)
     {
@@ -1287,8 +1295,6 @@ void AIStatefulTask::abort()
     }
     // Mark that a re-entry of multiplex() is necessary.
     sub_state_w->need_run = true;
-    // Schedule a new run when this task is waiting.
-    is_waiting = state_r->base_state == bs_multiplex && sub_state_w->idle;
   }
   if (is_waiting && !mMultiplexMutex.self_locked())
     multiplex(insert_abort);

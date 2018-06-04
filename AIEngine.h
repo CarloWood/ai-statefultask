@@ -155,7 +155,7 @@ class AIEngine
    * finished, are waiting (idle) or did yield to a different engine.
    *
    * @param name A human readable name for this engine. Mainly used for debug output.
-   * @param max_duration The maximum duration for which new tasks are run per loop. See SetMaxDuration.
+   * @param max_duration The maximum duration per loop (in milliseconds) during which new tasks are (re)started. See setMaxDuration.
    */
   AIEngine(char const* name, float max_duration = 0.0f) : mName(name) { setMaxDuration(max_duration); }
 

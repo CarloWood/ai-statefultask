@@ -34,6 +34,7 @@
 #pragma once
 
 #include "AIStatefulTask.h"
+#include "Timer.h"
 #include <atomic>
 
 /*!
@@ -81,7 +82,7 @@ class AITimer : public AIStatefulTask
 
  private:
   std::atomic_bool mHasExpired;  	//!< Set to true after the timer expired.
-  //AIFrameTimer mFrameTimer;           //!< The actual timer that this object wraps.
+  statefultask::Timer mTimer;           //!< The actual timer that this object wraps.
   double mInterval;                     //!< Input variable: interval after which the event will be generated, in seconds.
 
  public:
@@ -92,7 +93,7 @@ class AITimer : public AIStatefulTask
 #ifdef CWDEBUG
     AIStatefulTask(debug),
 #endif
-    mHasExpired(false), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
+    mHasExpired(false), mTimer([this](){ expired(); }), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
   /*!
    * @brief Set the interval after which the timer should expire.
@@ -116,9 +117,6 @@ class AITimer : public AIStatefulTask
 
   //! Implemenation of state_str for run states.
   char const* state_str_impl(state_type run_state) const override;
-
-  //! Handle initializing the object.
-  void initialize_impl() override;
 
   //! Handle mRunState.
   void multiplex_impl(state_type run_state) override;

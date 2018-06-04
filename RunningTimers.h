@@ -197,6 +197,8 @@ class RunningTimers : public Singleton<RunningTimers>
   //! Cancel the timer associated with handle.
   void cancel(Timer::Handle const& handle)
   {
+    DoutEntering(dc::notice, "RunningTimers::cancel(" << &handle << ")");
+
     if (AI_UNLIKELY(!handle.is_running()))
     {
       Dout(dc::warning, "Calling cancel() for a timer that isn't running.");

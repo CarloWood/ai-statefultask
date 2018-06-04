@@ -57,7 +57,7 @@ void AITimer::multiplex_impl(state_type run_state)
   {
     case AITimer_start:
       {
-        //mFrameTimer.create(mInterval, std::bind(&AITimer::expired, *this));
+        mTimer.start(statefultask::Interval<5, std::chrono::seconds>());
 	wait_until([&]{ return mHasExpired.load(std::memory_order_relaxed); }, 1, AITimer_expired);
         break;
       }
@@ -71,5 +71,5 @@ void AITimer::multiplex_impl(state_type run_state)
 
 void AITimer::abort_impl()
 {
-  //mFrameTimer.cancel();
+  mTimer.stop();
 }
