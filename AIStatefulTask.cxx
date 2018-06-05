@@ -848,14 +848,17 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
                 auto access = queue.producer_access();
                 length = access.length();
                 if (length < capacity) // Buffer not full?
+                {
+                  boost::intrusive_ptr<AIStatefulTask> task(this);
                   access.move_in(
-                      [this]()
+                      [task]()
                       {
-                        Handler const handler{multiplex_state_type::crat(mState)->current_handler};
-                        multiplex(normal_run, handler);
-                        return active(handler);
+                        Handler const handler{multiplex_state_type::crat(task->mState)->current_handler};
+                        task->multiplex(normal_run, handler);
+                        return task->active(handler);
                       }
                   );
+                }
               }
               if (AI_UNLIKELY(length == capacity))
               {

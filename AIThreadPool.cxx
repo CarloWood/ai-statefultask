@@ -55,8 +55,13 @@ void AIThreadPool::Worker::main(int const self)
   sigprocmask(SIG_UNBLOCK, RunningTimers::instance().get_timer_sigset(), nullptr);
 
   // Wait until we have at least one queue.
+  int count = 0;
   while (thread_pool.queues_read_access()->size() == 0)
+  {
     std::this_thread::sleep_for(std::chrono::microseconds(10));
+    if (++count > 10000)
+      DoutFatal(dc::fatal, "No thread pool queue found after 100 ms. Call thread_pool.new_queue() at least once immediately after creating the ThreadPool object!");
+  }
 
   AIQueueHandle q;              // The current / next queue that this thread is processing.
   q.set_to_zero();              // Start with the highest priority queue (zero).

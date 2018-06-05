@@ -239,7 +239,10 @@ class AIThreadPool
 
     static void wait()
     {
+      // If this is the last thread that goes to sleep, it might be the last debug output for a while.
+      // Therefore flush all debug output here.
       DoutEntering(dc::action, "Action::wait()");
+      Debug(libcw_do.get_ostream()->flush());
       // Loop until sem_wait return 0, because if it returns -1
       // due to a signal then we can't rely on it that that was
       // our timer signal (it could be any signal). Nor am I
