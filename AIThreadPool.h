@@ -344,13 +344,14 @@ class AIThreadPool
     // However, the (read) lock on the worker_container_t only protects the internals
     // of the container, not its elements. So, all elements are considered mutable.
     mutable std::thread m_thread;
-    std::atomic_bool* m_quit;
+    mutable bool m_quit_called;         // Set after calling quit().
+    std::atomic_bool* m_quit;           // Only valid while m_quit_called is false (or while we're still inside Worker::main()).
 
     // Construct a new Worker; do not associate it with a running thread yet.
     // A write lock on m_workers is required before calling this constructor;
     // that then blocks the thread from accessing m_quit until that lock is released
     // so that we have time to move the Worker in place (using emplace_back()).
-    Worker(worker_function_t worker_function, int self) : m_thread(std::bind(worker_function, self)), m_quit(nullptr) { }
+    Worker(worker_function_t worker_function, int self) : m_thread(std::bind(worker_function, self)), m_quit_called(false), m_quit(nullptr) { }
 
     // The move constructor can only be called as a result of a reallocation, as a result
     // of a size increase of the std::vector<Worker> (because Worker`s are put into it with
@@ -358,15 +359,15 @@ class AIThreadPool
     // That means that at the moment the move constuctor is called we have the exclusive
     // write lock on the vector and therefore no other thread can access this Worker.
     // It is therefore safe to non-atomically copy the pointer m_quit.
-    Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)), m_quit(rvalue.m_quit) { rvalue.m_quit = nullptr; }
+    Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)), m_quit_called(rvalue.m_quit_called), m_quit(rvalue.m_quit)
+        { rvalue.m_quit = nullptr; rvalue.m_quit_called = false; }
 
     // Destructor.
     ~Worker()
     {
-      // It's ok to use memory_order_relaxed here because this is the
-      // same thread that (should have) called quit() in the first place.
+      DoutEntering(dc::notice, "~Worker() [" << (void*)this << "]");
       // Call quit() before destructing a Worker.
-      ASSERT(!m_quit || m_quit->load(std::memory_order_relaxed));
+      ASSERT(!m_quit || m_quit_called);
       // Call join() before destructing a Worker.
       ASSERT(!m_thread.joinable());
     }
@@ -380,17 +381,20 @@ class AIThreadPool
     {
       // Call running() before calling quit().
       ASSERT(m_quit);
+      Dout(dc::notice, "Calling Worker::quit() [" << (void*)this << "]");
       m_quit->store(true, std::memory_order_relaxed);
+      // From this point on we might leave Worker::main() which makes m_quit invalid.
+      m_quit_called = true;
     }
 
     // Wait for the thread to have exited.
     void join() const
     {
-      // Call quit() before calling join().
+      // Call running() and quit() before calling join().
       ASSERT(m_quit);
       // It's ok to use memory_order_relaxed here because this is the same thread that (should have) called quit() in the first place.
       // Only call join() on Worker`s that are quitting.
-      ASSERT(m_quit->load(std::memory_order_relaxed));
+      ASSERT(m_quit_called);
       // Only call join() once (this should be true for all Worker`s that were created and not moved).
       ASSERT(m_thread.joinable());
       m_thread.join();
