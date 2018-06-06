@@ -249,6 +249,9 @@ void AIThreadPool::Worker::main(int const self)
     {
       Dout(dc::action(duty == 0), "Thread had nothing to do.");
 
+      // Destruct the current task if any, to decrement the RefCount.
+      task = nullptr;
+
       // A thread that enters this block has nothing to do.
       s_idle_threads.fetch_add(1);
       Action::wait();

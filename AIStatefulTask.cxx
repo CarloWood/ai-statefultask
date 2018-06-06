@@ -443,7 +443,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
   // Paranoia; this can be removed after a while. As a result of this, handler is true when event == normal_run.
   ASSERT(event != normal_run || handler);
 
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::multiplex(" << event_str(event) << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::multiplex(" << event_str(event) << ", " << handler << ") [" << (void*)this << "]");
 
   base_state_type state;
   state_type run_state;
