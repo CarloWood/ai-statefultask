@@ -338,63 +338,110 @@ class AIThreadPool
     }
   };
 
+  // The life cycle of a Quit object:
+  // - There is one Quit object per Worker and thus per (thread pool) thread.
+  // - The Quit object is created with quit_ptr == nullptr before the thread is created.
+  //   From this moment on forward it is possible that quit() is called.
+  // - Once the thread is initialized and the std::atomic_bool exists, Quit::running is called.
+  // - The thread never exits (and thus quit_ptr stays valid) until Quit::quit() was called.
+  // Hence,
+  // state 1: quit_ptr == nullptr and quit_called == false.
+  // state 2: quit_ptr == adress of valid std::atomic_bool which is false and quit_called == false.
+  // state 3: quit_ptr != nullptr (nl. adress of valid std::atomic_bool which is true) and quit_called == true.
+  // state 4: quit_ptr != nullptr but invalid and quit_called == true.
+  // state 5: quit_ptr == nullptr and quit_called == true.
+  //
+  // 1 -(running called)-> 2 -(quit called)-> 3 -(thread exited)-> 4.
+  // or
+  // 1 -(quit called)-> 5 -(running called)-> 3 -(thread exited)-> 4.
+  //
+  // cleanly_terminated() is for debugging purposes and tests that both running() and quit() were called.
+  struct Quit
+  {
+    bool m_quit_called;                 // Set after calling quit().
+    std::atomic_bool* m_quit_ptr;       // Only valid while m_quit_called is false (or while we're still inside Worker::main()).
+
+    Quit() : m_quit_called(false), m_quit_ptr(nullptr) { }
+
+    bool cleanly_terminated() const { return m_quit_ptr && m_quit_called; }
+    bool quit_called() const { return m_quit_called; }
+
+    void running(std::atomic_bool* quit)
+    {
+      m_quit_ptr = quit;
+      *m_quit_ptr = m_quit_called;
+    }
+
+    void quit()
+    {
+      if (m_quit_ptr)
+        m_quit_ptr->store(true, std::memory_order_relaxed);
+      // From this point on we might leave Worker::main() which makes m_quit invalid.
+      m_quit_called = true;
+    }
+  };
+
   struct Worker
   {
+    using quit_t = aithreadsafe::Wrapper<Quit, aithreadsafe::policy::Primitive<std::mutex>>;
     // A Worker is only const when we access it from a const worker_container_t.
     // However, the (read) lock on the worker_container_t only protects the internals
     // of the container, not its elements. So, all elements are considered mutable.
+    mutable quit_t m_quit;              // Create m_quit before m_thread.
     mutable std::thread m_thread;
-    mutable bool m_quit_called;         // Set after calling quit().
-    std::atomic_bool* m_quit;           // Only valid while m_quit_called is false (or while we're still inside Worker::main()).
+#ifdef CWDEBUG
+    std::thread::native_handle_type m_thread_id;
+#endif
 
     // Construct a new Worker; do not associate it with a running thread yet.
     // A write lock on m_workers is required before calling this constructor;
     // that then blocks the thread from accessing m_quit until that lock is released
     // so that we have time to move the Worker in place (using emplace_back()).
-    Worker(worker_function_t worker_function, int self) : m_thread(std::bind(worker_function, self)), m_quit_called(false), m_quit(nullptr) { }
+    Worker(worker_function_t worker_function, int self) :
+        m_thread(std::bind(worker_function, self)) COMMA_DEBUG_ONLY(m_thread_id(m_thread.native_handle())) { }
 
     // The move constructor can only be called as a result of a reallocation, as a result
     // of a size increase of the std::vector<Worker> (because Worker`s are put into it with
-    // emplace_back(), Worker is not copyable, and we never move a Worker out of the vector).
+    // emplace_back(), Worker is not copyable and we never move a Worker out of the vector).
     // That means that at the moment the move constuctor is called we have the exclusive
     // write lock on the vector and therefore no other thread can access this Worker.
-    // It is therefore safe to non-atomically copy the pointer m_quit.
-    Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread)), m_quit_called(rvalue.m_quit_called), m_quit(rvalue.m_quit)
-        { rvalue.m_quit = nullptr; rvalue.m_quit_called = false; }
+    // It is therefore safe to simply copy m_quit.
+    Worker(Worker&& rvalue) : m_thread(std::move(rvalue.m_thread))
+    {
+      quit_t::wat quit_w(m_quit);
+      quit_t::rat rvalue_quit_w(rvalue.m_quit);
+      quit_w->m_quit_called = rvalue_quit_w->m_quit_called;
+      quit_w->m_quit_ptr = rvalue_quit_w->m_quit_ptr;
+      rvalue_quit_w->m_quit_called = false;
+      rvalue_quit_w->m_quit_ptr = nullptr;
+    }
 
     // Destructor.
     ~Worker()
     {
-      DoutEntering(dc::notice, "~Worker() [" << (void*)this << "]");
+      DoutEntering(dc::notice, "~Worker() [" << (void*)this << "][" << std::hex << m_thread_id << "]");
       // Call quit() before destructing a Worker.
-      ASSERT(!m_quit || m_quit_called);
+      ASSERT(quit_t::rat(m_quit)->cleanly_terminated());
       // Call join() before destructing a Worker.
       ASSERT(!m_thread.joinable());
     }
 
    public:
     // Set thread to running.
-    void running(std::atomic_bool* quit) { m_quit = quit; }
+    void running(std::atomic_bool* quit) const { quit_t::wat(m_quit)->running(quit); }
 
     // Inform the thread that we want it to stop running.
     void quit() const
     {
-      // Call running() before calling quit().
-      ASSERT(m_quit);
       Dout(dc::notice, "Calling Worker::quit() [" << (void*)this << "]");
-      m_quit->store(true, std::memory_order_relaxed);
-      // From this point on we might leave Worker::main() which makes m_quit invalid.
-      m_quit_called = true;
+      quit_t::wat(m_quit)->quit();
     }
 
     // Wait for the thread to have exited.
     void join() const
     {
-      // Call running() and quit() before calling join().
-      ASSERT(m_quit);
-      // It's ok to use memory_order_relaxed here because this is the same thread that (should have) called quit() in the first place.
-      // Only call join() on Worker`s that are quitting.
-      ASSERT(m_quit_called);
+      // Call quit() before calling join().
+      ASSERT(quit_t::rat(m_quit)->quit_called());
       // Only call join() once (this should be true for all Worker`s that were created and not moved).
       ASSERT(m_thread.joinable());
       m_thread.join();

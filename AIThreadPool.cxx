@@ -68,8 +68,12 @@ void AIThreadPool::Worker::main(int const self)
   std::function<bool()> task;   // The current / last task (moved out of the queue) that this thread is executing / executed.
   int duty = 0;                 // The number of tasks / actions that this thread performed since it woke up from sem_wait().
 
-  std::atomic_bool quit{false}; // Keep this boolean outside of the Worker so it isn't necessary to lock m_workers every loop.
-  workers_t::wat(thread_pool.m_workers)->at(self).running(&quit);
+  std::atomic_bool quit;        // Keep this boolean outside of the Worker so it isn't necessary to lock m_workers every loop.
+
+  // This must be a read lock. We are not allowed to write-lock m_workers because
+  // at termination m_workers is read locked while joining threads and if that
+  // happens before a thread reaches this point, it would deadlock.
+  workers_t::rat(thread_pool.m_workers)->at(self).running(&quit);
 
   // The thread will keep running until Worker::quit() is called.
   while (!quit.load(std::memory_order_relaxed))
