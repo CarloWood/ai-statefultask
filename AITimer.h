@@ -81,9 +81,9 @@ class AITimer : public AIStatefulTask
   static state_type constexpr max_state = AITimer_expired + 1;
 
  private:
-  std::atomic_bool mHasExpired;  	//!< Set to true after the timer expired.
-  statefultask::Timer mTimer;           //!< The actual timer that this object wraps.
-  double mInterval;                     //!< Input variable: interval after which the event will be generated, in seconds.
+  std::atomic_bool mHasExpired;  	        //!< Set to true after the timer expired.
+  statefultask::Timer mTimer;                   //!< The actual timer that this object wraps.
+  statefultask::Timer::Interval mInterval;      //!< Input variable: interval after which the event will be generated.
 
  public:
   /*!
@@ -93,7 +93,7 @@ class AITimer : public AIStatefulTask
 #ifdef CWDEBUG
     AIStatefulTask(debug),
 #endif
-    mHasExpired(false), mTimer([this](){ expired(); }), mInterval(0) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
+    mHasExpired(false), mTimer([this](){ expired(); }) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
   /*!
    * @brief Set the interval after which the timer should expire.
@@ -102,14 +102,14 @@ class AITimer : public AIStatefulTask
    *
    * Call abort() at any time to stop the timer (and delete the AITimer object).
    */
-  void set_interval(double interval) { mInterval = interval; }
+  void set_interval(statefultask::Timer::Interval interval) { mInterval = interval; }
 
   /*!
    * @brief Get the expiration interval.
    *
    * @returns expiration interval in seconds.
    */
-  double get_interval() const { return mInterval; }
+  statefultask::Timer::Interval const& get_interval() const { return mInterval; }
 
  protected:
   //! Call finish() (or abort()), not delete.

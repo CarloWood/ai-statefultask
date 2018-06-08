@@ -99,6 +99,7 @@ struct Timer
     template<TimerTypes::time_point::rep count, typename Unit>
     friend struct statefultask::Interval;
     Interval(TimerQueueIndex index_, time_point::duration duration_) : m_index(index_), m_duration(duration_) { Debug(Timer::s_interval_constructed = true); }
+   public:
     Interval() { }
 
    public:

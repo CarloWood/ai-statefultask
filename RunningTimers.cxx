@@ -3,6 +3,7 @@
 #include "AIThreadPool.h"
 #include "utils/macros.h"
 #include <new>
+#include <cstring>
 
 extern "C" void timer_signal_handler(int)
 {
