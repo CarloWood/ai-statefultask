@@ -46,6 +46,7 @@
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct action;
+extern channel_ct threadpool;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
@@ -67,9 +68,6 @@ NAMESPACE_DEBUG_CHANNELS_END
  * @code
  * int main()
  * {
- * #ifdef DEBUGGLOBAL
- *   GlobalObjectManager::main_entered();
- * #endif
  *   Debug(NAMESPACE_DEBUG::init());
  *
  *   AIThreadPool thread_pool;
@@ -97,11 +95,13 @@ NAMESPACE_DEBUG_CHANNELS_END
  *     auto queues_access = thread_pool.queues_read_access();
  *     // Get a reference to one of the queues in m_queues.
  *     auto& queue = thread_pool.get_queue(queues_access, queue_handle);
+ *     bool queue_full;
  *     {
  *       // Get producer accesses to this queue.
  *       auto queue_access = queue.producer_access();
  *       int length = queue_access.length();
- *       if (length < 32) // Buffer not full?
+ *       queue_full = length == queue.capacity();
+ *       if (!queue_full)
  *       {
  *         // Place a lambda in the queue.
  *         queue_access.move_in([](){ std::cout << "Hello pool!\n"; return false; });
@@ -109,7 +109,8 @@ NAMESPACE_DEBUG_CHANNELS_END
  *     } // Release producer accesses, so another thread can write to this queue again.
  *     // This function must be called every time move_in was called
  *     // on a queue that was returned by thread_pool.get_queue.
- *     queue.notify_one();
+ *     if (!queue_full) // Was move_in called?
+ *       queue.notify_one();
  *   } // Release read access to AIThreadPool::m_queues so another thread can use AIThreadPool::new_queue again.
  * @endcode
  *
@@ -312,13 +313,13 @@ class AIThreadPool
      */
     void notify_one() const
     {
-      Dout(dc::notice, "Calling m_task_action.required() [Task queue #" << m_previous_total_reserved_threads << "]");
+      Dout(dc::action, "Calling m_task_action.required() [Task queue #" << m_previous_total_reserved_threads << "]");
       m_task_action.required();
     }
 
     void still_required() const
     {
-      Dout(dc::notice, "Calling m_task_action.still_required() [Task queue #" << m_previous_total_reserved_threads << "]");
+      Dout(dc::action, "Calling m_task_action.still_required() [Task queue #" << m_previous_total_reserved_threads << "]");
       m_task_action.still_required();
     }
 
@@ -419,7 +420,7 @@ class AIThreadPool
     // Destructor.
     ~Worker()
     {
-      DoutEntering(dc::notice, "~Worker() [" << (void*)this << "][" << std::hex << m_thread_id << "]");
+      DoutEntering(dc::threadpool, "~Worker() [" << (void*)this << "][" << std::hex << m_thread_id << "]");
       // Call quit() before destructing a Worker.
       ASSERT(quit_t::rat(m_quit)->cleanly_terminated());
       // Call join() before destructing a Worker.
@@ -433,7 +434,7 @@ class AIThreadPool
     // Inform the thread that we want it to stop running.
     void quit() const
     {
-      Dout(dc::notice, "Calling Worker::quit() [" << (void*)this << "]");
+      Dout(dc::threadpool, "Calling Worker::quit() [" << (void*)this << "]");
       quit_t::wat(m_quit)->quit();
     }
 
@@ -621,9 +622,3 @@ class AIThreadPool
     return *s_instance.load(std::memory_order_acquire);
   }
 };
-
-#if defined(CWDEBUG) && !defined(DOXYGEN)
-NAMESPACE_DEBUG_CHANNELS_START
-extern channel_ct threadpool;
-NAMESPACE_DEBUG_CHANNELS_END
-#endif

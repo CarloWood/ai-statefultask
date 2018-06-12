@@ -78,12 +78,12 @@ void AIThreadPool::Worker::main(int const self)
   // The thread will keep running until Worker::quit() is called.
   while (!quit.load(std::memory_order_relaxed))
   {
-    Dout(dc::notice, "Beginning of thread pool main loop (q = " << q << ')');
+    Dout(dc::threadpool, "Beginning of thread pool main loop (q = " << q << ')');
 
     Timer::time_point now;
     while (s_call_update_current_timer.available(duty))
     {
-      Dout(dc::notice, "Took ownership of timer action.");
+      Dout(dc::action, "Took ownership of timer action.");
 
       // First check if there have any timers expired.
       Timer* expired_timer;
@@ -96,7 +96,7 @@ void AIThreadPool::Worker::main(int const self)
         if (last_timer_expired)
         {
           // This most likely happens when all threads were busy when the timer signal went off.
-          Dout(dc::notice|flush_cf, "Timer " << (void*)current_w->timer << " did not wake up this thread.");
+          Dout(dc::threadpool|flush_cf, "Timer " << (void*)current_w->timer << " did not wake up this thread.");
           current_w->timer = nullptr;     // The timer expired.
         }
         // Don't call update_current_timer when we're still waiting for the current timer to expire.
@@ -132,13 +132,15 @@ void AIThreadPool::Worker::main(int const self)
       bool empty = !queue.task_available(duty);
       if (!empty)
       {
-        Dout(dc::notice, "Took ownership of queue " << q << " action.");
+        Dout(dc::action, "Took ownership of queue " << q << " action.");
 
-        // Obtain and lock consumer access this queue.
+        // Obtain and lock consumer access for this queue.
         auto access = queue.consumer_access();
 #ifdef CWDEBUG
         // The number of messages in the queue.
         int length = access.length();
+        // Only call queue.notify_one() when you just called queue_access.move_in(...).
+        // For example, if the queue is full so you don't call move_in then ALSO don't call notify_one!
         ASSERT(length > 0);
 #endif
         // Move one object from the queue to `task`.
@@ -158,7 +160,7 @@ void AIThreadPool::Worker::main(int const self)
           queue.increment_active_workers();             // Undo the above decrement.
         else if (!(go_idle = ++q == queues_r->iend()))  // If there is no lower priority queue left, then just go idle.
         {
-          Dout(dc::notice, "Continuing with next queue.");
+          Dout(dc::threadpool, "Continuing with next queue.");
           continue;                                     // Otherwise, handle the lower priority queue.
         }
         if (go_idle)
@@ -173,7 +175,7 @@ void AIThreadPool::Worker::main(int const self)
 
     if (!go_idle)
     {
-      Dout(dc::notice, "Not going idle.");
+      Dout(dc::threadpool, "Not going idle.");
 
       bool active = true;
       AIQueueHandle next_q;
@@ -183,7 +185,7 @@ void AIThreadPool::Worker::main(int const self)
         // ***************************************************
         active = task();   // Invoke the functor.            *
         // ***************************************************
-        Dout(dc::notice, "task() returned " << active);
+        Dout(dc::threadpool, "task() returned " << active);
 
         // Determine the next queue to handle: the highest priority queue that doesn't have all reserved threads idle.
         next_q = q;
@@ -263,7 +265,7 @@ void AIThreadPool::Worker::main(int const self)
       if (RunningTimers::instance().a_timer_expired())
       {
         auto current_w{RunningTimers::instance().access_current()};
-        Dout(dc::notice|flush_cf, "Timer " << (void*)current_w->timer << " woke up a thread.");
+        Dout(dc::threadpool|flush_cf, "Timer " << (void*)current_w->timer << " woke up a thread.");
         current_w->timer = nullptr;     // The timer expired.
       }
 

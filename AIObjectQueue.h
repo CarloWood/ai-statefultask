@@ -307,15 +307,15 @@ class AIObjectQueue
      * If the returned value equals the capacity of the buffer
      * than the buffer is full and one should not call move_in.
      */
-
     int length() const { return m_buffer->producer_length(); }
+
     /*!
      * @brief Write an object into the buffer by means of \c std::move.
      *
      * @param object The object to move into the buffer.
      */
-
     void move_in(T&& object) { m_buffer->move_in(std::move(object)); }
+
     /*!
      * @brief Clear the buffer by putting the head where the tail is.
      *
