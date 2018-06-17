@@ -178,7 +178,7 @@ class AIThreadPool
 
    public:
     Action(DEBUG_ONLY(std::string name)) : m_required(0) COMMA_DEBUG_ONLY(m_name(name)) { }
-    Action(Action&& rvalue) : m_required(0) COMMA_DEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_required == 0); }
+    Action(Action&& DEBUG_ONLY(rvalue)) : m_required(0) COMMA_DEBUG_ONLY(m_name(rvalue.m_name)) { ASSERT(rvalue.m_required == 0); }
 
     void still_required()
     {
