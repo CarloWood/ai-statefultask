@@ -49,7 +49,7 @@ RunningTimers::Current::Current() : timer(nullptr)
   struct sigevent sigevent;
   std::memset(&sigevent, 0, sizeof(struct sigevent));
   sigevent.sigev_notify = SIGEV_SIGNAL;
-  sigevent.sigev_signo = RunningTimers::instance().m_timer_signum;
+  sigevent.sigev_signo = RunningTimers::instantiate().m_timer_signum;
   if (timer_create(CLOCK_MONOTONIC, &sigevent, &posix_timer) == -1)
   {
     perror("timer_create");
