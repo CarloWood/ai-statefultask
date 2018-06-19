@@ -121,7 +121,6 @@ struct Timer
     //! Construct a Handle for a running timer with interval \a interval and number sequence \a sequence.
     constexpr Handle(TimerQueueIndex interval, uint64_t sequence) : m_sequence(sequence), m_interval(interval) { }
 
-    //! 
     bool is_running() const { return !m_interval.undefined(); }
     void set_not_running() { m_interval.set_to_undefined(); }
     bool is_removed() const { return m_sequence == std::numeric_limits<uint64_t>::max(); }

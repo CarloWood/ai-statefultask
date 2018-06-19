@@ -89,7 +89,7 @@ NAMESPACE_DEBUG_CHANNELS_END
  * ... (see above)
  *   // Create a new queue with a capacity of 32 and default priority.
  *   AIQueueHandle queue_handle = thread_pool.new_queue(32);
- * 
+ *
  *   {
  *     // Get read access to AIThreadPool::m_queues.
  *     auto queues_access = thread_pool.queues_read_access();
