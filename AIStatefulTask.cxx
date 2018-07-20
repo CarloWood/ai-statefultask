@@ -412,7 +412,7 @@ hello_world->run(...);          // One of the run() functions.
 #ifdef CWDEBUG
 char const* AIStatefulTask::event_str(event_type event)
 {
-  switch(event)
+  switch (event)
   {
     AI_CASE_RETURN(initial_run);
     AI_CASE_RETURN(schedule_run);
@@ -433,7 +433,7 @@ bool AIStatefulTask::waiting() const
 bool AIStatefulTask::waiting_or_aborting() const
 {
   multiplex_state_type::crat state_r(mState);
-  return state_r->base_state == bs_abort || ( state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle);
+  return state_r->base_state == bs_abort || (state_r->base_state == bs_multiplex && sub_state_type::crat(mSubState)->idle);
 }
 
 void AIStatefulTask::multiplex(event_type event, Handler handler)
@@ -547,7 +547,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
       // This debug code checks that each task steps precisely through each of it's states correctly.
       if (state != bs_reset)
       {
-        switch(mDebugLastState)
+        switch (mDebugLastState)
         {
           case bs_reset:
             ASSERT(state == bs_initialize || state == bs_killed);
@@ -614,7 +614,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
         mDebugRefCalled = true;
       }
 #endif
-      switch(state)
+      switch (state)
       {
         case bs_reset:
           // We're just being kick started to get into the right thread
@@ -680,7 +680,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
         if (event == normal_run)
         {
           // Switch base state as function of sub state.
-          switch(state)
+          switch (state)
           {
             case bs_reset:
               if (sub_state_r->aborted)
@@ -1407,7 +1407,7 @@ void AIStatefulTask::yield_ms(AIEngine* engine, unsigned int ms)
 
 char const* AIStatefulTask::state_str(base_state_type state)
 {
-  switch(state)
+  switch (state)
   {
     AI_CASE_RETURN(bs_reset);
     AI_CASE_RETURN(bs_initialize);
