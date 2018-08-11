@@ -169,6 +169,15 @@ struct Timer
     m_handle.set_removed();
   }
 
+  //! Call this to reset the call back function, destructing any possible objects that it might contain.
+  void release_callback()
+  {
+    // Don't call release_callback while the timer is running.
+    // You can call it from the call back itself however.
+    ASSERT(!m_handle.is_running());
+    m_call_back = std::function<void()>();
+  }
+
   // Return the current time in the appropriate type.
   static time_point now() { return clock_type::now(); }
 
