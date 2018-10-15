@@ -171,11 +171,16 @@ class AIStatefulTask : public AIRefCount
     AIQueueHandle get_queue_handle() const { return m_type == thread_pool_h ? m_handle.queue_handle : AIQueueHandle((std::size_t)0); }
     //! Return true when not idle / unused.
     operator bool() const { return m_type != idle_h; }        // Return true when this handler can be used to actually run in.
+
+    // Gcc complains because what is defined depends on the value of m_type.
+    PRAGMA_DIAGNOSTIC_PUSH_IGNORE_maybe_uninitialized
     //! Return true when equivalent to \a handler.
     bool operator==(Handler handler) const {
         return m_type == handler.m_type &&
             (m_type != engine_h || m_handle.engine == handler.m_handle.engine) &&
             (m_type != thread_pool_h || m_handle.queue_handle == handler.m_handle.queue_handle); }
+    PRAGMA_DIAGNOSTIC_POP
+
     friend std::ostream& operator<<(std::ostream& os, Handler const& handler);
   };
 

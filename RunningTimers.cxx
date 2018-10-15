@@ -190,7 +190,7 @@ Timer* RunningTimers::update_current_timer(current_t::wat& current_w, Timer::tim
   Dout(dc::notice|flush_cf, "Calling timer_settime() for " << new_value.it_value.tv_sec << " seconds and " << new_value.it_value.tv_nsec << " nanoseconds.");
   current_w.relock(m_current);                  // Lock m_current again.
   sigprocmask(SIG_BLOCK, &m_timer_sigset, nullptr);
-  bool pending = timer_settime(current_w->posix_timer, 0, &new_value, nullptr) == 0;
+  [[maybe_unused]] bool pending = timer_settime(current_w->posix_timer, 0, &new_value, nullptr) == 0;
   ASSERT(pending);
   current_w->timer = timer;
   m_a_timer_expired = false;
