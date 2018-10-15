@@ -21,7 +21,7 @@ libstatefultask_la_SOURCES = \
 	RunningTimers.cxx \
 	RunningTimers.h
 
-libstatefultask_la_CXXFLAGS = -std=c++11 @LIBCWD_R_FLAGS@
+libstatefultask_la_CXXFLAGS = @LIBCWD_R_FLAGS@
 libstatefultask_la_LIBADD = -lrt @LIBCWD_R_LIBS@
 
 # --------------- Maintainer's Section
