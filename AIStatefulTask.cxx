@@ -802,6 +802,26 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
       keep_looping = need_new_run && !mYield && handler == current_handler;
       mYield = false;
 
+      // We can't satisfy running in an immediate handler and not keep_looping at the same time, provided we need to run at all of course.
+      if (!keep_looping && need_new_run && handler.is_immediate())
+      {
+        // Note this means that mYield was true (aka, the user called yield()).
+        //
+        // Namely, if handler would be unequal current_handler, then current_handler is not immediate, therefore
+        // we know that event == normal_run and current_handler == state_w->current_handler. In turn that means
+        // that state_w->current_handler is also not idle. That is a contradiction because then handler is
+        // either mTargetHandler or state_w->current_handler and neither is immediate (it is not allowed to
+        // use immediate as target handler).
+        //
+        // Hence-- we can only get here when the user called yield() (without a target).
+        // Since it is rather easy to get here with state_w->current_handler set to immediate,
+        // the user should either set a (non immediate) default handler or never use yield().
+        //
+        // Either set a non-immediate default handler when calling run(), or don't use yield() without a handler argument.
+        ASSERT(!mDefaultHandler.is_immediate());
+        handler = mDefaultHandler;
+      }
+
       Dout(dc::statefultask(mSMDebug && !keep_looping),
           (!need_new_run ? state_w->current_handler ? state_w->current_handler.is_engine() ? "No need to run, removing from engine"
                                                                                            : "No need to run, removing from thread pool"
@@ -951,7 +971,7 @@ std::ostream& operator<<(std::ostream& os, AIStatefulTask::Handler const& handle
       os << "<immediate>";
       break;
     case AIStatefulTask::Handler::engine_h:
-      os << handler.m_handle.engine->name();
+      os << '"' << handler.m_handle.engine->name() << '"';
       break;
     case AIStatefulTask::Handler::thread_pool_h:
       os << handler.m_handle.queue_handle;
@@ -981,8 +1001,14 @@ void AIStatefulTask::run(Handler default_handler, AIStatefulTask* parent, condit
   }
 #endif
 
-  // Store the requested default handler.
-  mDefaultHandler = default_handler;
+  // Do not change the mDefaultHandler when we're run() from a callback.
+  if (!(mParent || mCallback) || !default_handler.is_immediate())
+  {
+    // Store the requested default handler.
+    mDefaultHandler = default_handler;
+  }
+  else
+    Dout(dc::statefultask(mSMDebug), "Keeping " << mDefaultHandler << " as default handler.");
 
   // Initialize sleep timer.
   mSleep = 0;
@@ -1067,7 +1093,7 @@ void AIStatefulTask::callback()
   if (mCallback)
   {
     mCallback(!aborted);
-    if (multiplex_state_type::rat(mState)->base_state != bs_reset)
+    if (!sub_state_type::rat(mSubState)->reset) // run() wasn't called from the callback (or before from finish())?
     {
       mCallback = nullptr;
       mParent = nullptr;
@@ -1356,6 +1382,9 @@ void AIStatefulTask::yield()
 void AIStatefulTask::target(Handler handler)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::target(" << handler << ") [" << (void*)this << "]");
+  // This is not possible. Do not specify Handler::immediate as (yield) target.
+  // Use an actual AIEngine or AIQueueHandle. To turn off a target, use target(Handler::idle).
+  ASSERT(!handler.is_immediate());
 #ifdef DEBUG
   {
     multiplex_state_type::rat state_r(mState);
