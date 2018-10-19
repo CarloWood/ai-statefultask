@@ -593,6 +593,13 @@ class AIStatefulTask : public AIRefCount
   bool active(Handler handler) const { return multiplex_state_type::crat(mState)->current_handler == handler; }
 
   /*!
+   * @brief Return true if are currently running in an immediate handler.
+   *
+   * @return True if this task is not running in an AIEngine or the AIThreadPool.
+   */
+  bool is_immediate() const { return multiplex_state_type::crat(mState)->current_handler.is_immediate(); }
+
+  /*!
    * @brief Return true if the task finished.
    *
    * If this function returns false then the callback (or call to abort() on the parent) is guaranteed still going to happen.
