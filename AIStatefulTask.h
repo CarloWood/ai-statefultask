@@ -599,6 +599,9 @@ class AIStatefulTask : public AIRefCount
    */
   bool is_immediate() const { return multiplex_state_type::crat(mState)->current_handler.is_immediate(); }
 
+  // For debugging purposes mainly.
+  bool default_is_immediate() const { return mDefaultHandler.is_immediate(); }
+
   /*!
    * @brief Return true if the task finished.
    *
