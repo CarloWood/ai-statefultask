@@ -1239,7 +1239,7 @@ void AIStatefulTask::wait(condition_type conditions)
     // Determine if we must go idle.
 
     // Copy bits from skip_wait to busy.
-    sub_state_w->busy &= ~conditions;     				// Reset the masked bit.
+    sub_state_w->busy &= ~conditions;                                   // Reset the masked bit.
     sub_state_w->busy |= sub_state_w->skip_wait & conditions;           // Then set the masked bit if it is set in skip_wait.
     // Reset the masked bit in skip_wait.
     sub_state_w->skip_wait &= ~conditions;
@@ -1283,7 +1283,7 @@ bool AIStatefulTask::signal(condition_type condition)
     sub_state_type::wat sub_state_w(mSubState);
     // Copy bits from busy to skip_wait.
     sub_state_w->skip_wait &= ~condition;                       // Reset the masked bits.
-    sub_state_w->skip_wait |= sub_state_w->busy & condition;	// Then set masked bits that are set in busy.
+    sub_state_w->skip_wait |= sub_state_w->busy & condition;    // Then set masked bits that are set in busy.
     // Set the masked bits in busy;
     sub_state_w->busy |= condition;
     // Test if we are idle or not.
