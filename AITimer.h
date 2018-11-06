@@ -34,7 +34,7 @@
 #pragma once
 
 #include "AIStatefulTask.h"
-#include "Timer.h"
+#include "threadpool/Timer.h"
 #include <atomic>
 
 /*!
@@ -81,9 +81,9 @@ class AITimer : public AIStatefulTask
   static state_type constexpr max_state = AITimer_expired + 1;
 
  private:
-  std::atomic_bool mHasExpired;  	        //!< Set to true after the timer expired.
-  statefultask::Timer mTimer;                   //!< The actual timer that this object wraps.
-  statefultask::Timer::Interval mInterval;      //!< Input variable: interval after which the event will be generated.
+  std::atomic_bool mHasExpired;                 //!< Set to true after the timer expired.
+  threadpool::Timer mTimer;                     //!< The actual timer that this object wraps.
+  threadpool::Timer::Interval mInterval;        //!< Input variable: interval after which the event will be generated.
 
  public:
   /*!
@@ -102,14 +102,14 @@ class AITimer : public AIStatefulTask
    *
    * Call abort() at any time to stop the timer (and delete the AITimer object).
    */
-  void set_interval(statefultask::Timer::Interval interval) { mInterval = interval; }
+  void set_interval(threadpool::Timer::Interval interval) { mInterval = interval; }
 
   /*!
    * @brief Get the expiration interval.
    *
    * @returns expiration interval in seconds.
    */
-  statefultask::Timer::Interval const& get_interval() const { return mInterval; }
+  threadpool::Timer::Interval const& get_interval() const { return mInterval; }
 
  protected:
   //! Call finish() (or abort()), not delete.

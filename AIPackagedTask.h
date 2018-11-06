@@ -31,8 +31,8 @@
 
 #include "AIFriendOfStatefulTask.h"
 #include "AIDelayedFunction.h"
-#include "AIObjectQueue.h"
-#include "AIThreadPool.h"
+#include "threadpool/AIObjectQueue.h"
+#include "threadpool/AIThreadPool.h"
 
 #ifdef EXAMPLE_CODE     // undefined
 

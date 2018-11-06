@@ -36,7 +36,7 @@
 
 #include "sys.h"
 #include "AIEngine.h"
-#include "AIThreadPool.h"
+#include "threadpool/AIThreadPool.h"
 
 //==================================================================
 // Overview

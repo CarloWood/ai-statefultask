@@ -36,7 +36,7 @@
 
 #pragma once
 
-#include "AIQueueHandle.h"
+#include "threadpool/AIQueueHandle.h"
 #include "utils/AIRefCount.h"
 #include "utils/macros.h"
 #include "threadsafe/aithreadsafe.h"
