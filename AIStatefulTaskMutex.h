@@ -63,7 +63,7 @@ class AIStatefulTask;
  * @code
  * ...
  *   case MyTask_stateX:
- *     if (!shared.m_task_mutex.trylock(this))
+ *     if (!shared.m_task_mutex.try_lock(this))
  *     {
  *       yield();
  *       break;
@@ -90,7 +90,7 @@ class AIStatefulTaskMutex
    *
    * @returns True upon success, false upon failure to obtain ownership.
    */
-  bool trylock(AIStatefulTask const* owner)
+  bool try_lock(AIStatefulTask const* owner)
   {
     lock_count_type::wat lock_count_w(m_lock_count);
     if (*lock_count_w > 0 && m_owner != owner) return false;
@@ -100,7 +100,7 @@ class AIStatefulTaskMutex
   }
 
   /*!
-   * @brief Undo one (succcessful) call to trylock.
+   * @brief Undo one (succcessful) call to try_lock.
    */
   void unlock(AIStatefulTask const* owner)
   {

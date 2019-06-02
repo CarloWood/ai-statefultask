@@ -439,7 +439,7 @@ bool AIStatefulTask::waiting_or_aborting() const
 void AIStatefulTask::multiplex(event_type event, Handler handler)
 {
   // If this fails then you are using a pointer to a stateful task instead of an boost::intrusive_ptr<AIStatefulTask>.
-  ASSERT(event == initial_run || ref_count() > 0);
+//  ASSERT(event == initial_run || ref_used());
   // Paranoia; this can be removed after a while. As a result of this, handler is true when event == normal_run.
   ASSERT(event != normal_run || handler);
 
