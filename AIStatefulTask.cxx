@@ -621,7 +621,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
           // (possibly for the second time when a late abort was detected, but that's ok: we do nothing here).
           break;
         case bs_initialize:
-          inhibit_deletion(false);      // false because it is actually OK here when the corresponding allow_deletion() immediately deletes this object.
+          inhibit_deletion(DEBUG_ONLY(false));  // false because it is actually OK here when the corresponding allow_deletion() immediately deletes this object.
           initialize_impl();
           break;
         case bs_multiplex:
