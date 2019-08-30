@@ -36,11 +36,12 @@
 
 #pragma once
 
+#include "AIStatefulTaskMutex.h"
+#include "threadsafe/aithreadsafe.h"
+#include "threadsafe/AIMutex.h"
 #include "threadpool/AIQueueHandle.h"
 #include "utils/AIRefCount.h"
 #include "utils/macros.h"
-#include "threadsafe/aithreadsafe.h"
-#include "threadsafe/AIMutex.h"
 #include "debug.h"
 #include <list>
 #include <chrono>
@@ -435,6 +436,14 @@ class AIStatefulTask : public AIRefCount
   void finish();
 
   /*!
+   * Return true when stateful_task_mutex is self locked.
+   */
+  bool is_self_locked(AIStatefulTaskMutex& stateful_task_mutex)
+  {
+    return stateful_task_mutex.is_self_locked(this);
+  }
+
+  /*!
    * A call to yield*() has basically no effect on a task, except that its
    * execution is delayed a bit: this causes the task to return to the
    * AIEngine main loop code. That way other running tasks (in that engine)
@@ -625,7 +634,7 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Return true if this thread is executing this task right now (aka, we're inside \c multiplex somewhere).
    */
-  bool executing() const { return mMultiplexMutex.self_locked(); }
+  bool executing() const { return mMultiplexMutex.is_self_locked(); }
 
   /*!
    * @brief Return stringified state, for debugging purposes.

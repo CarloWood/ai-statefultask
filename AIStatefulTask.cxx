@@ -491,7 +491,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
     // If another thread is already running multiplex() then it will pick up
     // our need to run (by us having set need_run), so there is no need to run
     // ourselves.
-    ASSERT(!mMultiplexMutex.self_locked());    // We may never enter recursively!
+    ASSERT(!mMultiplexMutex.is_self_locked());          // We may never enter recursively!
     if (!mMultiplexMutex.try_lock())
     {
       // This just should never happen; a call to run() should always set the base state beyond bs_reset.
@@ -1300,7 +1300,7 @@ bool AIStatefulTask::signal(condition_type condition)
     // Mark that a re-entry of multiplex() is necessary.
     sub_state_w->need_run = true;
   }
-  if (!mMultiplexMutex.self_locked())
+  if (!mMultiplexMutex.is_self_locked())
     multiplex(schedule_run);
   return true;
 }
@@ -1325,7 +1325,7 @@ void AIStatefulTask::abort()
     // Mark that a re-entry of multiplex() is necessary.
     sub_state_w->need_run = true;
   }
-  if (is_waiting && !mMultiplexMutex.self_locked())
+  if (is_waiting && !mMultiplexMutex.is_self_locked())
     multiplex(insert_abort);
   // Block until the current run finished.
   if (!mRunMutex.try_lock())
