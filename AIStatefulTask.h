@@ -34,9 +34,9 @@
  *   - Transfered copyright to Carlo Wood.
  */
 
-#pragma once
+#ifndef AISTATEFULTASK_H
+#define AISTATEFULTASK_H
 
-#include "AIStatefulTaskMutex.h"
 #include "threadsafe/aithreadsafe.h"
 #include "threadsafe/AIMutex.h"
 #include "threadpool/AIQueueHandle.h"
@@ -49,6 +49,7 @@
 
 class AICondition;
 class AIEngine;
+class AIStatefulTaskMutex;
 
 //! The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
 using AIWaitConditionFunc = std::function<bool()>;
@@ -438,10 +439,7 @@ class AIStatefulTask : public AIRefCount
   /*!
    * Return true when stateful_task_mutex is self locked.
    */
-  bool is_self_locked(AIStatefulTaskMutex& stateful_task_mutex)
-  {
-    return stateful_task_mutex.is_self_locked(this);
-  }
+  inline bool is_self_locked(AIStatefulTaskMutex& stateful_task_mutex);
 
   /*!
    * A call to yield*() has basically no effect on a task, except that its
@@ -708,3 +706,12 @@ NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct statefultask;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
+
+#include "AIStatefulTaskMutex.h"
+
+bool AIStatefulTask::is_self_locked(AIStatefulTaskMutex& stateful_task_mutex)
+{
+  return stateful_task_mutex.is_self_locked(this);
+}
+
+#endif // AISTATEFULTASK_H
