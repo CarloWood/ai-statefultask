@@ -89,7 +89,7 @@ class AITimer : public AIStatefulTask
   /*!
    * @brief Construct an AITimer object.
    */
-  AITimer(DEBUG_ONLY(bool debug = false)) :
+  AITimer(CWDEBUG_ONLY(bool debug = false)) :
 #ifdef CWDEBUG
     AIStatefulTask(debug),
 #endif

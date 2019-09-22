@@ -271,7 +271,7 @@ class AIStatefulTask : public AIRefCount
    *
    * @param debug Write debug output for this task to dc::statefultask.
    */
-  AIStatefulTask(DEBUG_ONLY(bool debug)) : mDefaultHandler(Handler::idle), mTargetHandler(Handler::idle), mYield(false),
+  AIStatefulTask(CWDEBUG_ONLY(bool debug)) : mDefaultHandler(Handler::idle), mTargetHandler(Handler::idle), mYield(false),
 #ifdef DEBUG
   mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
   mDebugSetStatePending(false), mDebugRefCalled(false),
