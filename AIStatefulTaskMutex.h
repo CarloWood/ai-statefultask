@@ -85,11 +85,10 @@ class AIStatefulTaskMutex
   static constexpr size_t node_size() { return sizeof(Node); }
 
  private:
-  utils::NodeMemoryResource& m_node_memory_resource;    // Memory resource to allocate Node's from.
+  utils::NodeMemoryResource& m_node_memory_resource;    // Reference to memory resource to allocate Node's from.
   std::atomic<Node*> m_head;                            // The mutex is locked when this atomic has value nullptr.
   std::atomic<Node*> m_owner;                           // After locking this mutex, the owner sets this pointer to point to
                                                         // its Node (m_owner->m_task will point to the owning task).
-
  public:
   // Construct an unlocked AIStatefulTaskMutex.
   AIStatefulTaskMutex(utils::NodeMemoryResource& node_memory_resource) : m_node_memory_resource(node_memory_resource), m_head(nullptr), m_owner(nullptr) { }
@@ -103,8 +102,8 @@ class AIStatefulTaskMutex
   {
     DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << condition << ") [" << this << "]");
 
-    Node* new_node = static_cast<Node*>(m_node_memory_resource.allocate(sizeof(Node)));
-    new_node->m_next.store(nullptr, std::memory_order_relaxed);
+    Node* new_node = new (m_node_memory_resource.allocate(sizeof(Node))) Node;
+    std::atomic_init(&new_node->m_next, static_cast<Node*>(nullptr));
     new_node->m_task = task;
 
 //    Dout(dc::notice, "Create new node at " << new_node << " with m_next = " << new_node->m_next << "; m_task = " << new_node->m_task << " [" << task << "]");
