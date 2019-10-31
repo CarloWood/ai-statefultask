@@ -151,7 +151,7 @@ class AIPackagedTask;   // not defined.
  * @endcode
  */
 template<typename R, typename ...Args>
-class AIPackagedTask<R(Args...)> : AIFriendOfStatefulTask
+class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
 {
  private:
   enum { standby, deferred, executing, finished } m_phase;  // Keeps track of whether the job is already executing or even finished.
