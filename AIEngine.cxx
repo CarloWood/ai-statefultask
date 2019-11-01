@@ -43,7 +43,10 @@ void AIEngine::add(AIStatefulTask* stateful_task)
   engine_state_type::wat engine_state_w(mEngineState);
   engine_state_w->list.emplace_back(stateful_task);
   if (engine_state_w->waiting)
-    engine_state_w.signal();
+  {
+    engine_state_w->waiting = false;
+    engine_state_w.notify_one();
+  }
 }
 
 void AIEngine::mainloop()
@@ -59,8 +62,7 @@ void AIEngine::mainloop()
       if (!mHasMaxDuration)
       {
         engine_state_w->waiting = true;
-        engine_state_w.wait();
-        engine_state_w->waiting = false;
+        engine_state_w.wait([&](){ return !engine_state_w->waiting; });
       }
       return;
     }
@@ -131,7 +133,10 @@ void AIEngine::wake_up()
 {
   engine_state_type::wat engine_state_w(mEngineState);
   if (engine_state_w->waiting)
-    engine_state_w.signal();
+  {
+    engine_state_w->waiting = false;
+    engine_state_w.notify_one();
+  }
 }
 
 bool AIEngine::QueueElementComp::operator()(QueueElement const& e1, QueueElement const& e2) const

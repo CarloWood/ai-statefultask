@@ -37,7 +37,7 @@
 #pragma once
 
 #include "threadsafe/aithreadsafe.h"
-#include "threadsafe/Condition.h"
+#include "threadsafe/ConditionVariable.h"
 #include "AIStatefulTask.h"
 #include "debug.h"
 #include <list>
@@ -131,7 +131,7 @@ class AIEngine
     engine_state_st() : waiting(false) { }
   };
 
-  using engine_state_type = aithreadsafe::Wrapper<engine_state_st, aithreadsafe::policy::Primitive<aithreadsafe::Condition>>;
+  using engine_state_type = aithreadsafe::Wrapper<engine_state_st, aithreadsafe::policy::Primitive<aithreadsafe::ConditionVariable>>;
 
 #ifndef DOXYGEN
  public:       // Used by AIStatefulTask.
