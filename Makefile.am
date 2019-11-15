@@ -11,7 +11,10 @@ libstatefultask_la_SOURCES = \
 	AIEngine.h \
 	AITimer.cxx \
 	AITimer.h \
+	AIStatefulTaskMutex.cxx \
 	AIStatefulTaskMutex.h \
+	DefaultMemoryPagePool.cxx \
+	DefaultMemoryPagePool.h \
 	AIDelayedFunction.h \
 	AIPackagedTask.h
 

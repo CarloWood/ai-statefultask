@@ -21,9 +21,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Must be included first.
-#include "AIStatefulTask.h"
-
 #ifndef AISTATEFULTASKMUTEX_H
 #define AISTATEFULTASKMUTEX_H
 
@@ -31,6 +28,8 @@
 #include "utils/NodeMemoryResource.h"
 #include "utils/cpu_relax.h"
 #include "debug.h"
+
+class AIStatefulTask;
 
 //
 // A task mutex.
@@ -42,67 +41,64 @@
 //
 // For example,
 //
-//
-//   struct Shared
-//   {
-//     AIStatefulTaskMutex m_task_mutex;
-//     void do_work();    // Only one thread at a time may call this.
-//
-//     Shared(utils::NodeMemoryResource& node_memory_resource) : m_task_mutex(node_memory_resource) { }
-//   };
-//
+//   // Required memory management.
 //   utils::MemoryPagePool mpp(0x8000);
-//   utils::NodeMemoryResource node_memory_resource(mpp);
-//   Shared shared(node_memory_resource);
+//   AIStatefulTaskMutex::init(&mpp);
+//   // A task mutex.
+//   AIStatefulTaskMutex m;
 //
 // Then multiple running tasks could use this to prevent concurrent access:
 //
 // ...
 //   case MyTask_lock:
 //     set_state(MyTask_locked);
-//     if (!shared.m_task_mutex.lock(this, 1))
+//     if (!m.lock(this, 1))
 //     {
 //       wait(1);
 //       break;
 //     }
 //     [[fallthrough]];
 //   case MyTask_locked:
-//     shared.do_work();
-//     shared.m_task_mutex.unlock();
+//     do_work();
+//     m.unlock();
 //
 class AIStatefulTaskMutex
 {
+  using condition_type = uint32_t;      // Must be the same as AIStatefulTask::condition_type
+
  protected:
   struct Node
   {
     std::atomic<Node*> m_next;
     AIStatefulTask* m_task;
-    AIStatefulTask::condition_type m_condition;
+    condition_type m_condition;
   };
 
  public:
-  // Returns the size of the nodes that will be allocated from m_node_memory_resource.
+  // Returns the size of the nodes that will be allocated from s_node_memory_resource.
   static constexpr size_t node_size() { return sizeof(Node); }
+  // This must be called once before using a AIStatefulTaskMutex.
+  static void init(utils::MemoryPagePool* mpp_ptr) { s_node_memory_resource.init(mpp_ptr, node_size()); }
+  static utils::NodeMemoryResource s_node_memory_resource;      // Memory resource to allocate Node's from.
 
  private:
-  utils::NodeMemoryResource& m_node_memory_resource;    // Reference to memory resource to allocate Node's from.
-  std::atomic<Node*> m_head;                            // The mutex is locked when this atomic has value nullptr.
+  std::atomic<Node*> m_head;                            // The mutex is locked when this atomic has a non-nullptr value.
   std::atomic<Node*> m_owner;                           // After locking this mutex, the owner sets this pointer to point to
                                                         // its Node (m_owner->m_task will point to the owning task).
  public:
   // Construct an unlocked AIStatefulTaskMutex.
-  AIStatefulTaskMutex(utils::NodeMemoryResource& node_memory_resource) : m_node_memory_resource(node_memory_resource), m_head(nullptr), m_owner(nullptr) { }
+  AIStatefulTaskMutex() : m_head(nullptr), m_owner(nullptr) { }
   // Immediately after construction, nobody owns the lock:
   //
   // m_head --> nullptr
 
   // Try to obtain ownership for owner (recursive locking allowed).
   // Returns true upon success and false upon failure to obtain ownership.
-  bool lock(AIStatefulTask* task, AIStatefulTask::condition_type condition)
+  bool lock(AIStatefulTask* task, condition_type condition)
   {
     DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << condition << ") [" << this << "]");
 
-    Node* new_node = new (m_node_memory_resource.allocate(sizeof(Node))) Node;
+    Node* new_node = new (s_node_memory_resource.allocate(sizeof(Node))) Node;
     std::atomic_init(&new_node->m_next, static_cast<Node*>(nullptr));
     new_node->m_task = task;
 
@@ -124,7 +120,7 @@ class AIStatefulTaskMutex
       m_owner.store(new_node, std::memory_order_release);
       return true;
     }
-    Dout(dc::notice, "Failed to acquire mutex [" << task << "]");
+    Dout(dc::notice, "Mutex already locked by [" << task << "]");
 
     // If prev is non-null then another task owned the lock at the moment
     // we executed the above exchange. This task, when executing unlock(),
@@ -142,9 +138,8 @@ class AIStatefulTaskMutex
 //    Dout(dc::notice, "Setting m_next of prev (" << prev << ") to " << new_node << " [" << task << "]");
     prev->m_next.store(new_node, std::memory_order_release);
 
-    // Obtaining the lock failed. Halt the task.
-    //task->wait(condition);
-    return false;
+    // Obtaining the lock failed. Halt the task
+    return false;       // The caller must call task->wait(condition).
   }
 
   // Undo one (succcessful) call to lock.
@@ -154,7 +149,8 @@ class AIStatefulTaskMutex
 
     Node* const owner = m_owner.load(std::memory_order_relaxed);
 #ifdef CWDEBUG
-AIStatefulTask* const task = owner->m_task;
+    // Note: this task might already have been destructed!
+    AIStatefulTask* const task = owner->m_task;
 #endif
 //    Dout(dc::notice, "Setting m_owner to nullptr, was " << owner << " [" << task << "]");
     m_owner.store(nullptr, std::memory_order_relaxed);
@@ -164,27 +160,29 @@ AIStatefulTask* const task = owner->m_task;
     {
       Dout(dc::notice, "Success - m_head was reset to nullptr [" << task << "]");
 //      Dout(dc::notice, "deallocating " << owner << " [" << task << "]");
-      m_node_memory_resource.deallocate(owner);
+      s_node_memory_resource.deallocate(owner);
 //      Dout(dc::notice, "Leaving unlock()");
       return;
     }
-//    Dout(dc::notice, "m_head not changed it wasn't equal to owner (" << owner << "), m_head is " << expected << " [" << task << "]");
-    // Wait until the task that tried to get the lock first (after us) set m_next.
-    Node* next;
-//next = owner->m_next.load(std::memory_order_acquire);
-//    Dout(dc::notice, "owner->m_next = " << next << " [" << task << "]");
-    while (!(next = owner->m_next.load(std::memory_order_acquire)))
-      cpu_relax();
-//    Dout(dc::notice, "deallocating " << owner << " [" << task << "]");
-    m_node_memory_resource.deallocate(owner);
-    Dout(dc::notice, "Setting m_owner to " << next << " [" << task << "]");
-    m_owner.store(next, std::memory_order_release);
-    Dout(dc::notice, "Calling signal(" << next->m_condition << ") on next->m_task (" << next->m_task << ") with next = " << next << " [" << task << "]");
-    next->m_task->signal(next->m_condition);
-//    Dout(dc::notice, "Leaving unlock()");
+
+    signal_next(owner COMMA_CWDEBUG_ONLY(task));
   }
 
+#ifdef CWDEBUG
+  // The returned value might point a task that was already destructed.
+  AIStatefulTask* debug_get_owner() const
+  {
+    // Very racy, not-thread-safe code for debugging output only.
+    Node* owner;
+    if (m_head.load(std::memory_order_relaxed) == nullptr || (owner = m_owner.load(std::memory_order_relaxed)) == nullptr)
+      return nullptr;
+    return owner->m_task;
+  }
+#endif
+
  private:
+  void signal_next(Node* const owner COMMA_CWDEBUG_ONLY(AIStatefulTask* const task));
+
   friend class AIStatefulTask;
   // Is this object currently owned (locked) by us?
   // May only be called from some multiplex_impl passing its own AIStatefulTask pointer,
