@@ -1,3 +1,50 @@
+/* Override doxygen stylesheet font */
+
+body, table, div, p, dl {
+	font: 17px/20px Roboto,sans-serif;
+}
+
+p.reference, p.definition {
+	font: 400 17px/20px Roboto,sans-serif;
+}
+
+table.directory {
+    font: 400 17px Roboto,sans-serif;
+}
+
+div.line {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+div#mainpage div.header {
+  display: none;
+}
+
+/* Adopt boost filesystem css */
+
+body {
+  max-width: 21cm;
+  margin: 0px auto;
+}
+
+ins  {background-color: #CCFFCC; text-decoration: none;}
+del  {background-color: #FFCACA; text-decoration: none;}
+pre  {background-color: #D7EEFF; font-size: 95%; font-family: "courier new", courier, serif;}
+code {font-size: 110%; font-family: "courier new", courier, serif;}
+table {font-size: 90%;}
+
+/* Fine tuning */
+
+ul.features li {
+  margin-top: 1em;
+}
+
+ul.features li.title {
+  margin-top: 1em;
+  font-size: 20px;
+}
+
 div#titlearea table {
   border-spacing: 0;
 }
@@ -9,7 +56,7 @@ div#titlearea table td {
 }
 
 p#html_header1 {
-  font-size: 25px;
+  font-size: 22px;
   margin-bottom: 4px;
   color: #feffff;
 }
@@ -27,20 +74,22 @@ p#html_header2 {
   color: #674333;
 }
 
-p#dothis span {
-  font-style: normal;
-}
-
+/*
 div#mainpage {
-  width: 632px;;
+  max-width: 6.5in;
   margin-left: 150px;
 }
+*/
 
 div.todothis {
   white-space: pre;
   font-size: 18px;
-  font-style: italic;
+  font-style: normal;
   margin-left: 50px;
+}
+
+div.todothis span {
+  font-style: italic;
 }
 
 table.implement_table {
@@ -59,10 +108,10 @@ a#details + h2.groupheader {
 div.textblock {
   border-bottom: 1px solid #879ECB;
   width: 100%;
-  max-width: 782px;             /* The width as used in div#mainpage + left + right margin of div.textblock p */
+/*  max-width: 782px;             /* The width as used in div#mainpage + left + right margin of div.textblock p */
 }
 
 div.textblock p,h3 {
-  margin-left: 75px;            /* Left + right margin = left margin of div#mainpage */
-  margin-right: 75px;
+  /*margin-left: 75px;
+  margin-right: 75px;*/
 }

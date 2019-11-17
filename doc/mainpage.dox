@@ -1,17 +1,136 @@
 /*!
 
-\mainpage Overview
+\mainpage Introduction
 \htmlonly
 
 <div id="mainpage">
-<h2>Introduction</h2>
-
 <p><span class="projectname">AIStatefulTask</span> is an
 <a href="https://github.com/CarloWood/ai-statefultask">open source project</a>
 written by <a href="http://carlowood.github.io/">Carlo Wood</a> and is
 the accumulation of more than a decade of design effort, testing and improvements.
 <span class="projectname">AIStatefulTask</span> allows you
 to write event based applications of arbitrary complexity.</p>
+
+<p>The features of the library include:</p>
+
+<ul class="features">
+  <li class="title">High performance.</li>
+    <ul>
+      <li>A great amount of effort was put into assuring the fastest possible algorithms and code.
+      The whole design of the library has been with one goal in mind: to have every core in
+      the machine run a thread that never blocks; does as little system calls as possible,
+      certainly none that might put the thread to sleep.</li>
+      <li>Where possible a lock-free approach has been chosen using weakly ordered atomics,
+      while critical areas &mdash; when unavoidable &mdash; are the least number of clock
+      cycles long in order to reduce concurrent locking of mutexes to a negligible amount.</li>
+      <li>To give one example: it is possible to have millions of timers running without
+      a significant overhead. The required algorithm to achieve this dictates that one has
+      to make a sacrifice: it is only possible to start (such high performance) timers with a
+      timeout interval that is known at compile time. A more naïve design would rather
+      have approached the problem from the starting point that one should be able to start
+      timers with arbitrary (run time) intervals with as unavoidable result that using
+      too many timers results in significant overhead.</li>
+      <li>Another example is the extremely efficient I/O. This library is the only library
+      in the world that allows reading and writing the same socket concurrently. Input is
+      buffered but without the need to copy the data: data is read from a socket into memory
+      and in most cases never moved, but processed in-place.</li>
+      <li>In order to minimize the number of context switches, a thread only goes to sleep
+      when there is nothing else to do (the lock-free ring buffers of the thread pool are
+      empty). Nevertheless, in order to avoid unnecessary system calls to wake up sleeping
+      threads, a special <code>SpinSemaphore</code> has been designed (again, based on weakly ordered
+      atomics) that utilizes the linux-specific futex system call directly in order to
+      gain some cpu cycles by being able to wake up more than one thread at a time (the default
+      POSIX semaphore only allows waking up a single thread at a time, because not all
+      operating systems support waking up more). A (specifically tuned) test application
+      became 20 times faster using our custom semaphore as opposed to using the libc provided
+      one.</li>
+      <li>And the list goes on. If anything, then this is a Maximum High Performance library.</li>
+    </ul>
+  <li class="title">Scalable to many cores.</li>
+    <ul>
+      <li>Doing I/O requires one thread to sleep in <code>epoll</code>. For the timers we
+      use the (hardware) per-process POSIX timer (see timer_create(2)). There is no distinction
+      between other threads; the user can have dedicated threads of course, and have it
+      donate cycles to the tasks running in this library by calling a function (e.g. from
+      its 'idle' point in the main loop), but the library works perfectly well by dividing
+      the work over threads from its thread pool. The idea is to have as many threads as
+      one has cores, so that there is no need for context switching by the kernel within
+      the application (aka, on an otherwise unloaded machine). A thread that mostly sleeps,
+      like the dedicated I/O thread that basically does nothing but wait for I/O events
+      in epoll, does not need to be counted here of course (not using a core makes the
+      application slower than having a context switch upon I/O events).</li>
+      <li>As the work of an application can be divided over many little tasks, those will
+      be executed in parallel whenever possible and when (more) cores are available.</li>
+    </ul>
+  <li class="title">Highly robust.</li>
+    <ul>
+      <li>Every demand that the library puts on its usage is enforced. Preferably at compile
+      time; but when that is not possible (or would introduce less efficient code), usage
+      errors are caught with asserts that are accompanied with detailed comments explaining
+      what one did wrong when that assert failed and how to fix it. Once a program is
+      finished and is using the library correctly then those asserts can of course be
+      removed by compiling for the production environment as opposed to debug mode.</li>
+      <li>In fact, because of this, a reasonable approach would be to just "try something"
+      and/or make random changes to working code; after fixing all compile errors and
+      testing the application well enough to make sure there are no asserts, it is guaranteed
+      that it works again. I am guilty of using this approach myself many times, so that
+      this feature is in fact a tested feature.</li>
+      <li>For example:
+      <pre>
+// The lifetime of at least one FileLock object, of the corresponding
+// canonical path, must be longer than the lifetime of FileLockAccess
+// objects created from it. I.e. you deleted the FileLock object
+// corresponding to this FileLockAccess. Don't do that.
+ASSERT(!m_debug_weak_ptr.expired());</pre>
+      </li>
+    </ul>
+  <li class="title">Builtin debugging support.</li>
+    <ul>
+      <li>Debugging complex, multi-threaded programs can be quite a challenge.
+      Stepping through the code with a debugger is often not going to cut it.
+      The only reasonable way to debug such a program is with highly detailed
+      debug output that prints everything that goes on. This library been written
+      with that in mind from the beginning.
+      Based on <a href="https://github.com/CarloWood/libcwd">libcwd</a>, debug
+      output is written to so called <i>debug channels</i> allowing to follow
+      exactly what happened just prior to the problem that you want to investigate.
+      The debug code can be omnitted entirely from production code of course,
+      but even in debug mode doesn't cause a very significant overhead; apart
+      from the actual output (especially to screen). However, one can&mdash;
+      for example&mdash turn all debug output off except for one (or more)
+      specific Tasks.</li>
+    </ul>
+  <li class="title">Thread-safe by design.</li>
+    <ul>
+      <li>AIStatefulTask helps in many ways with writing a (heavy) multi-threaded
+      program without running into all the normal problems: each Task is an object
+      with its own (private) members that it is manipulating. A task basically
+      exists of a single virtual function (<code>multiplex_impl</code>). Only
+      one thread at a time will execute that function, so it is basically
+      single-threaded; no mutex locking is necessary for any of the private
+      variable. Synchronization with other threads (tasks) is provided by
+      the library in a fail-safe way.</li>
+      <li>When a task is run from an <code>AIEngine</code> then it is executed
+      from a known point in the main loop of, for example, some other library.
+      That means that the task runs at the moment that that library doesn't
+      run so again there is no need for complex mutex locking. This is the
+      prefered way run tasks that have to interact with non-thread-safe third
+      party libraries.</li>
+    </ul>
+  <li class="title">Error handling and reporting via C++ exceptions.</li>
+    <ul>
+      <li>C++ exceptions are the preferred error reporting mechanism for most applications.
+      The exception thrown includes the detailed error code information important for
+      diagnosing the exact cause of errors. In most cases such errors are fatal for
+      whatever task initiated it. For example, the user tries to write a file
+      to a non-existing directory. Then the rest of the program can continue running,
+      the only thing needed is to cancel this user-action. Hence, an error is closely
+      related (if not the same) as a pop-up telling the user of a problem.
+      The library makes use of <code>AIAlert</code> error reporting, which has
+      been written with exactly that in mind and are ready for translation into
+      other languages.</li>
+    </ul>
+</ul>
 
 <h3>The Problem</h3>
 

@@ -13,7 +13,7 @@
 <!--BEGIN !GENERATE_TREEVIEW-->
 <hr class="footer"/>
 <address class="footer" style="text-align:left;">
-<span style="margin-left: 10px; font-size: 90%;">Copyright &copy; 2018 Carlo Wood.&nbsp; All rights reserved.</span>
+<span style="margin-left: 10px; font-size: 90%;">Copyright &copy; 2018, 2019 Carlo Wood.&nbsp; All rights reserved.</span>
 <span style="float:right;">
 <small>$generatedby&#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="$relpath^doxygen.png" alt="doxygen"/>
