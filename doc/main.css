@@ -17,8 +17,18 @@ div.line {
   line-height: 1.4;
 }
 
+div.toc li ul li {
+  background: none;
+}
+
 div#mainpage div.header {
   display: none;
+}
+
+div.contents div.textblock {
+  border-bottom: none;
+  margin-top: 1em;
+  margin-bottom: 1em;
 }
 
 /* Adopt boost filesystem css */
@@ -30,19 +40,31 @@ body {
 
 ins  {background-color: #CCFFCC; text-decoration: none;}
 del  {background-color: #FFCACA; text-decoration: none;}
-pre  {background-color: #D7EEFF; font-size: 95%; font-family: "courier new", courier, serif;}
-code {font-size: 110%; font-family: "courier new", courier, serif;}
+pre  {background-color: #D7EEFF; font-size: 95%; font-family: monospace, "courier new", courier, serif;}
 table {font-size: 90%;}
 
 /* Fine tuning */
 
-ul.features li {
+div.fragment {
+  padding: 10px;
+}
+
+p.startli {
+  margin-bottom: 2px;
+}
+
+h1 {
   margin-top: 1em;
 }
 
-ul.features li.title {
-  margin-top: 1em;
+div#mainpage div#features h2 {
   font-size: 20px;
+  margin-top: 1em;
+}
+
+div#mainpage li {
+  margin-top: 1em;
+  list-style: circle;
 }
 
 div#titlearea table {
@@ -51,7 +73,7 @@ div#titlearea table {
 
 div#titlearea table td {
   width: 100%;
-  background-color: #001314;    /* The background color of aistatfultask_arc.png */
+  background-color: #001314;    /* The background color of aistatefultask_arc.png */
   text-align: left;
 }
 
@@ -62,24 +84,18 @@ p#html_header1 {
 }
 
 p#html_header1 span#name {
-  color: #674333;               /* The brownish color of aistatfultask_arc.png */
+  color: #674333;               /* The brownish color of aistatefultask_arc.png */
 }
 
 p#html_header2 {
   margin-top: 0px;
-  color: #b1fcfc;               /* The light-blue color of aistatfultask_arc.png */
+  color: #b1fcfc;               /* The light-blue color of aistatefultask_arc.png */
 }
 
 .projectname {
   color: #674333;
+  font-weight: bold;
 }
-
-/*
-div#mainpage {
-  max-width: 6.5in;
-  margin-left: 150px;
-}
-*/
 
 div.todothis {
   white-space: pre;
@@ -108,10 +124,24 @@ a#details + h2.groupheader {
 div.textblock {
   border-bottom: 1px solid #879ECB;
   width: 100%;
-/*  max-width: 782px;             /* The width as used in div#mainpage + left + right margin of div.textblock p */
 }
 
-div.textblock p,h3 {
-  /*margin-left: 75px;
-  margin-right: 75px;*/
+code, span.tt, span.inlinecode {
+  font-family: monospace, "courier new", courier, serif;
+  font-size: 90%;
+}
+
+span.inlinecode {
+  padding-left: 3px;
+  padding-right: 3px;
+  border: 1px solid #879ECB;
+}
+
+ol.prerequisites {
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+ol.prerequisites li {
+  margin-top: 5px;
 }

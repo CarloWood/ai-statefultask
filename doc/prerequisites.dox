@@ -1,0 +1,290 @@
+/*!
+\page prerequisites C++ Prerequisites
+<h3>Library initialization.</h3>
+
+<p>Once the build system has been set up correctly (see \ref compiling)
+there are still a few things to be taken care of at the C++ level;
+lets write a quick 'Hello World'.</p>
+
+<p>In fact, a lot of prerequisites are due to <a href="http://libcwd.sourceforge.net/index.html"><b>libcwd</b></a>:
+<ol class="prerequisites">
+<li>Each source file must start with \c{#include "sys.h"}.
+By default this will use <a href="https://github.com/CarloWood/cwds/blob/master/sys.h">the one provided</a>
+by <a href="https://github.com/CarloWood/cwds#readme">cwds</a>,
+or you can override that by providing your own \tt{sys.h} in the root of the project.</li>
+<li>Each source or header file that uses debugging, so that certainly includes
+\tt{main.cpp}, needs to \c{#include&nbsp;"debug.h"} somewhere. However, \tt{main.cpp}
+also needs to \c{#include&nbsp;"evio/EventLoop.h"} (which includes \tt{threadpool/AIThreadPool.h}),
+or at the very least \tt{threadpool/AIThreadPool.h} if you don't use an \c{EventLoop},
+which already include(s) \tt{debug.h}, so including just the former is sufficient.</li>
+<li>At the beginning of \c{main} you need to add the line:
+@code
+Debug(NAMESPACE_DEBUG::init());
+@endcode
+This calls a function provided by \tt{cwds} that reads your \tt{~/.libcwdrc} file
+turning on debug output for the specified debug channels.</li>
+</ol>
+
+To enable debug output of \projectname you should turn on
+the debug channel \c{statefultask}.
+You could add, below the previous one, the line
+\c{Debug(if (!dc::statefultask.is_on()) dc::statefultask.on());} but
+prefered is to simply turn on and off debug channels in your \tt{~/.libcwdrc}.
+Mine looks like this:
+
+@code
+silent = on
+channels_default = off
+#channels_on = warning,notice,system,statefultask,threadpool,action,semaphore,semaphorestats
+channels_on = warning,notice,system,statefultask,threadpool
+gdb = /usr/bin/gdb $GDBCOMMANDFILE
+xterm = konsole --nofork --workdir "$PWD" --geometry 165x24-0-0 -e %s
+@endcode
+
+@anchor helloworld_example
+<p>\projectname requires multiple initializations at the beginning of \c{main}.
+The reason for that is to make it easier to customize the initialization; although
+each have sensible defaults you can pass (different) arguments to fine tune the
+initialization. See their respective documentation for the details. For now don't
+worry about this and just use the defaults.</p>
+
+<p>The following objects should be created at the start of \c{main}:</p>
+<ul>
+<li>An AIMemoryPagePool object. Causes a singleton object to be initialized
+that can only be used after this AIMemoryPagePool object is created. You must
+create it at the start of \c{main} however and not as a global variable, so that
+upon leaving \c{main} the singleton is destructed and allocated memory is cleanly
+deallocated. This is a general approach of the library, and should be of your code
+that uses the library: do not use the library from anything that can be executed
+before or after \c{main}.</li>
+<li>An AIThreadPool object. Even though the thread pool has its own separate
+git submodule, it is the work horse of \projectname. Like with AIMemoryPagePool,
+creating an AIThreadPool object at the start of \c{main} causes a singleton object
+to be initialized that can only be used while this object exists. Do not use
+AIThreadPool::instance() before or after \c{main}.</li>
+<li>One or more AIThreadPool::PriorityQueue objects, refered to by AIQueueHandle`s,
+to be used as default handler for your tasks. But even if you don't need a handler,
+you must created at least one queue.</li>
+<li>Create zero or more AIEngine objects and use those as default handler for your tasks;
+and have a main loop calling \c{mainloop();} on each of those engines on a regular basis;
+for example as part of the 'idle' cycle of the main loop of <a href="https://www.gtkmm.org/en/documentation.html">gtkmm/glibmm</a>.</li>
+</ul>
+</p>
+
+<p>See the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/helloworld.cxx">\tt{helloworld.cxx}</a>
+file of the ai-statefultask-testsuite project for a working &quot;Hello World&quot; example.
+As another example have a look at the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/fibonacci.cxx">\tt{fibonacci.cxx}</a>
+file in the same project.</p>
+
+<p>If you are new to \projectname then I urge
+you to first clone <a href="https://github.com/CarloWood/ai-statefultask-testsuite">ai-statefultask-testsuite</a> and get that working;
+as that will require you to have all the bits and pieces for building a project
+that uses \projectname installed (hint: start
+with getting, compiling and installing <a href="https://github.com/CarloWood/libcwd">libcwd</a>
+and configure that for example with \tt{--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading}
+because, respectivily, you got it with git, but you're not debugging libcwd itself, you don't need memory allocation
+debugging (slow), or printing source_file:line_number locations, and we only need the multithreaded version).</p>
+
+<p>If you run into any problems configuring, compiling and/or installing libcwd,
+please watch <a href="https://www.youtube.com/watch?v=JbDlUIz7oek&list=PLJzCXkV5Y8Ze6TtQWQSH6w5J-e-yIhgzP&t=172">this tutorial</a>.
+If you run into any problems with setting up the environment related to the git submodules (cwm4 and cwds), please
+watch <a href="https://www.youtube.com/watch?v=53wWV0wqOMA&list=PLJzCXkV5Y8Ze6TtQWQSH6w5J-e-yIhgzP&index=2">this tutorial</a>.</p>
+
+<p>The minimal program to print debug output looks something like this:
+
+@code
+#include "sys.h"
+#include "debug.h"
+
+int main()
+{
+  Debug(NAMESPACE_DEBUG::init());
+  Dout(dc::notice, "Entering main()");
+
+  // See below.
+
+  Dout(dc::notice, "Leaving main()");
+}
+@endcode
+
+which requires linking with \tt{libcwds_r}.</p>
+
+<p>A minimal program that has a thread pool, looks something like this:
+
+@code
+#include "sys.h"
+#include "threadpool/AIThreadPool.h"    // Includes debug.h.
+
+int main()
+{
+  Debug(NAMESPACE_DEBUG::init());
+  Dout(dc::notice, "Entering main()");
+
+  AIThreadPool thread_pool;     // AIThreadPool(int number_of_threads, int max_number_of_threads)
+  AIQueueHandle high_priority_queue =
+      thread_pool.new_queue(8); // new_queue(int capacity, int reserved_threads)
+  // Optionally add more queues for different priorities:
+  AIQueueHandle medium_priority_queue = thread_pool.new_queue(8);
+  AIQueueHandle low_priority_queue = thread_pool.new_queue(8);
+
+  // See below.
+
+  Dout(dc::notice, "Leaving main()");
+}
+@endcode
+
+which requires, additionally, linking with \tt{libthreadpool libthreadsafe libutils}.</p>
+
+<p>A minimal program that has an event loop (for I/O), looks something like this:
+
+@code
+#include "sys.h"
+#include "evio/EventLoop.h"
+#include "utils/debug_ostream_operators.h"      // Needed to write error to Dout.
+
+int main()
+{
+  Debug(NAMESPACE_DEBUG::init());
+  Dout(dc::notice, "Entering main()");
+
+  AIThreadPool thread_pool;
+  AIQueueHandle low_priority_queue = thread_pool.new_queue(8);
+
+  try
+  {
+    evio::EventLoop event_loop(low_priority_queue); 
+    
+    // See below.
+
+    // Terminate application.
+    event_loop.join();
+  }
+  catch (AIAlert::Error const& error)
+  {
+    Dout(dc::warning, error);
+  }
+
+  Dout(dc::notice, "Leaving main()");
+}
+@endcode
+
+which requires, additionally, linking with \tt{libevio}.</p>
+
+<p>When you actually use a task, so far we only used submodules other than \tt{statefultask},
+it is a good idea to also create the \c{AIMemoryPagePool} object, just in case (although this
+is really only required when you use AIStatefulTaskMutex (indirectly)).
+
+Assume we have a task \c{task::HelloWorld} and want to run that, after initialization.
+Then we can run this task in the thread pool:
+
+@code
+#include "sys.h"
+#include "helloworld-task/HelloWorld.h"
+#include "statefultask/DefaultMemoryPagePool.h"
+#include "threadpool/AIThreadPool.h"
+#include "utils/AIAlert.h"
+#include "utils/debug_ostream_operators.h"      // Needed to write error to Dout.
+
+int main()
+{
+  Debug(NAMESPACE_DEBUG::init());
+  Dout(dc::notice, "Entering main()");
+
+  AIMemoryPagePool mpp;                 // Create before thread_pool.
+  AIThreadPool thread_pool;
+  AIQueueHandle low_priority_queue = thread_pool.new_queue(8);
+
+  try
+  {
+    auto task = task::create<task::HelloWorld>();
+    task->initialize(42);
+    task->run(low_priority_queue);      // Must have a non-immediate handler because it calls yield().
+  }
+  catch (AIAlert::Error const& error)
+  {
+    Dout(dc::warning, error);
+  }
+
+  Dout(dc::notice, "Leaving main()");
+}
+@endcode
+
+which requires, additionally, linking with \tt{libstatefultask.la} (and \tt{libhelloworldtask.la}).
+
+Note that \c{AIMemoryPagePool} is created *before* \c{AIThreadPool}.
+This is important because tasks can continue running until the thread pool
+is destructed, so \c{mpp} must be destructed *after* \c{thread_pool}!
+
+Also note that the task is run by passing a handler. Try what happens
+when you don't pass anything and just call \c{run()}.</p>
+
+<p>It is also possible run a task in an AIEngine. An AIEngine requires
+a main loop somewhere to be run from, which we don't have in a small
+\tt{Hello World} type program, so we have to add one for demonstration
+purposes. I'm also adding the event loop back, pretending we're doing
+I/O.</p>
+
+@code
+#include "sys.h"
+#include "helloworld-task/HelloWorld.h"         // task::HelloWorld (and task::create).
+#include "statefultask/DefaultMemoryPagePool.h" // AIMemoryPagePool.
+#include "statefultask/AIEngine.h"              // AIEngine, AIThreadPool, AIQueueHandle.
+#include "evio/EventLoop.h"                     // evio::EventLoop (and AIAlert).
+#include "utils/debug_ostream_operators.h"      // Needed to write AIAlert::Error to Dout.
+
+int main()
+{
+  Debug(NAMESPACE_DEBUG::init());               // Initialize cwds and libcwd.
+  Dout(dc::notice, "Entering main()");
+
+  AIMemoryPagePool mpp;                 // Create first. Takes optional initialization.
+  AIThreadPool thread_pool;             // Required. Takes optional initialization).
+  AIQueueHandle low_priority_queue =    // At least one queue is required.
+      thread_pool.new_queue(8);
+
+  try
+  {
+    evio::EventLoop event_loop(low_priority_queue);     // Needed when doing I/O.
+    AIEngine engine("main engine", 2.0);                // To run tasks from a known point
+                                                        // in some (libraries) main loop.
+
+    bool test_finished = false;
+
+    // All tasks are created (somewhere, often as member variable of an object).
+    auto task = task::create<task::HelloWorld>();
+    // Often initialized before (re)running them.
+    task->initialize(42);
+    // And finally started by calling one of the run() member functions.
+    task->run(&engine, [&](bool CWDEBUG_ONLY(success)){
+        test_finished = true;
+        Dout(dc::notice, "Inside the call-back (" <<
+            (success ? "success" : "failure") << ").");
+    });
+    // Destruction of a task is automatic; once both, the 'task' variable
+    // is destructed and it finished running.
+
+    // Add an artificial main loop here.
+    while (!test_finished)
+    {
+      // Run tasks from a known point some libraries main loop.
+      // This 'synchronizes' the task with the code of that particular library.
+      engine.mainloop();
+      // Pretend we're doing something else too.
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    // Application termination (this signals clean termination, as opposed to
+    // leaving this scope by thrown exception).
+    // It influences how the destructor of evio::EventLoop behaves.
+    event_loop.join();
+  }
+  catch (AIAlert::Error const& error)
+  {
+    // This is only debug output. Normally you'd want to handle errors of course.
+    Dout(dc::warning, error);
+  }
+
+  Dout(dc::notice, "Leaving main()");
+}
+@endcode
+*/

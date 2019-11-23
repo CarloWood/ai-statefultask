@@ -51,7 +51,7 @@
  *
  * Each of the member functions @link group_run AIStatefulTask::run()@endlink end with a call to <code>AIStatefulTask::reset()</code>
  * which in turn calls <code>AIStatefulTask::multiplex(initial_run)</code>.
- * When a default engine was passed to \c run then \c multiplex adds the task to the queue of that engine.
+ * When a default engine was passed to \c{run} then \c{multiplex} adds the task to the queue of that engine.
  * When a thread pool queue was passed to \c run then the task is added to that queue of the thread pool.
  * If the special \ref AIQueueHandle @link AIStatefulTask::Handler::immediate immediate@endlink was passed to \c run then the task is being run immediately in the
  * thread that called \c run and will <em>keep</em> running until it is either aborted or one of
@@ -78,7 +78,7 @@
  * it processes one or more tasks in its queue until either &mdash; all tasks are finished, idle, moved to another handler
  * or aborted &mdash; or, if a maximum duration was set, until more than @link AIEngine::AIEngine(char const*, float) max_duration@endlink
  * milliseconds was spent in the \c mainloop (this applies to new tasks, not a task whose \c multiplex_impl is already called
- * \htmlonly&mdash;\endhtmlonly \c a frequent call to @link AIStatefulTask::yield yield()@endlink is your friend there).
+ * &mdash;only a frequent call to @link AIStatefulTask::yield yield()@endlink is your friend there).
  *
  * Note that each @link AIStatefulTask task@endlink object keeps track of three handlers:
  * * <code>AIStatefulTask::mTargetHandler&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Last handler passed to target() or yield*().</code>

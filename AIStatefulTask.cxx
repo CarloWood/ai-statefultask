@@ -138,15 +138,15 @@
  *
  *   // Each derived class must define the states that it might go through.
  *   enum example_state_type {
- *     Example_start = direct_base_type::max_state,     // The first state must be equal to direct_base_type::max_state.
+ *     Example_start = direct_base_type::state_end,     // The first state must be equal to direct_base_type::state_end.
  *     Example_next,
  *     Example_foo,
- *     Example_done                                     // The last state is used to give max_state its value.
+ *     Example_done                                     // The last state is used to give state_end its value.
  *   };
  *
  *  public:
- *   // Each derived class must define a max_state that is one beyond its last state.
- *   static state_type constexpr max_state = Example_done + 1;
+ *   // Each derived class must define a state_end that is one beyond its last state.
+ *   static state_type constexpr state_end = Example_done + 1;
  *
  *  public:
  *   // The derived class must have a default constructor.
@@ -200,7 +200,7 @@ class Example : public AIStatefulTask
    * char const* Example::state_str_impl(state_type run_state) const
    * {
    *   // If this fails then a derived class forgot to add an AI_CASE_RETURN for this state.
-   *   ASSERT(run_state < max_state);
+   *   ASSERT(run_state < state_end);
    *   switch(run_state)
    *   {
    *     // A complete listing of hello_world_state_type.
@@ -1117,7 +1117,7 @@ void AIStatefulTask::initialize_impl()
 {
   Dout(dc::statefultask, "Calling default initialize_impl() [" << (void*)this << "]");
   // Start with the first state of the derived class.
-  set_state(max_state);
+  set_state(state_end);
 }
 
 void AIStatefulTask::abort_impl()

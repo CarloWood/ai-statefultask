@@ -72,13 +72,13 @@ class AITimer : public AIStatefulTask
 
   //! The different states of the stateful task.
   enum timer_state_type {
-    AITimer_start = direct_base_type::max_state,
+    AITimer_start = direct_base_type::state_end,
     AITimer_expired
   };
 
  public:
   //! One beyond the largest state of this task.
-  static state_type constexpr max_state = AITimer_expired + 1;
+  static state_type constexpr state_end = AITimer_expired + 1;
 
  private:
   std::atomic_bool mHasExpired;                 //!< Set to true after the timer expired.

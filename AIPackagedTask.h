@@ -51,7 +51,7 @@ class Task : public AIStatefulTask
 
   // The different states of the task.
   enum task_state_type {
-    Task_start = direct_base_type::max_state,
+    Task_start = direct_base_type::state_end,
     Task_done,
   };
 
@@ -60,7 +60,7 @@ class Task : public AIStatefulTask
   void multiplex_impl(state_type run_state) override;
 
  public:
-  static state_type constexpr max_state = Task_done + 1;      // One beyond the largest state.
+  static state_type constexpr state_end = Task_done + 1;      // One beyond the largest state.
   Task() : AIStatefulTask(DEBUG_ONLY(true)),
       m_calculate_factorial(this, 1, &factorial) { }          // Prepare to run `factorial' in its own thread.
 

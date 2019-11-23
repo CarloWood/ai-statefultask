@@ -63,8 +63,8 @@ using AIWaitConditionFunc = std::function<bool()>;
  * Furthermore a derived class must define,
  * <table class="implement_table">
  * <tr><td class="item">@link example_task direct_base_type @endlink<td>The immediate base class of the derived class.
- * <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::max_state</code>.
- * <tr><td class="item">@link example_task max_state @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
+ * <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::state_end</code>.
+ * <tr><td class="item">@link example_task state_end @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
  * <tr><td class="item">@link Example::state_str_impl state_str_impl @endlink<td>A member function that returns a <code>char const*</code> to a human readable string for each of its states (for debug purposes).
  * <tr><td class="item">@link Example::multiplex_impl multiplex_impl @endlink<td>The core function with a <code>switch</code> on the current state to be run.
  * </table>
@@ -108,7 +108,7 @@ class AIStatefulTask : public AIRefCount
 
  public:
   //! The next state value to use for derived classes.
-  static state_type constexpr max_state = bs_killed + 1;
+  static state_type constexpr state_end = bs_killed + 1;
   //! What to do when a child task is aborted.
   enum on_abort_st {
     abort_parent,             //!< Call abort() on the parent.
@@ -706,6 +706,31 @@ NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct statefultask;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
+
+namespace task {
+
+// Convenience function to create tasks.
+template<typename TaskType, typename... ARGS, typename = typename std::enable_if<std::is_base_of<AIStatefulTask, TaskType>::value>::type>
+boost::intrusive_ptr<TaskType> create(ARGS&&... args)
+{
+#ifdef CWDEBUG
+#if CWDEBUG_LOCATION
+  LibcwDoutScopeBegin(LIBCWD_DEBUGCHANNELS, ::libcwd::libcw_do, dc::statefultask)
+  LibcwDoutStream << "Entering task::create<" << libcwd::type_info_of<TaskType>().demangled_name();
+  (LibcwDoutStream << ... << (", " + libcwd::type_info_of<ARGS>().demangled_name())) << ">(" << join(", ", args...) << ')';
+  LibcwDoutScopeEnd;
+  ::NAMESPACE_DEBUG::Indent indentation(2);
+#else
+  DoutEntering(dc::evio, "task::create<>(" << join(", ", args...) << ')')
+#endif
+#endif
+  TaskType* task = new TaskType(std::forward<ARGS>(args)...);
+  AllocTag2(task, "Created with task::create");
+  Dout(dc::statefultask, "Returning task pointer " << (void*)task << " [" << static_cast<AIStatefulTask*>(task) << "].");
+  return task;
+}
+
+} // namespace task
 
 #include "AIStatefulTaskMutex.h"
 
