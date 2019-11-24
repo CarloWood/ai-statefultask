@@ -46,11 +46,11 @@ class AIDelayedFunction; // not defined.
  * the arguments are added later.
  *
  * The actual invokation of the function happens by calling
- * the \ref invoke() member function, which stores the return
+ * the @ref invoke() member function, which stores the return
  * value once again in this object.
  *
  * The return value can later be obtained through the member
- * function \ref get().
+ * function @ref get().
  *
  * Usage example:
  *
@@ -83,16 +83,16 @@ class AIDelayedFunction<R(Args...)>
   AIDelayedFunction(R (*fp)(Args...)) { m_function = fp; }
 
   /*!
-   * @brief Construct an AIDelayedFunction for a member function <code>R C::f(Args...)</code> of \a object.
+   * @brief Construct an AIDelayedFunction for a member function <code>R C::f(Args...)</code> of @a object.
    *
-   * The object must have a lifetime that exceeds the call to \ref invoke.
+   * The object must have a lifetime that exceeds the call to @ref invoke.
    */
   template<class C>
   AIDelayedFunction(C* object, R (C::*memfn)(Args...))
       { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
 
   /*!
-   * @brief Exchange the state with that of \a other.
+   * @brief Exchange the state with that of @a other.
    */
   void swap(AIDelayedFunction& other) noexcept
   {

@@ -88,21 +88,21 @@ class AIStatefulTask : public AIRefCount
  private:
   //! The type of event that causes <code>multiplex(event_type event)</code> to be called.
   enum event_type {
-    initial_run,              //!< The user called \c run, directly after creating a task.
+    initial_run,              //!< The user called @c run, directly after creating a task.
     schedule_run,             //!< The user called signal(condition_type) with a condition that the task was waiting for.
     normal_run,               //!< Called from AIEngine::mainloop for tasks in the engines queue.
     insert_abort              //!< Called from abort() when that is called on a waiting task.
   };
 
  protected:
-  //! The type of \c mState.
+  //! The type of @c mState.
   enum base_state_type {
-    bs_reset,                 //!< Idle state before \c run is called. Reference count is zero (except for a possible external <code>boost::intrusive_ptr</code>).
-    bs_initialize,            //!< State after \c run and before/during \c initialize_impl.
-    bs_multiplex,             //!< State after \c initialize_impl and before \c finish() or \c abort().
-    bs_abort,                 //!< State after \c abort() <em>and</em> leaving \c inside multiplex_impl (if there), and before \c abort_impl().
-    bs_finish,                //!< State after \c finish() (assuming \c abort() isn't called) <em>and</em> leaving \c multiplex_impl (if there), or after \c abort_impl, and before \c finish_impl().
-    bs_callback,              //!< State after \c finish_impl() and before the call back.
+    bs_reset,                 //!< Idle state before @c run is called. Reference count is zero (except for a possible external <code>boost::intrusive_ptr</code>).
+    bs_initialize,            //!< State after @c run and before/during @c initialize_impl.
+    bs_multiplex,             //!< State after @c initialize_impl and before @c finish() or @c abort().
+    bs_abort,                 //!< State after @c abort() <em>and</em> leaving @c inside multiplex_impl (if there), and before @c abort_impl().
+    bs_finish,                //!< State after @c finish() (assuming @c abort() isn't called) <em>and</em> leaving @c multiplex_impl (if there), or after @c abort_impl, and before @c finish_impl().
+    bs_callback,              //!< State after @c finish_impl() and before the call back.
     bs_killed                 //!< State after the call back, or when aborted before being initialized.
   };
 
@@ -125,12 +125,12 @@ class AIStatefulTask : public AIRefCount
    * By constructing a Handler from Handler::immediate, it describes that a task
    * should run in the thread that calls run() or the thread that wakes up a task
    * by calling signal(). Hence, this handler causes a task to run to until
-   * the first time it goes idle, or calls \c yield, before returning from \c run / \c signal respectively.
+   * the first time it goes idle, or calls @c yield, before returning from @c run / @c signal respectively.
    *
    * When a Handler is constructed from an AIEngine pointer, then it describes that
    * a task should run in that engine.
    *
-   * Finally, a Handler can be constructed from \ref AIQueueHandle, describing that a
+   * Finally, a Handler can be constructed from @ref AIQueueHandle, describing that a
    * task should run in the thread pool by adding it to the PriorityQueue of that
    * handle.
    */
@@ -178,7 +178,7 @@ class AIStatefulTask : public AIRefCount
 
     // Gcc complains because what is defined depends on the value of m_type.
     PRAGMA_DIAGNOSTIC_PUSH_IGNORE_maybe_uninitialized
-    //! Return true when equivalent to \a handler.
+    //! Return true when equivalent to @a handler.
     bool operator==(Handler handler) const {
         return m_type == handler.m_type &&
             (m_type != engine_h || m_handle.engine == handler.m_handle.engine) &&
@@ -268,7 +268,7 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Constructor of base class AIStatefulTask.
    *
-   * The \a debug parameter only exists when CWDEBUG is defined.
+   * The @a debug parameter only exists when CWDEBUG is defined.
    *
    * @param debug Write debug output for this task to dc::statefultask.
    */
@@ -302,12 +302,12 @@ class AIStatefulTask : public AIRefCount
    */
 
   /*!
-   * (Re)run a task with default handler \a default_handler, requesting
+   * (Re)run a task with default handler @a default_handler, requesting
    * a call back to a function <code>void cb_function(bool success)</code>.
-   * The parameter \c success will be \c true when the task finished successfully, or \c false when it was aborted.
+   * The parameter @c success will be @c true when the task finished successfully, or @c false when it was aborted.
    *
    * @param default_handler The way that this task should be handled by default.
-   * @param cb_function The call back function. This function will be called with a single parameter with type \c bool.
+   * @param cb_function The call back function. This function will be called with a single parameter with type @c bool.
    */
   void run(Handler default_handler, std::function<void (bool)> cb_function);
 
@@ -317,8 +317,8 @@ class AIStatefulTask : public AIRefCount
   void run(std::function<void (bool)> cb_function) { run(Handler::immediate, cb_function); }
 
   /*!
-   * (Re)run a task with default handler \a default_handler, requesting
-   * to signal the parent on condition \a condition when successfully finished.
+   * (Re)run a task with default handler @a default_handler, requesting
+   * to signal the parent on condition @a condition when successfully finished.
    *
    * Upon an abort the parent can either still be signalled, also aborted or be left in limbo (do nothing).
    *
@@ -358,7 +358,7 @@ class AIStatefulTask : public AIRefCount
  protected:
   /*! @addtogroup group_protected Protected control functions.
    * @{
-   * From within the \c multiplex_impl function of a running task, the following
+   * From within the @c multiplex_impl function of a running task, the following
    * member functions may be called to control the task.
    *
    * @sa group_public
@@ -368,15 +368,15 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Set the state to run, the next invocation of multiplex_impl.
    *
-   * This function can be called from \c initialize_impl and \c multiplex_impl.
+   * This function can be called from @c initialize_impl and @c multiplex_impl.
    *
-   * A call to \c set_state has no immediate effect, except that the <em>next</em>
-   * invokation of \c multiplex_impl will be with the state that was passed to
-   * the (last) call to \c set_state.
+   * A call to @c set_state has no immediate effect, except that the <em>next</em>
+   * invokation of @c multiplex_impl will be with the state that was passed to
+   * the (last) call to @c set_state.
    *
-   * @param new_state The state to run the next invocation of \c multiplex_impl.
+   * @param new_state The state to run the next invocation of @c multiplex_impl.
    *
-   * \internal Both, initialize_impl and multiplex_impl are called from within AIStatefulTask::multiplex.
+   * @internal Both, initialize_impl and multiplex_impl are called from within AIStatefulTask::multiplex.
    */
   void set_state(state_type new_state);       // Run this state the NEXT loop.
 
@@ -385,12 +385,12 @@ class AIStatefulTask : public AIRefCount
    * For a more detailed usage description and overview please see the @link waiting main page@endlink.
    *
    * @{
-   * These member functions can only be called from within \c multiplex_impl.
+   * These member functions can only be called from within @c multiplex_impl.
    */
   /*!
-   * @brief Wait for \a condition.
+   * @brief Wait for @a condition.
    *
-   * Go idle if non of the bits of \a conditions were signalled <em>twice</em> or more since the last call to <code>wait(</code>that_bit<code>)</code>.
+   * Go idle if non of the bits of @a conditions were signalled <em>twice</em> or more since the last call to <code>wait(</code>that_bit<code>)</code>.
    * The task will continue whenever <code>signal(condition)</code> is called where <code>conditions &amp; condition != 0</code>.
    *
    * @param conditions A bit mask of conditions to wait for.
@@ -398,25 +398,25 @@ class AIStatefulTask : public AIRefCount
   void wait(condition_type conditions);
 
   /*!
-   * @brief Block until the \a wait_condition returns true.
+   * @brief Block until the @a wait_condition returns true.
    *
-   * Whenever something changed that might cause \a wait_condition to return \c true, <code>signal(condition)</code> must be called.
+   * Whenever something changed that might cause @a wait_condition to return @c true, <code>signal(condition)</code> must be called.
    * Calling <code>signal(condition)</code> more often is okay.
    *
-   * @param wait_condition A <code>std::function&lt;bool()&gt;</code> that must return \c true.
+   * @param wait_condition A <code>std::function&lt;bool()&gt;</code> that must return @c true.
    * @param conditions A bit mask of conditions to wait for.
    */
   void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions);
 
   /*!
-   * @brief Block until the \a wait_condition returns true.
+   * @brief Block until the @a wait_condition returns true.
    *
-   * Whenever something changed that might cause \a wait_condition to return \c true, <code>signal(condition)</code> must be called.
+   * Whenever something changed that might cause @a wait_condition to return @c true, <code>signal(condition)</code> must be called.
    * Calling <code>signal(condition)</code> more often is okay.
    *
-   * @param wait_condition A <code>std::function&lt;bool()&gt;</code> that must return \c true.
+   * @param wait_condition A <code>std::function&lt;bool()&gt;</code> that must return @c true.
    * @param conditions A bit mask of conditions to wait for.
-   * @param new_state The new state to continue with once \a wait_condition returns \c true.
+   * @param new_state The new state to continue with once @a wait_condition returns @c true.
    */
   void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state)
   {
@@ -429,9 +429,9 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Mark that the task finished and schedule the call back.
    *
-   * A call to \c abort and \c finish will cause a task to not call
-   * \c multiplex_impl again at all after leaving it (except when
-   * \c finish_impl calls \c run again, in which case the task is
+   * A call to @c abort and @c finish will cause a task to not call
+   * @c multiplex_impl again at all after leaving it (except when
+   * @c finish_impl calls @c run again, in which case the task is
    * restarted from the beginning).
    */
   void finish();
@@ -447,13 +447,13 @@ class AIStatefulTask : public AIRefCount
    * AIEngine main loop code. That way other running tasks (in that engine)
    * will get the chance to execute before the current task is continued.
    *
-   * Note that if a state calls \c yield*() without calling first \ref set_state
-   * then this might <em>still</em> cause 100% cpu usage despite the call to \c yield*
+   * Note that if a state calls @c yield*() without calling first @ref set_state
+   * then this might <em>still</em> cause 100% cpu usage despite the call to @c yield*
    * if the task runs in an engine without @link AIEngine::setMaxDuration max_duration@endlink because the task
-   * will rapidly execute again and then call \c yield* over and over:
+   * will rapidly execute again and then call @c yield* over and over:
    * an engine without max_duration keeps iterating over its tasks until all tasks finished.
    * Otherwise the engine will return from AIEngine::mainloop regardless after at least
-   * \c AIEngine::sMaxDuration milliseconds have passed (which can be set by calling
+   * @c AIEngine::sMaxDuration milliseconds have passed (which can be set by calling
    * @link AIEngine::setMaxDuration AIEngine::setMaxDuration(milliseconds)@endlink).
    *
    * @addtogroup group_yield Yield and engine control
@@ -465,15 +465,15 @@ class AIStatefulTask : public AIRefCount
    *
    * If a task runs potentially too long, it is a good idea to
    * regularly call this member function and break out of
-   * \c multiplex_impl in order not to let other tasks in the
+   * @c multiplex_impl in order not to let other tasks in the
    * same engine starve.
    */
   void yield();
 
   /*!
-   * @brief Continue running from \a engine.
+   * @brief Continue running from @a engine.
    *
-   * The task will keep running in this engine until \c target is called again.
+   * The task will keep running in this engine until @c target is called again.
    * Call <code>target(Handler::idle)</code> to return to running freely (with a default engine, etc, if one was given).
    *
    * @param handler The required engine or thread pool queue to run in, or Handler::idle to turn the target off.
@@ -488,11 +488,11 @@ class AIStatefulTask : public AIRefCount
   void yield(Handler handler);
 
   /*!
-   * @brief Switch to \a engine and sleep for \a frames frames.
+   * @brief Switch to @a engine and sleep for @a frames frames.
    *
-   * This function can only be used for an \a engine with a max_duration.
-   * One frame means one entry into \c AIEngine::mainloop. So, for \a frames
-   * entries of \c mainloop this task will not be run.
+   * This function can only be used for an @a engine with a max_duration.
+   * One frame means one entry into @c AIEngine::mainloop. So, for @a frames
+   * entries of @c mainloop this task will not be run.
    *
    * @param engine The engine to sleep in. This must be an engine with a max_duration set.
    * @param frames The number frames to run before returning CPU to other tasks (if any).
@@ -500,7 +500,7 @@ class AIStatefulTask : public AIRefCount
   void yield_frame(AIEngine* engine, unsigned int frames);
 
   /*!
-   * @brief Switch to \a engine and sleep for \a ms milliseconds.
+   * @brief Switch to @a engine and sleep for @a ms milliseconds.
    *
    * This function can only be used for an engine with a max_duration.
    *
@@ -510,7 +510,7 @@ class AIStatefulTask : public AIRefCount
   void yield_ms(AIEngine* engine, unsigned int ms);
 
   /*!
-   * @brief Do not really yield, unless the current engine is not \a engine.
+   * @brief Do not really yield, unless the current engine is not @a engine.
    *
    * @param handler The required engine or thread pool queue to run in.
    * @returns true if it switched engine.
@@ -530,12 +530,12 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Abort the task (unsuccessful finish).
    *
-   * This function can be called from \c multiplex_imp, but also by a child task and therefore by any thread.
+   * This function can be called from @c multiplex_imp, but also by a child task and therefore by any thread.
    * The child task should use a <code>boost::intrusive_ptr&lt;AIStatefulTask&gt;</code> to access this task.
    *
-   * A call to \c abort and \c finish will cause a task to not call
-   * \c multiplex_impl again at all after leaving it (except when
-   * \c finish_impl calls \c run again, in which case the task is
+   * A call to @c abort and @c finish will cause a task to not call
+   * @c multiplex_impl again at all after leaving it (except when
+   * @c finish_impl calls @c run again, in which case the task is
    * restarted from the beginning).
    */
   void abort();
@@ -547,7 +547,7 @@ class AIStatefulTask : public AIRefCount
    *
    * Those threads should use a <code>boost::intrusive_ptr&lt;AIStatefulTask&gt;</code> to access this task.
    *
-   * Guarantee at least one full run of \a multiplex iff this task is still blocked since
+   * Guarantee at least one full run of @a multiplex iff this task is still blocked since
    * the last call to <code>wait(conditions)</code> where <code>(conditions & condition) != 0</code>.
    *
    * @param condition The condition that might have changed, or that the task is waiting for.
@@ -563,10 +563,10 @@ class AIStatefulTask : public AIRefCount
   /*!
    * @brief Return true if the derived class is running.
    *
-   * The task was initialized (<em>after</em> \c initialize_impl) and did not
-   * call \c finish() or \c abort() yet (<em>before</em> \c finish() or \c abort()).
+   * The task was initialized (<em>after</em> @c initialize_impl) and did not
+   * call @c finish() or @c abort() yet (<em>before</em> @c finish() or @c abort()).
    *
-   * When a task enters \c multiplex_impl it is guaranteed to be running.
+   * When a task enters @c multiplex_impl it is guaranteed to be running.
    */
   bool running() const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
 
@@ -575,17 +575,17 @@ class AIStatefulTask : public AIRefCount
    *
    * Running and idle since the last call to @link group_wait wait@endlink;
    * if already having been woken up due to a call to @link group_wait signal(condition)@endlink
-   * then we're still waiting until we actually re-entered \c begin_loop.
+   * then we're still waiting until we actually re-entered @c begin_loop.
    */
   bool waiting() const;
 
   /*!
    * @brief Return true if the derived class is running and idle or already being aborted.
    *
-   * A task reached the state aborting after returning from \c initialize_impl
-   * or \c multiplex_impl that called \ref abort().
-   * Or when \ref abort() is called from the outside while the task is idle (in which
-   * case we are in the state aborting directly after the call to \ref abort()).
+   * A task reached the state aborting after returning from @c initialize_impl
+   * or @c multiplex_impl that called @ref abort().
+   * Or when @ref abort() is called from the outside while the task is idle (in which
+   * case we are in the state aborting directly after the call to @ref abort()).
    *
    * @sa waiting
    */
@@ -595,7 +595,7 @@ class AIStatefulTask : public AIRefCount
    * @brief Return true if we are added to the current engine.
    *
    * @param handler The handler that this task is supposed to run in.
-   * @return True if this task is actually added to \a handler.
+   * @return True if this task is actually added to @a handler.
    */
   bool active(Handler handler) const { return multiplex_state_type::crat(mState)->current_handler == handler; }
 
@@ -630,7 +630,7 @@ class AIStatefulTask : public AIRefCount
   bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
 
   /*!
-   * @brief Return true if this thread is executing this task right now (aka, we're inside \c multiplex somewhere).
+   * @brief Return true if this thread is executing this task right now (aka, we're inside @c multiplex somewhere).
    */
   bool executing() const { return mMultiplexMutex.is_self_locked(); }
 
@@ -658,17 +658,17 @@ class AIStatefulTask : public AIRefCount
 
  protected:
   /*!{
-   * See \ref example_task for a description of the virtual functions.
+   * See @ref example_task for a description of the virtual functions.
    */
   //! @brief Called to stringify a run state for debugging output. Must be overridden.
   virtual char const* state_str_impl(state_type run_state) const;
-  //! @brief Called for base state \ref bs_initialize.
+  //! @brief Called for base state @ref bs_initialize.
   virtual void initialize_impl();
-  //! @brief Called for base state \ref bs_multiplex.
+  //! @brief Called for base state @ref bs_multiplex.
   virtual void multiplex_impl(state_type run_state) = 0;
-  //! @brief Called for base state \ref bs_abort.
+  //! @brief Called for base state @ref bs_abort.
   virtual void abort_impl();
-  //! @brief Called for base state \ref bs_finish.
+  //! @brief Called for base state @ref bs_finish.
   virtual void finish_impl();
   //! Called from AIEngine::flush().
   virtual void force_killed();

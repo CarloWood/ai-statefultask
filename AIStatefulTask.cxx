@@ -217,7 +217,7 @@ class Example : public AIStatefulTask
   /*!
    * @brief Initialization of a task.
    *
-   * The default \c initialize_impl sets the state to the first state,
+   * The default @c initialize_impl sets the state to the first state,
    * as is done in the example below. When the default is overridden
    * then the new implementation must at least call @ref set_state once.
    *

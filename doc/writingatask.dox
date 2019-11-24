@@ -62,15 +62,15 @@ void MyTask::multiplex_impl(state_type run_state)
 }
 @endcode
 
-Then in \c{multiplex_impl} each state need to be implemented.
+Then in @c{multiplex_impl} each state need to be implemented.
 Here are a few examples.
 
 \subsection changing_state Changing state
 
-It is simply the last call to \c set_state that is used to determine
-what state to run the next invocation of \c multiplex_impl. Also,
+It is simply the last call to @c set_state that is used to determine
+what state to run the next invocation of @c multiplex_impl. Also,
 as might be intuitively correct, it is not really necessary to return
-from \c multiplex_impl to change state; you are allowed to simply fall-through
+from @c multiplex_impl to change state; you are allowed to simply fall-through
 to the next state.
 
 @code
@@ -97,19 +97,19 @@ to the next state.
 
 \subsection yielding Yielding
 
-If in the above code you'd have used a \c break instead of falling
+If in the above code you'd have used a @c break instead of falling
 through, then the program would have almost acted in the same way:
-upon return from \c multiplex_impl the engine sees that the task
-is still running and will therefore immediately reenter \c multiplex_impl.
+upon return from @c multiplex_impl the engine sees that the task
+is still running and will therefore immediately reenter @c multiplex_impl.
 
-In other words, doing a \c break is <em>not</em> the same as a \c yield.
+In other words, doing a @c break is <em>not</em> the same as a @c yield.
 
 Even if a task runs in an engine with a max_duration, and it would
-go over that time limit then doing a \c break still doesn't do anything
-but immediately reentering \c multiplex_impl to continue with the next
+go over that time limit then doing a @c break still doesn't do anything
+but immediately reentering @c multiplex_impl to continue with the next
 state. The test that looks if the engine did run for too long only
-is done once we actually return to the \c mainloop() of the engine
-which only happens when either \c wait or \c yield is called.
+is done once we actually return to the @c mainloop() of the engine
+which only happens when either @c wait or @c yield is called.
 
 Hence, if you want this time check to take place, or if you simply
 want other tasks in the same engine to get a chance to run too
@@ -137,21 +137,21 @@ For example,
 
 Finally there are a couple of typical ways to go idle while
 waiting for some event to happen. Under the hood all of those
-use the same mechanism: you call \c wait(condition) and the
-task goes idle until something else calls \c task.signal(condition).
+use the same mechanism: you call @c wait(condition) and the
+task goes idle until something else calls @c task.signal(condition).
 
-Here \c condition is simply a \c uint32_t bit mask. Normally
-you will just use \c 1. In order not to wake up when some old
-\c signal happens for a condition that you are no longer
+Here @c condition is simply a @c uint32_t bit mask. Normally
+you will just use @c 1. In order not to wake up when some old
+@c signal happens for a condition that you are no longer
 waiting for, each task has up to 32 different possible
-values. If you were waiting for mask \c 1 and it didn't come
+values. If you were waiting for mask @c 1 and it didn't come
 or might still be coming (again) but now you want to wait
-for something else, then simply wait for condition \c 2, \c 4
-or \c 8 etc so that you will automatically ignore an (old and
-lagging behind) signal on \c 1. It is possible to wait and/or
+for something else, then simply wait for condition @c 2, @c 4
+or @c 8 etc so that you will automatically ignore an (old and
+lagging behind) signal on @c 1. It is possible to wait and/or
 signal multiple conditions at the same time however: a call
-to \c wait(condition1) is woken up by a call to \c signal(condition2)
-when \c{condition1 &amp; condition2} is non-zero.
+to @c wait(condition1) is woken up by a call to @c signal(condition2)
+when @c{condition1 &amp; condition2} is non-zero.
 
 For example,
 
@@ -168,8 +168,8 @@ void some_event()
     break;
 @endcode
 
-Often you want to wait for a real condition however, for example \c{x > y},
-and it is not really possible to call \c signal when that happens and then still
+Often you want to wait for a real condition however, for example @c{x > y},
+and it is not really possible to call @c signal when that happens and then still
 be sure that this condition is still true once the task starts running again.
 
 In general, you will only have events that when they happen make it possible,

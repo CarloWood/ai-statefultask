@@ -109,7 +109,7 @@ class AIPackagedTask;   // not defined.
  * It is possible to use a pointer to a free function or to the member function of a given object.
  * In both cases with arbitrary signature.
  *
- * For example, suppose you have some object \c foo of type \c Foo with a member function
+ * For example, suppose you have some object @c foo of type @c Foo with a member function
  * called <code>retrieve</code> that has the signature <code>bool Foo::retrieve(int, double)</code>,
  * whatever those parameters may mean. Then you could do:
  *
@@ -124,12 +124,12 @@ class AIPackagedTask;   // not defined.
  * };
  * @endcode
  *
- * where as @link waiting usual@endlink \c retrieve_condition should be different from any other condition
- * bits that this task is using. And where \c queue_handle is a handle
+ * where as @link waiting usual@endlink @c retrieve_condition should be different from any other condition
+ * bits that this task is using. And where @c queue_handle is a handle
  * that was previously returned by AIThreadPool::new_queue().
  *
  * Then this function can be called (repeatedly, with different parameters
- * if need be) from \c multiplex_impl as follows:
+ * if need be) from @c multiplex_impl as follows:
  *
  * @code
  * ...
@@ -163,8 +163,8 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
   /*!
    * @brief Construct a packaged task for a free function.
    *
-   * @param parent_task The task that \ref dispatch will call \ref wait_until and @link AIStatefulTask::signal signal@endlink on.
-   * @param condition The condition to use for \ref wait_until and @link AIStatefulTask::signal signal@endlink.
+   * @param parent_task The task that @ref dispatch will call @ref wait_until and @link AIStatefulTask::signal signal@endlink on.
+   * @param condition The condition to use for @ref wait_until and @link AIStatefulTask::signal signal@endlink.
    * @param fp A pointer to the function that needs to be called.
    * @param object_queue_handle A handle to the AIObjectQueue that the delayed function should be placed in.
    */
@@ -174,8 +174,8 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
   /*!
    * @brief Construct a packaged task for a member function.
    *
-   * @param parent_task The task that \ref dispatch will call \ref wait_until and @link AIStatefulTask::signal signal@endlink on.
-   * @param condition The condition to use for \ref wait_until and @link AIStatefulTask::signal signal@endlink.
+   * @param parent_task The task that @ref dispatch will call @ref wait_until and @link AIStatefulTask::signal signal@endlink on.
+   * @param condition The condition to use for @ref wait_until and @link AIStatefulTask::signal signal@endlink.
    * @param object Pointer to the object of which the member function must be called.
    * @param memfp A pointer to the member function that needs to be called.
    * @param object_queue_handle A handle to the AIObjectQueue that the delayed function should be placed in.
@@ -187,7 +187,7 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
   //! Destructor.
   ~AIPackagedTask();
 
-  //! Exchange the state with that of \a other.
+  //! Exchange the state with that of @a other.
   void swap(AIPackagedTask& other) noexcept
   {
     std::swap(m_condition, other.m_condition);
@@ -202,7 +202,7 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
    * @brief Put the task in a queue for execution in a different thread.
    *
    * Actually queue the task in the AIObjectQueue whose handle was passed to the constructor
-   * and halt the \c parent_task as passed to the constructor until this task is finished.
+   * and halt the @c parent_task as passed to the constructor until this task is finished.
    *
    * @returns True if the task was successfully queued; false if the queue was full.
    */

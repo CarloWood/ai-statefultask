@@ -46,7 +46,7 @@ to write event driven applications of arbitrary complexity.</p>
   <li>In order to minimize the number of context switches, a thread only goes to sleep
   when there is nothing else to do (the lock-free ring buffers of the thread pool are
   empty). Nevertheless, in order to avoid unnecessary system calls to wake up sleeping
-  threads, a special \c{SpinSemaphore} has been designed (again, based on weakly ordered
+  threads, a special @c{SpinSemaphore} has been designed (again, based on weakly ordered
   atomics) that utilizes the linux-specific futex system call directly in order to
   gain some cpu cycles by being able to wake up more than one thread at a time (the default
   POSIX semaphore only allows waking up a single thread at a time, because not all
@@ -59,7 +59,7 @@ to write event driven applications of arbitrary complexity.</p>
 
 \subsection scalable &bull; Scalable to many cores.
   <ul>
-    <li>Doing I/O requires one thread to sleep in \c{epoll}. For the timers we
+    <li>Doing I/O requires one thread to sleep in @c{epoll}. For the timers we
     use the (hardware) per-process POSIX timer (see timer_create(2)). There is no distinction
     between other threads; the user can have dedicated threads of course, and have it
     donate cycles to the tasks running in this library by calling a function (e.g. from
@@ -116,26 +116,26 @@ ASSERT(!m_debug_weak_ptr.expired());</pre>
 
 \subsection threadsafe &bull; Thread-safe by design.
   <ul>
-    <li>\htmlonly<span class="projectname">AIStatefulTask</span>\endhtmlonly
+    <li>@htmlonly<span class="projectname">AIStatefulTask</span>\endhtmlonly
     helps in many ways with writing a (heavy) multi-threaded
     program without running into all the normal problems: each Task is an object
     with its own (private) members that it is manipulating. The core of a task is
-    implemented in a single virtual function (\c{multiplex_impl}).
+    implemented in a single virtual function (@c{multiplex_impl}).
     Only one thread at a time will execute that function, so it is basically
     single-threaded; no mutex locking is necessary for any of the private
     variables. Synchronization with other tasks is provided by the library in a
     fail-safe way.</li>
     <li>For example, a parent task could start a child task that will call
-    \c{signal} on its parent once it is done. The parent has to \c{wait}
-    until the child task has finished; and therefore calls \c{wait}
+    @c{signal} on its parent once it is done. The parent has to @c{wait}
+    until the child task has finished; and therefore calls @c{wait}
     immediately after starting the child task. This normally leads to a race
-    condition: will the \c{signal} arrive before or after the parent
-    calls \c{wait}? But here that doesn't matter: both the \c{signal}
-    and the \c{wait} call merely toggle a flag and are processed
+    condition: will the @c{signal} arrive before or after the parent
+    calls @c{wait}? But here that doesn't matter: both the @c{signal}
+    and the @c{wait} call merely toggle a flag and are processed
     atomically once the parent returned to the library and it has to be
     decided if the parent task needs to go to sleep; which it will only do
-    when \c{wait} was called and \c{signal} wasn't.</li>
-    <li>When a task is run from an \c{AIEngine} then it is executed
+    when @c{wait} was called and @c{signal} wasn't.</li>
+    <li>When a task is run from an @c{AIEngine} then it is executed
     from a known point in the main loop of, for example, some other library.
     That means that the task runs at the moment that that library doesn't
     run so again there is no need for complex mutex locking. This is the
@@ -201,7 +201,7 @@ to avoid 'unneeded' mutex locking.<p>
 
 \subsection objective The objective of AIStatefulTask.
 
-<p><b>The design goal</b> of \htmlonly<span class="projectname">AIStatefulTask</span>\endhtmlonly was to create
+<p><b>The design goal</b> of @htmlonly<span class="projectname">AIStatefulTask</span>@endhtmlonly was to create
 a framework that allows one to dispatch tasks to a thread pool without losing
 thread-safety or object orientation and without wasting CPU cycles or losing
 the ability to fully utilize the power of every available core.</p>
@@ -212,27 +212,27 @@ relationship between a Task and an object.</p>
 
 <p>Despite the complexity of thread dispatching, asynchronous execution and
 error handling, the code of such a task should give (mostly) a linear feel
-along the way of, <div class="todothis">&quot;To do this task,
+along the way of, @htmlonly<div class="todothis">&quot;To do this task,
 do this, and when done,
 do this, and when done,
 do this, and when done,
 then this task is finished.
-Do this if an error occurs.&quot;</div></p>
+Do this if an error occurs.&quot;</div>@endhtmlonly</p>
 
 <h4>Thread-safety And Object Orientation.</h4>
 
-<p>Each Task in \htmlonly<span class="projectname">AIStatefulTask</span>\endhtmlonly
+<p>Each Task in @htmlonly<span class="projectname">AIStatefulTask</span>\endhtmlonly
 is derived from class AIStatefulTask, overriding up to six virtual functions.</p>
 <p>These virtual functions allow the developer to perform
 initialization, execute code in the case something
 unexpected happens or when the task finishes,
 and of course define what the task is supposed
-to accomplish by overriding the pure virtual \c{AIStatefulTask::multiplex_impl}
+to accomplish by overriding the pure virtual @c{AIStatefulTask::multiplex_impl}
 member function of the base class.</p>
 
 <p>The linear feel of a task is accomplished by having all code
 that comprises the majority of the work done by the task in a single
-\c{switch} statement, in the overridden \c{multiplex_impl}
+@c{switch} statement, in the overridden @c{multiplex_impl}
 member function:</p>
 
 @code
@@ -266,13 +266,13 @@ void MyTask::abort_impl()
 while the thread, at any point, still can return to its main loop and later reenter
 the code where it left of. Note that it doesn't <em>have</em> to be linear, but
 in general the state of a Task will more or less advance in one direction; in the
-above example from \c{MyTask_start} to \cMyTask_next_step} to
-\c{MyTask_last_step} and finally to \c{MyTask_done}. So if the
+above example from @c{MyTask_start} to @c{MyTask_next_step} to
+@c{MyTask_last_step} and finally to @c{MyTask_done}. So if the
 case statements are put in that order then this gives an intuitive feel of how
 the task will progress (from top to bottom).</p>
 
 <p>A Task <em>object</em> is only executed by a single thread at a time. Although
-theoretically that can be a different thread each time \c{multiplex_impl}
+theoretically that can be a different thread each time @c{multiplex_impl}
 is reentered the effect is still single threaded; as long as the variables that
 the Task is accessing aren't also accessed outside of a Task then no locking
 is necessary. Most notably, (non-static) private member variables of the Task
@@ -287,7 +287,7 @@ main loop. This allows to access variables of thread-unsafe third party code
 by running the Task in the same thread as that third-party code. Note that
 it <em>is</em> possible to tell a Task in which thread to run.</p>
 
-See \ref usage for more detailed information.
+See @ref usage for more detailed information.
 
 \htmlonly
 </div> <!-- mainpage -->

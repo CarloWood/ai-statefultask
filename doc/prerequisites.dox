@@ -2,22 +2,22 @@
 \page prerequisites C++ Prerequisites
 <h3>Library initialization.</h3>
 
-<p>Once the build system has been set up correctly (see \ref compiling)
+<p>Once the build system has been set up correctly (see @ref compiling)
 there are still a few things to be taken care of at the C++ level;
 lets write a quick 'Hello World'.</p>
 
 <p>In fact, a lot of prerequisites are due to <a href="http://libcwd.sourceforge.net/index.html"><b>libcwd</b></a>:
 <ol class="prerequisites">
-<li>Each source file must start with \c{#include "sys.h"}.
+<li>Each source file must start with @c{#include "sys.h"}.
 By default this will use <a href="https://github.com/CarloWood/cwds/blob/master/sys.h">the one provided</a>
 by <a href="https://github.com/CarloWood/cwds#readme">cwds</a>,
 or you can override that by providing your own \tt{sys.h} in the root of the project.</li>
 <li>Each source or header file that uses debugging, so that certainly includes
-\tt{main.cpp}, needs to \c{#include&nbsp;"debug.h"} somewhere. However, \tt{main.cpp}
-also needs to \c{#include&nbsp;"evio/EventLoop.h"} (which includes \tt{threadpool/AIThreadPool.h}),
-or at the very least \tt{threadpool/AIThreadPool.h} if you don't use an \c{EventLoop},
+\tt{main.cpp}, needs to @c{#include&nbsp;"debug.h"} somewhere. However, \tt{main.cpp}
+also needs to @c{#include&nbsp;"evio/EventLoop.h"} (which includes \tt{threadpool/AIThreadPool.h}),
+or at the very least \tt{threadpool/AIThreadPool.h} if you don't use an @c{EventLoop},
 which already include(s) \tt{debug.h}, so including just the former is sufficient.</li>
-<li>At the beginning of \c{main} you need to add the line:
+<li>At the beginning of @c{main} you need to add the line:
 @code
 Debug(NAMESPACE_DEBUG::init());
 @endcode
@@ -26,47 +26,46 @@ turning on debug output for the specified debug channels.</li>
 </ol>
 
 To enable debug output of \projectname you should turn on
-the debug channel \c{statefultask}.
+the debug channel @c{statefultask}.
 You could add, below the previous one, the line
-\c{Debug(if (!dc::statefultask.is_on()) dc::statefultask.on());} but
+@c{Debug(if (!dc::statefultask.is_on()) dc::statefultask.on());} but
 prefered is to simply turn on and off debug channels in your \tt{~/.libcwdrc}.
 Mine looks like this:
 
-@code
-silent = on
+@htmlonly<div class="fragment libcwdrc">silent = on
 channels_default = off
-#channels_on = warning,notice,system,statefultask,threadpool,action,semaphore,semaphorestats
 channels_on = warning,notice,system,statefultask,threadpool
+#channels_on = action,semaphore,semaphorestats
 gdb = /usr/bin/gdb $GDBCOMMANDFILE
 xterm = konsole --nofork --workdir "$PWD" --geometry 165x24-0-0 -e %s
-@endcode
+</div>\endhtmlonly
 
 @anchor helloworld_example
-<p>\projectname requires multiple initializations at the beginning of \c{main}.
+<p>\projectname requires multiple initializations at the beginning of @c{main}.
 The reason for that is to make it easier to customize the initialization; although
 each have sensible defaults you can pass (different) arguments to fine tune the
 initialization. See their respective documentation for the details. For now don't
 worry about this and just use the defaults.</p>
 
-<p>The following objects should be created at the start of \c{main}:</p>
+<p>The following objects should be created at the start of @c{main}:</p>
 <ul>
 <li>An AIMemoryPagePool object. Causes a singleton object to be initialized
 that can only be used after this AIMemoryPagePool object is created. You must
-create it at the start of \c{main} however and not as a global variable, so that
-upon leaving \c{main} the singleton is destructed and allocated memory is cleanly
+create it at the start of @c{main} however and not as a global variable, so that
+upon leaving @c{main} the singleton is destructed and allocated memory is cleanly
 deallocated. This is a general approach of the library, and should be of your code
 that uses the library: do not use the library from anything that can be executed
-before or after \c{main}.</li>
+before or after @c{main}.</li>
 <li>An AIThreadPool object. Even though the thread pool has its own separate
 git submodule, it is the work horse of \projectname. Like with AIMemoryPagePool,
-creating an AIThreadPool object at the start of \c{main} causes a singleton object
+creating an AIThreadPool object at the start of @c{main} causes a singleton object
 to be initialized that can only be used while this object exists. Do not use
-AIThreadPool::instance() before or after \c{main}.</li>
+AIThreadPool::instance() before or after @c{main}.</li>
 <li>One or more AIThreadPool::PriorityQueue objects, refered to by AIQueueHandle`s,
 to be used as default handler for your tasks. But even if you don't need a handler,
 you must created at least one queue.</li>
 <li>Create zero or more AIEngine objects and use those as default handler for your tasks;
-and have a main loop calling \c{mainloop();} on each of those engines on a regular basis;
+and have a main loop calling @c{mainloop();} on each of those engines on a regular basis;
 for example as part of the 'idle' cycle of the main loop of <a href="https://www.gtkmm.org/en/documentation.html">gtkmm/glibmm</a>.</li>
 </ul>
 </p>
@@ -171,10 +170,10 @@ int main()
 which requires, additionally, linking with \tt{libevio}.</p>
 
 <p>When you actually use a task, so far we only used submodules other than \tt{statefultask},
-it is a good idea to also create the \c{AIMemoryPagePool} object, just in case (although this
+it is a good idea to also create the @c{AIMemoryPagePool} object, just in case (although this
 is really only required when you use AIStatefulTaskMutex (indirectly)).
 
-Assume we have a task \c{task::HelloWorld} and want to run that, after initialization.
+Assume we have a task @c{task::HelloWorld} and want to run that, after initialization.
 Then we can run this task in the thread pool:
 
 @code
@@ -211,12 +210,12 @@ int main()
 
 which requires, additionally, linking with \tt{libstatefultask.la} (and \tt{libhelloworldtask.la}).
 
-Note that \c{AIMemoryPagePool} is created *before* \c{AIThreadPool}.
+Note that @c{AIMemoryPagePool} is created *before* @c{AIThreadPool}.
 This is important because tasks can continue running until the thread pool
-is destructed, so \c{mpp} must be destructed *after* \c{thread_pool}!
+is destructed, so @c{mpp} must be destructed *after* @c{thread_pool}!
 
 Also note that the task is run by passing a handler. Try what happens
-when you don't pass anything and just call \c{run()}.</p>
+when you don't pass anything and just call @c{run()}.</p>
 
 <p>It is also possible run a task in an AIEngine. An AIEngine requires
 a main loop somewhere to be run from, which we don't have in a small

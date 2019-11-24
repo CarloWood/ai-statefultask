@@ -7,7 +7,7 @@ that are constantly going into functions and leaving them again at the very leas
 the way back to the their main loop; it makes no sense to even want to create a Task object on
 the stack: the life-time of a Task object is <em>unrelated</em> to any scope.</p>
 
-<p><b>The correct way to create task objects</b> therefore is by allocating them with \c{new}
+<p><b>The correct way to create task objects</b> therefore is by allocating them with @c{new}
 on the heap. There are two ways to do this:</p>
 
 <ol>
@@ -34,17 +34,17 @@ m_task->run(handler, callback_args);
 @endcode
 </ol>
 
-<p>In both cases \c{handler} is either an \c{AIEngine*} or a AIQueueHandle.</p>
+<p>In both cases @c{handler} is either an @c{AIEngine*} or a AIQueueHandle.</p>
 
 <p>Note that this allows the task to be re-used: it can simply be re-initialized and run again
 after it finished; there is no need to allocate memory on the heap and construct a Task
 object every time you want to run it! Of course a task must be finished first before you can restart it.</p>
 
-<p>In the above code snippets, \c{my_args} and \c{my_params} are
-entirely user defined; respectively the parameters of the constructor of \c{MyTask}
-and the initialization parameters to some user defined function \c{MyTask::my_initialization}.</p>
+<p>In the above code snippets, @c{my_args} and @c{my_params} are
+entirely user defined; respectively the parameters of the constructor of @c{MyTask}
+and the initialization parameters to some user defined function @c{MyTask::my_initialization}.</p>
 
-<p>\c{callback_args} are the arguments of one of the @link group_run AIStatefulTask::run@endlink
+<p>@c{callback_args} are the arguments of one of the @link group_run AIStatefulTask::run@endlink
 member functions. See the documentation of that member function for a description of those
 arguments.</p>
 
@@ -52,44 +52,44 @@ arguments.</p>
 its initializing member function and call one of the @link group_run AIStatefulTask::run@endlink
 methods, which might or might not immediately start to execute the task.</p>
 
-<p>The call to \c run causes a call to
+<p>The call to @c run causes a call to
 @link Example::initialize_impl initialize_impl@endlink,
 which must call
 @link Example::set_state set_state@endlink
 at least once (only the last call is used).
-Upon return from \c initialize_impl,
+Upon return from @c initialize_impl,
 @link Example::multiplex_impl multiplex_impl@endlink
 will be called with that state.</p>
 
-<p>\c multiplex_impl may never reentrant (cause itself to be called)
+<p>@c multiplex_impl may never reentrant (cause itself to be called)
 and should end by callling either one of
 @link AIStatefulTask::wait wait@endlink,
 @link AIStatefulTask::yield yield@endlink,
 @link AIStatefulTask::finish finish@endlink
 [or @link AIStatefulTask::abort abort@endlink].</p>
 
-<p>Leaving \c multiplex_impl without calling any of those might result in an
+<p>Leaving @c multiplex_impl without calling any of those might result in an
 immediate reentry, which could cause the task to enter an infinite loop without
 reaching the main loop again, unless the state is changed
 with @link AIStatefulTask::set_state set_state@endlink.</p>
 
-If \c multiplex_impl calls @link AIStatefulTask::wait wait(condition)@endlink,
+If @c multiplex_impl calls @link AIStatefulTask::wait wait(condition)@endlink,
 and there was only one call to @link AIStatefulTask::signal signal(condition)@endlink
-since the last call to \c{wait(condition)},
-then \c multiplex_impl will not be called again until
-\c{signal(condition)} is called from outside.
+since the last call to @c{wait(condition)},
+then @c multiplex_impl will not be called again until
+@c{signal(condition)} is called from outside.
 
-If \c multiplex_impl calls \c finish then
+If @c multiplex_impl calls @c finish then
 @link Example::finish_impl finish_impl@endlink
-will be called [if instead it calls \c abort then
+will be called [if instead it calls @c abort then
 first @link Example::abort_impl abort_impl@endlink
-will be called, followed by a call to \c finish_impl].
-Upon return from \c multiplex_impl, and if \c finish [or \c abort] was called,
-the call back passed to \c run will be called.
+will be called, followed by a call to @c finish_impl].
+Upon return from @c multiplex_impl, and if @c finish [or @c abort] was called,
+the call back passed to @c run will be called.
 
-If the call back function does <em>not</em> call \c run, or when
+If the call back function does <em>not</em> call @c run, or when
 @link AIStatefulTask::kill kill@endlink
-is called <em>after</em> \c run was called, then the task is
+is called <em>after</em> @c run was called, then the task is
 deleted upon return from the call back, provided the user didn't
-keep a \c{boost::intrusive_ptr&lt;&gt;} reference around.
+keep a @c{boost::intrusive_ptr&lt;&gt;} reference around.
 */

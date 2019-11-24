@@ -32,7 +32,9 @@
 #include "AIStatefulTask.h"
 
 /*!
- * @brief A hook to the protected control functions of AIStatefulTask.
+ * A hook to the protected control functions of AIStatefulTask.
+ *
+ * Allows to call the @link group_protected protected control functions@endlink of a task.
  *
  * Usage:
  *
@@ -45,7 +47,7 @@
  *
  *   void f()
  *   {
- *     // Now we can call the \@link group_protected protected control functions@endlink of \c task.
+ *     // Now we can call the protected control functions of `task`.
  *     yield();
  *   }
  * };
@@ -60,7 +62,7 @@ class AIFriendOfStatefulTask
  protected:
   AIStatefulTask* m_task;     //!< The base class of the object that this object is a member of.
 
-  //! Construct a friend of \a task.
+  //! Construct a friend of @a task.
   AIFriendOfStatefulTask(AIStatefulTask* task) : m_task(task) { }
 
   //! Proxy for AIStatefulTask::set_state.

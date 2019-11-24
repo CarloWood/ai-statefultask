@@ -108,6 +108,10 @@ div.todothis span {
   font-style: italic;
 }
 
+div.libcwdrc {
+  white-space: pre;
+}
+
 table.implement_table {
   border-spacing: 0;
   margin-left: 20px;
@@ -126,7 +130,7 @@ div.textblock {
   width: 100%;
 }
 
-code, span.tt, span.inlinecode {
+code, span.tt, span.inlinecode, div.libcwdrc {
   font-family: monospace, "courier new", courier, serif;
   font-size: 90%;
 }
