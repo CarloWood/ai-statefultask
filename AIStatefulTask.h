@@ -54,31 +54,31 @@ class AIStatefulTaskMutex;
 //! The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
 using AIWaitConditionFunc = std::function<bool()>;
 
-/**
- * @brief Base class for task objects.
- *
- * Derive a new task from this base class.
- * The derived class must have a protected destructor that uses the <code>override</code> keyword.
- *
- * Furthermore a derived class must define,
- * <table class="implement_table">
- * <tr><td class="item">@link example_task direct_base_type @endlink<td>The immediate base class of the derived class.
- * <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::state_end</code>.
- * <tr><td class="item">@link example_task state_end @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
- * <tr><td class="item">@link Example::state_str_impl state_str_impl @endlink<td>A member function that returns a <code>char const*</code> to a human readable string for each of its states (for debug purposes).
- * <tr><td class="item">@link Example::multiplex_impl multiplex_impl @endlink<td>The core function with a <code>switch</code> on the current state to be run.
- * </table>
- *
- * And optionally override zero or more of the following virtual functions:
- * <table class="implement_table">
- * <tr><td class="item">@link Example::initialize_impl initialize_impl@endlink<td>Member function that is called once upon creation.
- * <tr><td class="item">@link Example::abort_impl abort_impl@endlink<td>Member function that is called when the task is aborted.
- * <tr><td class="item">@link Example::finish_impl finish_impl@endlink<td>Member function that is called when the task finished.
- * <tr><td class="item">@link Example::force_killed force_killed@endlink<td>Member function that is called when the task is killed.
- * </table>
- *
- * @sa Example
- */
+//!
+// Base class for task objects.
+//
+// Derive a new task from this base class.
+// The derived class must have a protected destructor that uses the <code>override</code> keyword.
+//
+// Furthermore a derived class must define,
+// <table class="implement_table">
+// <tr><td class="item">@link example_task direct_base_type @endlink<td>The immediate base class of the derived class.
+// <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::state_end</code>.
+// <tr><td class="item">@link example_task state_end @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
+// <tr><td class="item">@link Example::state_str_impl state_str_impl @endlink<td>A member function that returns a <code>char const*</code> to a human readable string for each of its states (for debug purposes).
+// <tr><td class="item">@link Example::multiplex_impl multiplex_impl @endlink<td>The core function with a <code>switch</code> on the current state to be run.
+// </table>
+//
+// And optionally override zero or more of the following virtual functions:
+// <table class="implement_table">
+// <tr><td class="item">@link Example::initialize_impl initialize_impl@endlink<td>Member function that is called once upon creation.
+// <tr><td class="item">@link Example::abort_impl abort_impl@endlink<td>Member function that is called when the task is aborted.
+// <tr><td class="item">@link Example::finish_impl finish_impl@endlink<td>Member function that is called when the task finished.
+// <tr><td class="item">@link Example::force_killed force_killed@endlink<td>Member function that is called when the task is killed.
+// </table>
+//
+// @sa Example
+//
 class AIStatefulTask : public AIRefCount
 {
  public:
@@ -595,14 +595,14 @@ class AIStatefulTask : public AIRefCount
    * @brief Return true if we are added to the current engine.
    *
    * @param handler The handler that this task is supposed to run in.
-   * @return True if this task is actually added to @a handler.
+   * @returns True if this task is actually added to @a handler.
    */
   bool active(Handler handler) const { return multiplex_state_type::crat(mState)->current_handler == handler; }
 
   /*!
    * @brief Return true if are currently running in an immediate handler.
    *
-   * @return True if this task is not running in an AIEngine or the AIThreadPool.
+   * @returns True if this task is not running in an AIEngine or the AIThreadPool.
    */
   bool is_immediate() const { return multiplex_state_type::crat(mState)->current_handler.is_immediate(); }
 

@@ -189,7 +189,7 @@ class Example : public AIStatefulTask
    * @brief Stringify a run state, for debugging output.
    *
    * @param run_state A user defined state.
-   * @return A string literal with the human readable name of the state.
+   * @returns A string literal with the human readable name of the state.
    *
    * This is a virtual function of the base class AIStatefulTask and
    * must be overridden by every derived class.
