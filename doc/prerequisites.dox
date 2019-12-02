@@ -1,5 +1,5 @@
 /*!
-\page prerequisites C++ Prerequisites
+@page prerequisites C++ Prerequisites
 <h3>Library initialization.</h3>
 
 <p>Once the build system has been set up correctly (see @ref compiling)
@@ -11,25 +11,25 @@ lets write a quick 'Hello World'.</p>
 <li>Each source file must start with @c{#include "sys.h"}.
 By default this will use <a href="https://github.com/CarloWood/cwds/blob/master/sys.h">the one provided</a>
 by <a href="https://github.com/CarloWood/cwds#readme">cwds</a>,
-or you can override that by providing your own \tt{sys.h} in the root of the project.</li>
+or you can override that by providing your own @tt{sys.h} in the root of the project.</li>
 <li>Each source or header file that uses debugging, so that certainly includes
-\tt{main.cpp}, needs to @c{#include&nbsp;"debug.h"} somewhere. However, \tt{main.cpp}
-also needs to @c{#include&nbsp;"evio/EventLoop.h"} (which includes \tt{threadpool/AIThreadPool.h}),
-or at the very least \tt{threadpool/AIThreadPool.h} if you don't use an @c{EventLoop},
-which already include(s) \tt{debug.h}, so including just the former is sufficient.</li>
+@tt{main.cpp}, needs to @c{#include&nbsp;"debug.h"} somewhere. However, @tt{main.cpp}
+also needs to @c{#include&nbsp;"evio/EventLoop.h"} (which includes @tt{threadpool/AIThreadPool.h}),
+or at the very least @tt{threadpool/AIThreadPool.h} if you don't use an @c{EventLoop},
+which already include(s) @tt{debug.h}, so including just the former is sufficient.</li>
 <li>At the beginning of @c{main} you need to add the line:
 @code
 Debug(NAMESPACE_DEBUG::init());
 @endcode
-This calls a function provided by \tt{cwds} that reads your \tt{~/.libcwdrc} file
+This calls a function provided by @tt{cwds} that reads your @tt{~/.libcwdrc} file
 turning on debug output for the specified debug channels.</li>
 </ol>
 
-To enable debug output of \projectname you should turn on
+To enable debug output of @projectname you should turn on
 the debug channel @c{statefultask}.
 You could add, below the previous one, the line
 @c{Debug(if (!dc::statefultask.is_on()) dc::statefultask.on());} but
-prefered is to simply turn on and off debug channels in your \tt{~/.libcwdrc}.
+prefered is to simply turn on and off debug channels in your @tt{~/.libcwdrc}.
 Mine looks like this:
 
 @htmlonly<div class="fragment libcwdrc">silent = on
@@ -38,10 +38,10 @@ channels_on = warning,notice,system,statefultask,threadpool
 #channels_on = action,semaphore,semaphorestats
 gdb = /usr/bin/gdb $GDBCOMMANDFILE
 xterm = konsole --nofork --workdir "$PWD" --geometry 165x24-0-0 -e %s
-</div>\endhtmlonly
+</div>@endhtmlonly
 
 @anchor helloworld_example
-<p>\projectname requires multiple initializations at the beginning of @c{main}.
+<p>@projectname requires multiple initializations at the beginning of @c{main}.
 The reason for that is to make it easier to customize the initialization; although
 each have sensible defaults you can pass (different) arguments to fine tune the
 initialization. See their respective documentation for the details. For now don't
@@ -57,7 +57,7 @@ deallocated. This is a general approach of the library, and should be of your co
 that uses the library: do not use the library from anything that can be executed
 before or after @c{main}.</li>
 <li>An AIThreadPool object. Even though the thread pool has its own separate
-git submodule, it is the work horse of \projectname. Like with AIMemoryPagePool,
+git submodule, it is the work horse of @projectname. Like with AIMemoryPagePool,
 creating an AIThreadPool object at the start of @c{main} causes a singleton object
 to be initialized that can only be used while this object exists. Do not use
 AIThreadPool::instance() before or after @c{main}.</li>
@@ -70,17 +70,17 @@ for example as part of the 'idle' cycle of the main loop of <a href="https://www
 </ul>
 </p>
 
-<p>See the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/helloworld.cxx">\tt{helloworld.cxx}</a>
+<p>See the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/helloworld.cxx">@tt{helloworld.cxx}</a>
 file of the ai-statefultask-testsuite project for a working &quot;Hello World&quot; example.
-As another example have a look at the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/fibonacci.cxx">\tt{fibonacci.cxx}</a>
+As another example have a look at the <a href="https://github.com/CarloWood/ai-statefultask-testsuite/blob/master/src/fibonacci.cxx">@tt{fibonacci.cxx}</a>
 file in the same project.</p>
 
-<p>If you are new to \projectname then I urge
+<p>If you are new to @projectname then I urge
 you to first clone <a href="https://github.com/CarloWood/ai-statefultask-testsuite">ai-statefultask-testsuite</a> and get that working;
 as that will require you to have all the bits and pieces for building a project
-that uses \projectname installed (hint: start
+that uses @projectname installed (hint: start
 with getting, compiling and installing <a href="https://github.com/CarloWood/libcwd">libcwd</a>
-and configure that for example with \tt{--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading}
+and configure that for example with @tt{--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading}
 because, respectivily, you got it with git, but you're not debugging libcwd itself, you don't need memory allocation
 debugging (slow), or printing source_file:line_number locations, and we only need the multithreaded version).</p>
 
@@ -106,7 +106,7 @@ int main()
 }
 @endcode
 
-which requires linking with \tt{libcwds_r}.</p>
+which requires linking with @tt{libcwds_r}.</p>
 
 <p>A minimal program that has a thread pool, looks something like this:
 
@@ -132,7 +132,7 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with \tt{libthreadpool libthreadsafe libutils}.</p>
+which requires, additionally, linking with @tt{libthreadpool libthreadsafe libutils}.</p>
 
 <p>A minimal program that has an event loop (for I/O), looks something like this:
 
@@ -167,9 +167,9 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with \tt{libevio}.</p>
+which requires, additionally, linking with @tt{libevio}.</p>
 
-<p>When you actually use a task, so far we only used submodules other than \tt{statefultask},
+<p>When you actually use a task, so far we only used submodules other than @tt{statefultask},
 it is a good idea to also create the @c{AIMemoryPagePool} object, just in case (although this
 is really only required when you use AIStatefulTaskMutex (indirectly)).
 
@@ -208,7 +208,7 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with \tt{libstatefultask.la} (and \tt{libhelloworldtask.la}).
+which requires, additionally, linking with @tt{libstatefultask.la} (and @tt{libhelloworldtask.la}).
 
 Note that @c{AIMemoryPagePool} is created *before* @c{AIThreadPool}.
 This is important because tasks can continue running until the thread pool
@@ -219,7 +219,7 @@ when you don't pass anything and just call @c{run()}.</p>
 
 <p>It is also possible run a task in an AIEngine. An AIEngine requires
 a main loop somewhere to be run from, which we don't have in a small
-\tt{Hello World} type program, so we have to add one for demonstration
+@tt{Hello World} type program, so we have to add one for demonstration
 purposes. I'm also adding the event loop back, pretending we're doing
 I/O.</p>
 

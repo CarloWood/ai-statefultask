@@ -1,8 +1,10 @@
 /*!
-\page usage Usage
-\tableofcontents
+@page usage Usage
 
-\subpage prerequisites
-\subpage lifecycle
-\subpage writingatask
+<ul>
+<li>@subpage prerequisites</li>
+<li>@subpage lifecycle</li>
+<li>@subpage writingatask</li>
+</ul>
+
 */

@@ -44,8 +44,8 @@
 #include <chrono>
 #include <boost/intrusive_ptr.hpp>
 
-/*!
- * @brief Task queue and dispatcher.
+/**
+ * Task queue and dispatcher.
  *
  * This object dispatches tasks from @ref mainloop().
  *
@@ -53,10 +53,10 @@
  * which in turn calls <code>AIStatefulTask::multiplex(initial_run)</code>.
  * When a default engine was passed to @c{run} then @c{multiplex} adds the task to the queue of that engine.
  * When a thread pool queue was passed to @c run then the task is added to that queue of the thread pool.
- * If the special @ref AIQueueHandle @link AIStatefulTask::Handler::immediate immediate@endlink was passed to @c run then the task is being run immediately in the
- * thread that called @c run and will <em>keep</em> running until it is either aborted or one of
- * @link AIStatefulTask::finish finish()@endlink, @link group_yield yield*()@endlink or @link group_wait wait*()@endlink
- * is called!
+ * If the special @ref AIQueueHandle @link AIStatefulTask::Handler::immediate_h immediate@endlink was passed
+ * to @c run then the task is being run immediately in the thread that called @c run and will <em>keep</em>
+ * running until it is either aborted or one of @link AIStatefulTask::finish finish()@endlink,
+ * @link group_yield yield*()@endlink or @link group_wait wait*()@endlink is called!
  *
  * Moreover, every time a task run with `immediate` as handler (and that didn't set a target handler) calls @c wait,
  * then the task will continue running immediately when some thread calls @link AIStatefulTask::signal signal()@endlink,
@@ -83,7 +83,7 @@
  * Note that each @link AIStatefulTask task@endlink object keeps track of three handlers:
  * * <code>AIStatefulTask::mTargetHandler&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Last handler passed to target() or yield*().</code>
  * * <code>AIStatefulTask::mState.current_handler&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// While idle <code>Handler::idle</code>, otherwise the first non-idle handler from the top (of this list of three), or Handler::immediate</code>.
- * * <code>AIStatefulTask::mDefaultHandler&nbsp;// The handler passed to run() (that is 'immediate' when none was passed).</code>
+ * * <code>AIStatefulTask::mDefaultHandler&nbsp;// The handler passed to run() (that is @link AIStatefulTask::Handler::immediate_h immediate @endlink when none was passed).</code>
  *
  * The first, @c mTargetHandler, is the handler that was passed to the last call of member
  * function AIStatefulTask::target (which is also called by the
@@ -146,8 +146,8 @@ class AIEngine
   bool mHasMaxDuration;
 
  public:
-  /*!
-   * @brief Construct an AIEngine.
+  /**
+   * Construct an AIEngine.
    *
    * The argument @a name must be a string-literal (only the pointer to it is stored).
    * If @a max_duration is less than or equal zero (the default) then no duration is set
@@ -159,8 +159,8 @@ class AIEngine
    */
   AIEngine(char const* name, float max_duration = 0.0f) : mName(name) { setMaxDuration(max_duration); }
 
-  /*!
-   * @brief Add @a stateful_task to this engine.
+  /**
+   * Add @a stateful_task to this engine.
    *
    * The task will remain assigned to the engine until it no longer @link AIStatefulTask::active active@endlink
    * (tested after returning from @link Example::multiplex_impl multiplex_impl@endlink).
@@ -171,8 +171,8 @@ class AIEngine
    */
   void add(AIStatefulTask* stateful_task);
 
-  /*!
-   * @brief The main loop of the engine.
+  /**
+   * The main loop of the engine.
    *
    * Run all tasks that were @link add added@endlink to the engine until
    * they are all finished and/or idle, or until mMaxDuration milliseconds
@@ -180,13 +180,11 @@ class AIEngine
    */
   void mainloop();
 
-  /*!
-   * @brief Wake up a sleeping engine.
-   */
+  /// Wake up a sleeping engine.
   void wake_up();
 
-  /*!
-   * @brief Flush all tasks from this engine.
+  /**
+   * Flush all tasks from this engine.
    *
    * All queued tasks are removed from the engine and marked as killed.
    * This can be used when terminating a program, just prior to destructing
@@ -195,15 +193,15 @@ class AIEngine
    */
   void flush();
 
-  /*!
-   * @brief Return a human readable name of this engine.
+  /**
+   * Return a human readable name of this engine.
    *
    * This is simply the string that was passed upon construction.
    */
   char const* name() const { return mName; }
 
-  /*!
-   * @brief Set mMaxDuration in milliseconds.
+  /**
+   * Set mMaxDuration in milliseconds.
    *
    * The maximum time the engine will spend in @ref mainloop calling @c multiplex on unfinished and non-idle tasks.
    * Note that if the last call to @c multiplex takes considerable time then it is possible that the time spend
@@ -212,8 +210,8 @@ class AIEngine
    */
   void setMaxDuration(float max_duration);
 
-  /*!
-   * @brief Return true if a maximum duration was set.
+  /**
+   * Return true if a maximum duration was set.
    *
    * Note, only engines with a set maximum duration can be used to sleep
    * on by using AIStatefulTask::yield_frame or AIStatefulTask::yield_ms.

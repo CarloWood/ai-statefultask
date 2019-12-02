@@ -21,8 +21,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef AISTATEFULTASKMUTEX_H
-#define AISTATEFULTASKMUTEX_H
+#pragma once
 
 #include "threadsafe/aithreadsafe.h"
 #include "utils/NodeMemoryResource.h"
@@ -31,42 +30,43 @@
 
 class AIStatefulTask;
 
-//
-// A task mutex.
-//
-// Prevent different tasks from concurrently entering the same critical area.
-//
-// Consider an object that is shared between tasks, but may
-// not be simultaneously accessed by two different threads.
-//
-// For example,
-//
-//   // Required memory management.
-//   utils::MemoryPagePool mpp(0x8000);
-//   AIStatefulTaskMutex::init(&mpp);
-//   // A task mutex.
-//   AIStatefulTaskMutex m;
-//
-// Then multiple running tasks could use this to prevent concurrent access:
-//
-// ...
-//   case MyTask_lock:
-//     set_state(MyTask_locked);
-//     if (!m.lock(this, 1))
-//     {
-//       wait(1);
-//       break;
-//     }
-//     [[fallthrough]];
-//   case MyTask_locked:
-//     do_work();
-//     m.unlock();
-//
+/**
+ * A task mutex.
+ *
+ * Prevent different tasks from concurrently entering the same critical area.
+ *
+ * Consider an object that is shared between tasks, but may
+ * not be simultaneously accessed by two different threads.
+ *
+ * For example,
+ *
+ *   // Required memory management.
+ *   utils::MemoryPagePool mpp(0x8000);
+ *   AIStatefulTaskMutex::init(&mpp);
+ *   // A task mutex.
+ *   AIStatefulTaskMutex m;
+ *
+ * Then multiple running tasks could use this to prevent concurrent access:
+ *
+ * ...
+ *   case MyTask_lock:
+ *     set_state(MyTask_locked);
+ *     if (!m.lock(this, 1))
+ *     {
+ *       wait(1);
+ *       break;
+ *     }
+ *     [[fallthrough]];
+ *   case MyTask_locked:
+ *     do_work();
+ *     m.unlock();
+ */
 class AIStatefulTaskMutex
 {
   using condition_type = uint32_t;      // Must be the same as AIStatefulTask::condition_type
 
  protected:
+  /// %Node in a singly linked list of tasks that are waiting for this mutex.
   struct Node
   {
     std::atomic<Node*> m_next;
@@ -75,25 +75,26 @@ class AIStatefulTaskMutex
   };
 
  public:
-  // Returns the size of the nodes that will be allocated from s_node_memory_resource.
+  /// Returns the size of the nodes that will be allocated from s_node_memory_resource.
   static constexpr size_t node_size() { return sizeof(Node); }
-  // This must be called once before using a AIStatefulTaskMutex.
+  /// This must be called once before using a AIStatefulTaskMutex.
   static void init(utils::MemoryPagePool* mpp_ptr) { s_node_memory_resource.init(mpp_ptr, node_size()); }
-  static utils::NodeMemoryResource s_node_memory_resource;      // Memory resource to allocate Node's from.
+  static utils::NodeMemoryResource s_node_memory_resource;      ///< Memory resource to allocate Node's from.
 
  private:
   std::atomic<Node*> m_head;                            // The mutex is locked when this atomic has a non-nullptr value.
   std::atomic<Node*> m_owner;                           // After locking this mutex, the owner sets this pointer to point to
                                                         // its Node (m_owner->m_task will point to the owning task).
  public:
-  // Construct an unlocked AIStatefulTaskMutex.
+  /// Construct an unlocked AIStatefulTaskMutex.
   AIStatefulTaskMutex() : m_head(nullptr), m_owner(nullptr) { }
   // Immediately after construction, nobody owns the lock:
   //
   // m_head --> nullptr
 
-  // Try to obtain ownership for owner (recursive locking allowed).
-  // Returns true upon success and false upon failure to obtain ownership.
+  /// Try to obtain ownership for owner (recursive locking allowed).
+  ///
+  /// @returns True upon success and false upon failure to obtain ownership.
   bool lock(AIStatefulTask* task, condition_type condition)
   {
     DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << condition << ") [" << this << "]");
@@ -142,7 +143,7 @@ class AIStatefulTaskMutex
     return false;       // The caller must call task->wait(condition).
   }
 
-  // Undo one (succcessful) call to lock.
+  /// Undo one (succcessful) call to lock.
   void unlock()
   {
     DoutEntering(dc::notice, "AIStatefulTaskMutex::unlock() [" << this << "]");
@@ -169,7 +170,7 @@ class AIStatefulTaskMutex
   }
 
 #ifdef CWDEBUG
-  // The returned value might point a task that was already destructed.
+  // The returned value might point to a task that was already destructed.
   AIStatefulTask* debug_get_owner() const
   {
     // Very racy, not-thread-safe code for debugging output only.
@@ -198,5 +199,3 @@ class AIStatefulTaskMutex
     return owner && owner->m_task == caller;
   }
 };
-
-#endif // AISTATEFULTASKMUTEX_H

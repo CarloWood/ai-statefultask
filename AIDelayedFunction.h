@@ -37,8 +37,8 @@ template<typename F>
 class AIDelayedFunction; // not defined.
 #endif
 
-/*!
- * @brief Helper class for AIPackagedTask.
+/**
+ * Helper class for AIPackagedTask.
  *
  * This object reserves storage a function pointer,  its arguments and a return value.
  *
@@ -57,7 +57,9 @@ class AIDelayedFunction; // not defined.
  * @code
  * AIDelayedFunction<char(int, double)> delayed_function(&f);           // char f(int, double);
  * @endcode
+ *
  * or
+ *
  * @code
  * AIDelayedFunction<char(int, double)> delayed_function(&obj, &C::f);  // char C::f(int, double); where obj is of type C.
  *
@@ -77,13 +79,11 @@ class AIDelayedFunction<R(Args...)>
   R m_result;                                 // Future result of the function.
 
  public:
-  /*!
-   * @brief Construct an AIDelayedFunction for a free function <code>R f(Args...)</code>.
-   */
+  /// Construct an AIDelayedFunction for a free function @c{R f(Args...)}.
   AIDelayedFunction(R (*fp)(Args...)) { m_function = fp; }
 
-  /*!
-   * @brief Construct an AIDelayedFunction for a member function <code>R C::f(Args...)</code> of @a object.
+  /**
+   * Construct an AIDelayedFunction for a member function @c{R C::f(Args...)} of @a object.
    *
    * The object must have a lifetime that exceeds the call to @ref invoke.
    */
@@ -91,9 +91,7 @@ class AIDelayedFunction<R(Args...)>
   AIDelayedFunction(C* object, R (C::*memfn)(Args...))
       { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
 
-  /*!
-   * @brief Exchange the state with that of @a other.
-   */
+  /// Exchange the state with that of @a other.
   void swap(AIDelayedFunction& other) noexcept
   {
     m_function.swap(other.m_function);
@@ -101,25 +99,17 @@ class AIDelayedFunction<R(Args...)>
     std::swap(m_result, other.m_result);
   }
 
-  /*!
-   * @brief Store the arguments to be passed.
-   */
+  /// Store the arguments to be passed.
   void operator()(Args... args) { m_args = std::make_tuple(args...); }
 
-  /*!
-   * @brief Actually invoke the call to the stored function with the stored arguments.
-   */
+  /// Actually invoke the call to the stored function with the stored arguments.
   void invoke() { m_result = utils::apply_function(m_function, m_args); }
 
-  /*!
-   * @brief Get the result, only valid after invoke was called.
-   */
+  /// Get the result, only valid after invoke was called.
   R const& get() const { return m_result; }
 };
 
-/*!
- * @brief Specialization of AIDelayedFunction for functions returning void.
- */
+/// Specialization of AIDelayedFunction for functions returning void.
 template<typename ...Args>
 class AIDelayedFunction<void(Args...)>
 {
@@ -128,13 +118,11 @@ class AIDelayedFunction<void(Args...)>
   std::tuple<Args...> m_args;                 // Copy of the arguments to be passed.
 
  public:
-  /*!
-   * @brief Construct a AIDelayedFunction for a free function.
-   */
+  /// Construct a AIDelayedFunction for a free function.
   AIDelayedFunction(void (*fp)(Args...)) { m_function = fp; }
 
-  /*!
-   * @brief Construct a AIDelayedFunction for a member function of object.
+  /**
+   * Construct a AIDelayedFunction for a member function of object.
    *
    * The object must have a lifetime that exceeds the call to invoke.
    */
@@ -142,13 +130,9 @@ class AIDelayedFunction<void(Args...)>
   AIDelayedFunction(C* object, void (C::*memfn)(Args...))
       { m_function = [object, memfn](Args... args){ (object->*memfn)(args...); }; }
 
-  /*!
-   * @brief Store the arguments to be passed.
-   */
+  /// Store the arguments to be passed.
   void operator()(Args... args) { m_args = std::make_tuple(args...); }
 
-  /*!
-   * @brief Actually invoke the call to the stored function with the stored arguments.
-   */
+  /// Actually invoke the call to the stored function with the stored arguments.
   void invoke() { utils::apply_function(m_function, m_args); }
 };

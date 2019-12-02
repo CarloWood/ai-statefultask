@@ -37,8 +37,8 @@
 #include "threadpool/Timer.h"
 #include <atomic>
 
-/*!
- * @brief The timer task.
+/**
+ * The timer task.
  *
  * Before calling @link group_run run()@endlink, call set_interval() to pass needed parameters.
  *
@@ -67,36 +67,34 @@
 class AITimer : public AIStatefulTask
 {
  protected:
-  //! The base class of this task.
+  /// The base class of this task.
   using direct_base_type = AIStatefulTask;
 
-  //! The different states of the stateful task.
+  /// The different states of the stateful task.
   enum timer_state_type {
     AITimer_start = direct_base_type::state_end,
     AITimer_expired
   };
 
  public:
-  //! One beyond the largest state of this task.
+  /// One beyond the largest state of this task.
   static state_type constexpr state_end = AITimer_expired + 1;
 
  private:
-  std::atomic_bool mHasExpired;                 //!< Set to true after the timer expired.
-  threadpool::Timer mTimer;                     //!< The actual timer that this object wraps.
-  threadpool::Timer::Interval mInterval;        //!< Input variable: interval after which the event will be generated.
+  std::atomic_bool mHasExpired;                 ///< Set to true after the timer expired.
+  threadpool::Timer mTimer;                     ///< The actual timer that this object wraps.
+  threadpool::Timer::Interval mInterval;        ///< Input variable: interval after which the event will be generated.
 
  public:
-  /*!
-   * @brief Construct an AITimer object.
-   */
+  /// Construct an AITimer object.
   AITimer(CWDEBUG_ONLY(bool debug = false)) :
 #ifdef CWDEBUG
     AIStatefulTask(debug),
 #endif
     mHasExpired(false), mTimer([this](){ expired(); }) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
 
-  /*!
-   * @brief Set the interval after which the timer should expire.
+  /**
+   * Set the interval after which the timer should expire.
    *
    * @param interval Amount of time in seconds before the timer will expire.
    *
@@ -104,24 +102,24 @@ class AITimer : public AIStatefulTask
    */
   void set_interval(threadpool::Timer::Interval interval) { mInterval = interval; }
 
-  /*!
-   * @brief Get the expiration interval.
+  /**
+   * Get the expiration interval.
    *
    * @returns expiration interval in seconds.
    */
   threadpool::Timer::Interval const& get_interval() const { return mInterval; }
 
  protected:
-  //! Call finish() (or abort()), not delete.
+  /// Call finish() (or abort()), not delete.
   ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); /* mFrameTimer.cancel(); */ }
 
-  //! Implemenation of state_str for run states.
+  /// Implemenation of state_str for run states.
   char const* state_str_impl(state_type run_state) const override;
 
-  //! Handle mRunState.
+  /// Handle mRunState.
   void multiplex_impl(state_type run_state) override;
 
-  //! Handle aborting from current bs_run state.
+  /// Handle aborting from current bs_run state.
   void abort_impl() override;
 
  private:

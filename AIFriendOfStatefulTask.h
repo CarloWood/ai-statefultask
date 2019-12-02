@@ -56,35 +56,35 @@
 class AIFriendOfStatefulTask
 {
  public:
-  using state_type = AIStatefulTask::state_type;              //!< Proxy for AIStatefulTask::state_type.
-  using condition_type = AIStatefulTask::condition_type;      //!< Proxy for AIStatefulTask::condition_type.
+  using state_type = AIStatefulTask::state_type;              ///< Proxy for AIStatefulTask::state_type.
+  using condition_type = AIStatefulTask::condition_type;      ///< Proxy for AIStatefulTask::condition_type.
 
  protected:
-  AIStatefulTask* m_task;     //!< The base class of the object that this object is a member of.
+  AIStatefulTask* m_task;     ///< The base class of the object that this object is a member of.
 
-  //! Construct a friend of @a task.
+  /// Construct a friend of @a task.
   AIFriendOfStatefulTask(AIStatefulTask* task) : m_task(task) { }
 
-  //! Proxy for AIStatefulTask::set_state.
+  /// Proxy for AIStatefulTask::set_state.
   void set_state(state_type new_state) { m_task->set_state(new_state); }
-  //! Proxy for AIStatefulTask::wait.
+  /// Proxy for AIStatefulTask::wait.
   void wait(condition_type conditions) { m_task->wait(conditions); }
-  //! Proxy for AIStatefulTask::wait_until.
+  /// Proxy for AIStatefulTask::wait_until.
   void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions) { m_task->wait_until(wait_condition, conditions); }
-  //! Proxy for AIStatefulTask::wait_until.
+  /// Proxy for AIStatefulTask::wait_until.
   void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions, state_type new_state) { m_task->set_state(new_state); m_task->wait_until(wait_condition, conditions); }
-  //! Proxy for AIStatefulTask::finish.
+  /// Proxy for AIStatefulTask::finish.
   void finish() { m_task->finish(); }
-  //! Proxy for AIStatefulTask::yield.
+  /// Proxy for AIStatefulTask::yield.
   void yield() { m_task->yield(); }
-  //! Proxy for AIStatefulTask::target.
+  /// Proxy for AIStatefulTask::target.
   void target(AIEngine* engine) { m_task->target(engine); }
-  //! Proxy for AIStatefulTask::yield.
+  /// Proxy for AIStatefulTask::yield.
   void yield(AIEngine* engine) { m_task->yield(engine); }
-  //! Proxy for AIStatefulTask::yield_frame.
+  /// Proxy for AIStatefulTask::yield_frame.
   void yield_frame(AIEngine* engine, unsigned int frames) { m_task->yield_frame(engine, frames); }
-  //! Proxy for AIStatefulTask::yield_ms.
+  /// Proxy for AIStatefulTask::yield_ms.
   void yield_ms(AIEngine* engine, unsigned int ms) { m_task->yield_ms(engine, ms); }
-  //! Proxy for AIStatefulTask::yield_if_not.
+  /// Proxy for AIStatefulTask::yield_if_not.
   bool yield_if_not(AIEngine* engine) { return m_task->yield_if_not(engine); }
 };

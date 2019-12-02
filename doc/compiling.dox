@@ -1,8 +1,8 @@
 /*!
-\page compiling Compiling
-\tableofcontents
+@page compiling Compiling
+@tableofcontents
 
-\htmlonly
+@htmlonly
 <p><span class="projectname">AIStatefulTask</span> is a <tt>git submodule</tt>.
 It can just be checked out in its own subdirectory and be compiled as part
 of a larger project. The submodule <em>does</em> contain a <tt>Makefile.am</tt>
@@ -12,5 +12,5 @@ file to facilitate building a libtool archive using the
 <p>However, <b>the recommended way</b> to use this submodule is by using <a href="https://github.com/CarloWood/cwm4">cwm4</a>.
 Please read <a href="https://github.com/CarloWood/ai-statefultask#adding-the-ai-statefultask-submodule-to-a-project">README.md</a>
 for a detailed description of how to include <span class="projectname">AIStatefulTask</span> in your cwm4 based project.</p>
-\endhtmlonly
+@endhtmlonly
 */

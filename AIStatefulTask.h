@@ -47,77 +47,76 @@
 #include <chrono>
 #include <functional>
 
-class AICondition;
 class AIEngine;
 class AIStatefulTaskMutex;
 
-//! The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
+/// The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
 using AIWaitConditionFunc = std::function<bool()>;
 
-//!
-// Base class for task objects.
-//
-// Derive a new task from this base class.
-// The derived class must have a protected destructor that uses the <code>override</code> keyword.
-//
-// Furthermore a derived class must define,
-// <table class="implement_table">
-// <tr><td class="item">@link example_task direct_base_type @endlink<td>The immediate base class of the derived class.
-// <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::state_end</code>.
-// <tr><td class="item">@link example_task state_end @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
-// <tr><td class="item">@link Example::state_str_impl state_str_impl @endlink<td>A member function that returns a <code>char const*</code> to a human readable string for each of its states (for debug purposes).
-// <tr><td class="item">@link Example::multiplex_impl multiplex_impl @endlink<td>The core function with a <code>switch</code> on the current state to be run.
-// </table>
-//
-// And optionally override zero or more of the following virtual functions:
-// <table class="implement_table">
-// <tr><td class="item">@link Example::initialize_impl initialize_impl@endlink<td>Member function that is called once upon creation.
-// <tr><td class="item">@link Example::abort_impl abort_impl@endlink<td>Member function that is called when the task is aborted.
-// <tr><td class="item">@link Example::finish_impl finish_impl@endlink<td>Member function that is called when the task finished.
-// <tr><td class="item">@link Example::force_killed force_killed@endlink<td>Member function that is called when the task is killed.
-// </table>
-//
-// @sa Example
-//
+/**
+ * Base class for task objects.
+ *
+ * Derive a new task from this base class.
+ * The derived class must have a protected destructor that uses the @c{override} keyword.
+ *
+ * Furthermore a derived class must define,
+ * <table class="implement_table">
+ * <tr><td class="item">@link example_task direct_base_type @endlink<td>The immediate base class of the derived class.
+ * <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::state_end</code>.
+ * <tr><td class="item">@link example_task state_end @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
+ * <tr><td class="item">@link Example::state_str_impl state_str_impl @endlink<td>A member function that returns a <code>char const*</code> to a human readable string for each of its states (for debug purposes).
+ * <tr><td class="item">@link Example::multiplex_impl multiplex_impl @endlink<td>The core function with a <code>switch</code> on the current state to be run.
+ * </table>
+ *
+ * And optionally override zero or more of the following virtual functions:
+ * <table class="implement_table">
+ * <tr><td class="item">@link Example::initialize_impl initialize_impl@endlink<td>Member function that is called once upon creation.
+ * <tr><td class="item">@link Example::abort_impl abort_impl@endlink<td>Member function that is called when the task is aborted.
+ * <tr><td class="item">@link Example::finish_impl finish_impl@endlink<td>Member function that is called when the task finished.
+ * <tr><td class="item">@link Example::force_killed force_killed@endlink<td>Member function that is called when the task is killed.
+ * </table>
+ *
+ * @sa Example
+ */
 class AIStatefulTask : public AIRefCount
 {
  public:
-  using state_type = uint32_t;        //!< The type of run_state.
-  using condition_type = uint32_t;    //!< The type of the busy, skip_wait and idle bit masks.
+  using state_type = uint32_t;        ///< The type of run_state.
+  using condition_type = uint32_t;    ///< The type of the busy, skip_wait and idle bit masks.
 
  private:
-  //! The type of event that causes <code>multiplex(event_type event)</code> to be called.
+  /// The type of event that causes <code>multiplex(event_type event)</code> to be called.
   enum event_type {
-    initial_run,              //!< The user called @c run, directly after creating a task.
-    schedule_run,             //!< The user called signal(condition_type) with a condition that the task was waiting for.
-    normal_run,               //!< Called from AIEngine::mainloop for tasks in the engines queue.
-    insert_abort              //!< Called from abort() when that is called on a waiting task.
+    initial_run,              ///< The user called @c run, directly after creating a task.
+    schedule_run,             ///< The user called signal(condition_type) with a condition that the task was waiting for.
+    normal_run,               ///< Called from AIEngine::mainloop for tasks in the engines queue.
+    insert_abort              ///< Called from abort() when that is called on a waiting task.
   };
 
  protected:
-  //! The type of @c mState.
+  /// The type of @c mState.
   enum base_state_type {
-    bs_reset,                 //!< Idle state before @c run is called. Reference count is zero (except for a possible external <code>boost::intrusive_ptr</code>).
-    bs_initialize,            //!< State after @c run and before/during @c initialize_impl.
-    bs_multiplex,             //!< State after @c initialize_impl and before @c finish() or @c abort().
-    bs_abort,                 //!< State after @c abort() <em>and</em> leaving @c inside multiplex_impl (if there), and before @c abort_impl().
-    bs_finish,                //!< State after @c finish() (assuming @c abort() isn't called) <em>and</em> leaving @c multiplex_impl (if there), or after @c abort_impl, and before @c finish_impl().
-    bs_callback,              //!< State after @c finish_impl() and before the call back.
-    bs_killed                 //!< State after the call back, or when aborted before being initialized.
+    bs_reset,                 ///< Idle state before @c run is called. Reference count is zero (except for a possible external <code>boost::intrusive_ptr</code>).
+    bs_initialize,            ///< State after @c run and before/during @c initialize_impl.
+    bs_multiplex,             ///< State after @c initialize_impl and before @c finish() or @c abort().
+    bs_abort,                 ///< State after @c abort() <em>and</em> leaving @c inside multiplex_impl (if there), and before @c abort_impl().
+    bs_finish,                ///< State after @c finish() (assuming @c abort() isn't called) <em>and</em> leaving @c multiplex_impl (if there), or after @c abort_impl, and before @c finish_impl().
+    bs_callback,              ///< State after @c finish_impl() and before the call back.
+    bs_killed                 ///< State after the call back, or when aborted before being initialized.
   };
 
  public:
-  //! The next state value to use for derived classes.
+  /// The next state value to use for derived classes.
   static state_type constexpr state_end = bs_killed + 1;
-  //! What to do when a child task is aborted.
+  /// What to do when a child task is aborted.
   enum on_abort_st {
-    abort_parent,             //!< Call abort() on the parent.
-    signal_parent,            //!< Call signal(condition_type) on the parent anyway.
-    do_nothing                //!< Abort without notifying the parent task.
+    abort_parent,             ///< Call abort() on the parent.
+    signal_parent,            ///< Call signal(condition_type) on the parent anyway.
+    do_nothing                ///< Abort without notifying the parent task.
   };
 
-  /*!
-   * @brief Describes if, how and where to run a task.
+  /**
+   * Describes if, how and where to run a task.
    *
    * By constructing a Handler from Handler::idle, it describes that a task is <b>idle</b>,
    * <b>or</b> that Handler is <b>not to be used</b> when other alternatives exist.
@@ -136,49 +135,49 @@ class AIStatefulTask : public AIRefCount
    */
   struct Handler
   {
-    //! The type of m_type.
+    /// The type of \ref m_type.
     enum type_t {
-      idle_h,           //!< An idle Handler.
-      immediate_h,      //!< An immediate Handler.
-      engine_h,         //!< An engine Handler.
-      thread_pool_h     //!< A thread pool Handler.
+      idle_h,           ///< An idle Handler.
+      immediate_h,      ///< An immediate Handler.
+      engine_h,         ///< An engine Handler.
+      thread_pool_h     ///< A thread pool Handler.
     };
-    //! A typed use by the constuctor Handler(special_t).
+    /// A typed use by the constuctor Handler(special_t).
     enum special_t {
-      idle = idle_h,            //!< Construct an idle Handler.
-      immediate = immediate_h   //!< Construct an immediate Handler.
+      idle = idle_h,            ///< Construct an idle Handler.
+      immediate = immediate_h   ///< Construct an immediate Handler.
     };
-    //! Contains extra data that depends on the type of the Handler.
+    /// Contains extra data that depends on the type of the Handler.
     union Handle {
-      AIEngine* engine;                 //!< The actual engine when this is an engine Handler.
-      AIQueueHandle queue_handle;       //!< The actual thread pool queue when this is a thread pool Handler.
-      //! Construct an uninitialized Handle.
+      AIEngine* engine;                 ///< The actual engine when this is an engine Handler.
+      AIQueueHandle queue_handle;       ///< The actual thread pool queue when this is a thread pool Handler.
+      /// Construct an uninitialized Handle.
       Handle() { }
-      //! Construct a Handle from an AIEngine pointer.
+      /// Construct a Handle from an AIEngine pointer.
       Handle(AIEngine* engine_) : engine(engine_) { }
-      //! Construct a Handle from a thread pool handle.
+      /// Construct a Handle from a thread pool handle.
       Handle(AIQueueHandle queue_handle_) : queue_handle(queue_handle_) { }
     };
-    Handle m_handle;    //!< Extra data that depends on m_type.
-    type_t m_type;      //!< The type of this Handler.
-    //! Construct a special Handler.
+    Handle m_handle;    ///< Extra data that depends on m_type.
+    type_t m_type;      ///< The type of this Handler.
+    /// Construct a special Handler.
     Handler(special_t special) : m_type((type_t)special) { }
-    //! Construct a Handler from an AIEngine pointer.
+    /// Construct a Handler from an AIEngine pointer.
     Handler(AIEngine* engine) : m_handle(engine), m_type(engine_h) { ASSERT(engine); }
-    //! Construct a Handler from an AIQueueHandle.
+    /// Construct a Handler from an AIQueueHandle.
     Handler(AIQueueHandle queue_handle) : m_handle(queue_handle), m_type(thread_pool_h) { }
-    //! Return true if this is an engine Handler.
+    /// Return true if this is an engine Handler.
     bool is_engine() const { return m_type == engine_h; }
-    //! Return true if this is an immediate Handler.
+    /// Return true if this is an @link immediate_h immediate @endlink Handler.
     bool is_immediate() const { return m_type == immediate_h; }
-    //! Return the AIQueueHandle to use (only call when appropriate).
+    /// Return the AIQueueHandle to use (only call when appropriate).
     AIQueueHandle get_queue_handle() const { return m_type == thread_pool_h ? m_handle.queue_handle : AIQueueHandle((std::size_t)0); }
-    //! Return true when not idle / unused.
+    /// Return true when not idle / unused.
     operator bool() const { return m_type != idle_h; }        // Return true when this handler can be used to actually run in.
 
     // Gcc complains because what is defined depends on the value of m_type.
     PRAGMA_DIAGNOSTIC_PUSH_IGNORE_maybe_uninitialized
-    //! Return true when equivalent to @a handler.
+    /// Return true when equivalent to @a handler.
     bool operator==(Handler handler) const {
         return m_type == handler.m_type &&
             (m_type != engine_h || m_handle.engine == handler.m_handle.engine) &&
@@ -199,9 +198,9 @@ class AIStatefulTask : public AIRefCount
   };
 
   struct sub_state_st {
-    condition_type busy;              //!< Each bit represents being not-idle for that condition-bit: wait(condition_bit) was never called or signal(condition_bit) was called last.
-    condition_type skip_wait;         //!< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit: signal(condition_bit) was called while already busy.
-    condition_type idle;              //!< A the idle state at the end of the last call to wait(conditions) (~busy & conditions).
+    condition_type busy;              ///< Each bit represents being not-idle for that condition-bit: wait(condition_bit) was never called or signal(condition_bit) was called last.
+    condition_type skip_wait;         ///< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit: signal(condition_bit) was called while already busy.
+    condition_type idle;              ///< A the idle state at the end of the last call to wait(conditions) (~busy & conditions).
     state_type run_state;
     bool reset;
     bool need_run;
@@ -230,7 +229,7 @@ class AIStatefulTask : public AIRefCount
   using clock_type = std::chrono::steady_clock;
   using duration_type = clock_type::duration;
 
-  clock_type::rep mSleep;   //!< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
+  clock_type::rep mSleep;   ///< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
 
   // Callback facilities.
   // From within an other stateful task:
@@ -265,8 +264,8 @@ class AIStatefulTask : public AIRefCount
   duration_type mDuration;            // Total time spent running in the main thread.
 
  public:
-  /*!
-   * @brief Constructor of base class AIStatefulTask.
+  /**
+   * Constructor of base class AIStatefulTask.
    *
    * The @a debug parameter only exists when CWDEBUG is defined.
    *
@@ -283,7 +282,7 @@ class AIStatefulTask : public AIRefCount
   mDuration(duration_type::zero()) { }
 
  protected:
-  //! Destructor.
+  /// Destructor.
   virtual ~AIStatefulTask()
   {
 #ifdef DEBUG
@@ -293,7 +292,8 @@ class AIStatefulTask : public AIRefCount
   }
 
  public:
-  /*! @addtogroup group_run Running tasks
+  /**
+   * @addtogroup group_run Running tasks
    * @{
    * Start a new task or restart an existing task that just finished.
    * These functions may be called directly after creation, or from within @link Example::finish_impl finish_impl @endlink, or from the call back function.
@@ -301,7 +301,7 @@ class AIStatefulTask : public AIRefCount
    * @sa page_default_engine
    */
 
-  /*!
+  /**
    * (Re)run a task with default handler @a default_handler, requesting
    * a call back to a function <code>void cb_function(bool success)</code>.
    * The parameter @c success will be @c true when the task finished successfully, or @c false when it was aborted.
@@ -311,12 +311,10 @@ class AIStatefulTask : public AIRefCount
    */
   void run(Handler default_handler, std::function<void (bool)> cb_function);
 
-  /*!
-   * The same as above but use the 'immediate' Handler.
-   */
+  /// The same as above but use the @link AIStatefulTask::Handler::immediate_h immediate @endlink Handler.
   void run(std::function<void (bool)> cb_function) { run(Handler::immediate, cb_function); }
 
-  /*!
+  /**
    * (Re)run a task with default handler @a default_handler, requesting
    * to signal the parent on condition @a condition when successfully finished.
    *
@@ -329,34 +327,36 @@ class AIStatefulTask : public AIRefCount
    */
   void run(Handler default_handler, AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent);
 
-  /*!
-   * The same as above but use the 'immediate' Handler.
+  /**
+   * The same as above but use the @link AIStatefulTask::Handler::immediate_h immediate @endlink Handler.
    */
   void run(AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent) { run(Handler::immediate, parent, condition, on_abort); }
 
-  /*!
+  /**
    * Just run the bloody task (no call back).
    *
    * @param default_handler The default engine or thread pool queue that the task be added to.
    */
   void run(Handler default_handler = Handler::immediate) { run(default_handler, nullptr, 0, do_nothing); }
 
-  /*!@}*/ // group_run
+  ///@} // group_run
 
-  /*! @addtogroup group_public Public control functions.
+  /**
+   * @addtogroup group_public Public control functions.
    * @{
    */
-  /*!
-   * @brief Terminate a task from the call back.
+  /**
+   * Terminate a task from the call back.
    *
    * This function may <em>only</em> be called from the call back function (and cancels a call to
    * @link group_run run@endlink from @link Example::finish_impl finish_impl@endlink).
    */
   void kill();
-  /*!@}*/
+  ///@}
 
  protected:
-  /*! @addtogroup group_protected Protected control functions.
+  /**
+   * @addtogroup group_protected Protected control functions.
    * @{
    * From within the @c multiplex_impl function of a running task, the following
    * member functions may be called to control the task.
@@ -365,8 +365,8 @@ class AIStatefulTask : public AIRefCount
    * @sa page_state_evolution
    */
 
-  /*!
-   * @brief Set the state to run, the next invocation of multiplex_impl.
+  /**
+   * Set the state to run, the next invocation of multiplex_impl.
    *
    * This function can be called from @c initialize_impl and @c multiplex_impl.
    *
@@ -380,15 +380,16 @@ class AIStatefulTask : public AIRefCount
    */
   void set_state(state_type new_state);       // Run this state the NEXT loop.
 
-  /*! @addtogroup group_wait Going idle and waiting for an event.
+  /**
+   * @addtogroup group_wait Going idle and waiting for an event.
    *
    * For a more detailed usage description and overview please see the @link waiting main page@endlink.
    *
    * @{
    * These member functions can only be called from within @c multiplex_impl.
    */
-  /*!
-   * @brief Wait for @a condition.
+  /**
+   * Wait for @a condition.
    *
    * Go idle if non of the bits of @a conditions were signalled <em>twice</em> or more since the last call to <code>wait(</code>that_bit<code>)</code>.
    * The task will continue whenever <code>signal(condition)</code> is called where <code>conditions &amp; condition != 0</code>.
@@ -397,8 +398,8 @@ class AIStatefulTask : public AIRefCount
    */
   void wait(condition_type conditions);
 
-  /*!
-   * @brief Block until the @a wait_condition returns true.
+  /**
+   * Block until the @a wait_condition returns true.
    *
    * Whenever something changed that might cause @a wait_condition to return @c true, <code>signal(condition)</code> must be called.
    * Calling <code>signal(condition)</code> more often is okay.
@@ -408,8 +409,8 @@ class AIStatefulTask : public AIRefCount
    */
   void wait_until(AIWaitConditionFunc const& wait_condition, condition_type conditions);
 
-  /*!
-   * @brief Block until the @a wait_condition returns true.
+  /**
+   * Block until the @a wait_condition returns true.
    *
    * Whenever something changed that might cause @a wait_condition to return @c true, <code>signal(condition)</code> must be called.
    * Calling <code>signal(condition)</code> more often is okay.
@@ -424,10 +425,10 @@ class AIStatefulTask : public AIRefCount
     wait_until(wait_condition, conditions);
   }
 
-  /*!@}*/ // group_wait
+  ///@} // group_wait
 
-  /*!
-   * @brief Mark that the task finished and schedule the call back.
+  /**
+   * Mark that the task finished and schedule the call back.
    *
    * A call to @c abort and @c finish will cause a task to not call
    * @c multiplex_impl again at all after leaving it (except when
@@ -436,12 +437,12 @@ class AIStatefulTask : public AIRefCount
    */
   void finish();
 
-  /*!
+  /**
    * Return true when stateful_task_mutex is self locked.
    */
   inline bool is_self_locked(AIStatefulTaskMutex& stateful_task_mutex);
 
-  /*!
+  /**
    * A call to yield*() has basically no effect on a task, except that its
    * execution is delayed a bit: this causes the task to return to the
    * AIEngine main loop code. That way other running tasks (in that engine)
@@ -460,8 +461,8 @@ class AIStatefulTask : public AIRefCount
    * @{
    */
 
-  /*!
-   * @brief Yield to give CPU to other tasks, but do not block.
+  /**
+   * Yield to give CPU to other tasks, but do not block.
    *
    * If a task runs potentially too long, it is a good idea to
    * regularly call this member function and break out of
@@ -470,8 +471,8 @@ class AIStatefulTask : public AIRefCount
    */
   void yield();
 
-  /*!
-   * @brief Continue running from @a engine.
+  /**
+   * Continue running from @a engine.
    *
    * The task will keep running in this engine until @c target is called again.
    * Call <code>target(Handler::idle)</code> to return to running freely (with a default engine, etc, if one was given).
@@ -480,15 +481,15 @@ class AIStatefulTask : public AIRefCount
    */
   void target(Handler handler);
 
-  /*!
-   * @brief The above two combined.
+  /**
+   * The above two combined.
    *
    * @param handler The required engine or thread pool queue to run in.
    */
   void yield(Handler handler);
 
-  /*!
-   * @brief Switch to @a engine and sleep for @a frames frames.
+  /**
+   * Switch to @a engine and sleep for @a frames frames.
    *
    * This function can only be used for an @a engine with a max_duration.
    * One frame means one entry into @c AIEngine::mainloop. So, for @a frames
@@ -499,8 +500,8 @@ class AIStatefulTask : public AIRefCount
    */
   void yield_frame(AIEngine* engine, unsigned int frames);
 
-  /*!
-   * @brief Switch to @a engine and sleep for @a ms milliseconds.
+  /**
+   * Switch to @a engine and sleep for @a ms milliseconds.
    *
    * This function can only be used for an engine with a max_duration.
    *
@@ -509,26 +510,27 @@ class AIStatefulTask : public AIRefCount
    */
   void yield_ms(AIEngine* engine, unsigned int ms);
 
-  /*!
-   * @brief Do not really yield, unless the current engine is not @a engine.
+  /**
+   * Do not really yield, unless the current engine is not @a engine.
    *
    * @param handler The required engine or thread pool queue to run in.
    * @returns true if it switched engine.
    */
   bool yield_if_not(Handler handler);
 
-  /*!@}*/ // group_yield
-  /*!@}*/ // group_protected
+  ///@} // group_yield
+  ///@} // group_protected
 
   // Calls wait_until.
   friend class AIFriendOfStatefulTask;
 
  public:
-  /*! @addtogroup group_public
+  /**
+   * @addtogroup group_public
    * @{
    */
-  /*!
-   * @brief Abort the task (unsuccessful finish).
+  /**
+   * Abort the task (unsuccessful finish).
    *
    * This function can be called from @c multiplex_imp, but also by a child task and therefore by any thread.
    * The child task should use a <code>boost::intrusive_ptr&lt;AIStatefulTask&gt;</code> to access this task.
@@ -540,8 +542,8 @@ class AIStatefulTask : public AIRefCount
    */
   void abort();
 
-  /*!
-   * @brief Wake up a waiting task.
+  /**
+   * Wake up a waiting task.
    *
    * This is the only control function that can be called by any thread at any moment.
    *
@@ -555,13 +557,13 @@ class AIStatefulTask : public AIRefCount
    */
   bool signal(condition_type condition);
 
-  /*!@}*/ // group_public
+  ///@} // group_public
 
  public:
   // Accessors.
 
-  /*!
-   * @brief Return true if the derived class is running.
+  /**
+   * Return true if the derived class is running.
    *
    * The task was initialized (<em>after</em> @c initialize_impl) and did not
    * call @c finish() or @c abort() yet (<em>before</em> @c finish() or @c abort()).
@@ -570,8 +572,8 @@ class AIStatefulTask : public AIRefCount
    */
   bool running() const { return multiplex_state_type::crat(mState)->base_state == bs_multiplex; }
 
-  /*!
-   * @brief Return true if the derived class is running and idle.
+  /**
+   * Return true if the derived class is running and idle.
    *
    * Running and idle since the last call to @link group_wait wait@endlink;
    * if already having been woken up due to a call to @link group_wait signal(condition)@endlink
@@ -579,8 +581,8 @@ class AIStatefulTask : public AIRefCount
    */
   bool waiting() const;
 
-  /*!
-   * @brief Return true if the derived class is running and idle or already being aborted.
+  /**
+   * Return true if the derived class is running and idle or already being aborted.
    *
    * A task reached the state aborting after returning from @c initialize_impl
    * or @c multiplex_impl that called @ref abort().
@@ -591,26 +593,27 @@ class AIStatefulTask : public AIRefCount
    */
   bool waiting_or_aborting() const;
 
-  /*!
-   * @brief Return true if we are added to the current engine.
+  /**
+   * Return true if we are added to the current engine.
    *
    * @param handler The handler that this task is supposed to run in.
    * @returns True if this task is actually added to @a handler.
    */
   bool active(Handler handler) const { return multiplex_state_type::crat(mState)->current_handler == handler; }
 
-  /*!
-   * @brief Return true if are currently running in an immediate handler.
+  /**
+   * Test if the current Handler is immediate.
    *
-   * @returns True if this task is not running in an AIEngine or the AIThreadPool.
+   * @returns True if this task is currently running in an immediate handler.
+   * @sa Handler::is_immediate
    */
   bool is_immediate() const { return multiplex_state_type::crat(mState)->current_handler.is_immediate(); }
 
   // For debugging purposes mainly.
   bool default_is_immediate() const { return mDefaultHandler.is_immediate(); }
 
-  /*!
-   * @brief Return true if the task finished.
+  /**
+   * Return true if the task finished.
    *
    * If this function returns false then the callback (or call to abort() on the parent) is guaranteed still going to happen.
    * If this function returns true then the callback might have happened or might still going to happen.
@@ -622,62 +625,65 @@ class AIStatefulTask : public AIRefCount
     return sub_state_r->finished ? &AIStatefulTask::mOnAbort : 0;
   }
 
-  /*!
-   * @brief Return true if this task was aborted.
+  /**
+   * Return true if this task was aborted.
    *
    * This value is guaranteed to be valid (only) after the task finished.
    */
   bool aborted() const { return sub_state_type::crat(mSubState)->aborted; }
 
-  /*!
-   * @brief Return true if this thread is executing this task right now (aka, we're inside @c multiplex somewhere).
+  /**
+   * Return true if this thread is executing this task right now (aka, we're inside @c{multiplex} somewhere).
    */
   bool executing() const { return mMultiplexMutex.is_self_locked(); }
 
-  /*!
-   * @brief Return stringified state, for debugging purposes.
+  /**
+   * Return stringified state, for debugging purposes.
    *
    * @param state A base state.
    */
   static char const* state_str(base_state_type state);
 #ifdef CWDEBUG
-  /*!
-   * @brief Return stringified event, for debugging purposes.
+  /**
+   * Return stringified event, for debugging purposes.
    *
    * @param event An event.
    */
   static char const* event_str(event_type event);
 #endif
 
-  /*!
-   * @brief Return total time that this task has been running.
+  /**
+   * Return total time that this task has been running.
    *
    * May only be called from the main thread.
    */
   duration_type getDuration() const { return mDuration; }
 
  protected:
-  /*!{
+  /**
+   * @{
+   *
    * See @ref example_task for a description of the virtual functions.
    */
-  //! @brief Called to stringify a run state for debugging output. Must be overridden.
+  /// Called to stringify a run state for debugging output. Must be overridden.
   virtual char const* state_str_impl(state_type run_state) const;
-  //! @brief Called for base state @ref bs_initialize.
+  /// Called for base state @ref bs_initialize.
   virtual void initialize_impl();
-  //! @brief Called for base state @ref bs_multiplex.
+  /// Called for base state @ref bs_multiplex.
   virtual void multiplex_impl(state_type run_state) = 0;
-  //! @brief Called for base state @ref bs_abort.
+  /// Called for base state @ref bs_abort.
   virtual void abort_impl();
-  //! @brief Called for base state @ref bs_finish.
+  /// Called for base state @ref bs_finish.
   virtual void finish_impl();
-  //! Called from AIEngine::flush().
+  /// Called from AIEngine::flush().
   virtual void force_killed();
-  /*!}*/
+  ///@}
 
  private:
   void reset();                                       // Called from run() to (re)initialize a (re)start.
 
-  /*! @brief Called to step through the states.
+  /**
+   * Called to step through the states.
    *
    * If event == normal_run then engine is the engine this was called from, unused otherwise (set to nullptr).
    */
@@ -707,9 +713,44 @@ extern channel_ct statefultask;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
+/// Tasks defined by the library project are put into this namespace.
 namespace task {
 
-// Convenience function to create tasks.
+/**
+ * Convenience function to create tasks.
+ *
+ * Typical usage,
+ *
+ * @code
+ * class ATask : public AIStatefulTask {
+ *   ...
+ *  public:
+ *   void init(...);
+ * };
+ *
+ * class SomeClass
+ * {
+ *   boost::intrusive_ptr<ATask> m_task;
+ *
+ *  public:
+ *   SomeClass() : m_task(task::create<ATask>(/\* constructor arguments of ATask *\/)) { }
+ *
+ *   void initial_run(...)
+ *   {
+ *     m_task->init(...);
+ *     m_task->run(...);
+ *   }
+ * };
+ * @endcode
+ *
+ * Or, for a one-shot task
+ *
+ * @code
+ * auto task = task::create<ATask>(/\* constructor arguments of ATask *\/);
+ * task->init(...);
+ * task->run(...);
+ * @endcode
+ */
 template<typename TaskType, typename... ARGS, typename = typename std::enable_if<std::is_base_of<AIStatefulTask, TaskType>::value>::type>
 boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 {

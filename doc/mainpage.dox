@@ -1,9 +1,9 @@
 /*!
 
-\mainpage Introduction
-\tableofcontents
+@mainpage Introduction
+@tableofcontents
 
-\htmlonly
+@htmlonly
 <div id="mainpage">
 <p><span class="projectname">AIStatefulTask</span> is an
 <a href="https://github.com/CarloWood/ai-statefultask">open source project</a>
@@ -11,15 +11,15 @@ written by <a href="http://carlowood.github.io/">Carlo Wood</a> and is
 the accumulation of more than a decade of design effort, testing and improvements.
 <span class="projectname">AIStatefulTask</span> allows you
 to write event driven applications of arbitrary complexity.</p>
-\endhtmlonly
+@endhtmlonly
 
-\htmlonly
+@htmlonly
 <div id="features">
-\endhtmlonly
-\section features Features
+@endhtmlonly
+@section features Features
 <p>The features of the library include:</p>
 
-\subsection highperformance &bull; High performance.
+@subsection highperformance &bull; High performance.
 <ul>
   <li>A great amount of effort was put into assuring the fastest possible algorithms and code.
   The whole design of the library has been with one goal in mind: to have every core in
@@ -57,7 +57,7 @@ to write event driven applications of arbitrary complexity.</p>
   <li>And the list goes on. If anything, then this is a Maximum High Performance library.</li>
 </ul>
 
-\subsection scalable &bull; Scalable to many cores.
+@subsection scalable &bull; Scalable to many cores.
   <ul>
     <li>Doing I/O requires one thread to sleep in @c{epoll}. For the timers we
     use the (hardware) per-process POSIX timer (see timer_create(2)). There is no distinction
@@ -74,7 +74,7 @@ to write event driven applications of arbitrary complexity.</p>
     be executed in parallel whenever possible and when (more) cores are available.</li>
   </ul>
 
-\subsection robust &bull; Highly robust.
+@subsection robust &bull; Highly robust.
   <ul>
     <li>Every demand that the library puts on its usage is enforced. Preferably at compile
     time; but when that is not possible (or would introduce less efficient code), usage
@@ -97,7 +97,7 @@ ASSERT(!m_debug_weak_ptr.expired());</pre>
     </li>
   </ul>
 
-\subsection builtindebugging &bull; Builtin debugging support.
+@subsection builtindebugging &bull; Builtin debugging support.
   <ul>
     <li>Debugging complex, multi-threaded programs can be quite a challenge.
     Stepping through the code with a debugger is often not going to cut it.
@@ -114,9 +114,9 @@ ASSERT(!m_debug_weak_ptr.expired());</pre>
     specific Tasks.</li>
   </ul>
 
-\subsection threadsafe &bull; Thread-safe by design.
+@subsection threadsafe &bull; Thread-safe by design.
   <ul>
-    <li>@htmlonly<span class="projectname">AIStatefulTask</span>\endhtmlonly
+    <li>@htmlonly<span class="projectname">AIStatefulTask</span>@endhtmlonly
     helps in many ways with writing a (heavy) multi-threaded
     program without running into all the normal problems: each Task is an object
     with its own (private) members that it is manipulating. The core of a task is
@@ -143,7 +143,7 @@ ASSERT(!m_debug_weak_ptr.expired());</pre>
     party libraries.</li>
   </ul>
 
-\subsection exceptions &bull; Error handling and reporting via C++ exceptions.
+@subsection exceptions &bull; Error handling and reporting via C++ exceptions.
   <ul>
     <li>C++ exceptions are the preferred error reporting mechanism for most applications.
     The exception thrown includes detailed information important for diagnosing the
@@ -156,13 +156,13 @@ ASSERT(!m_debug_weak_ptr.expired());</pre>
     cancel this user-action. Hence, an error is closely related to (if not the same as)
     a pop-up telling the user of a problem.</li>
   </ul>
-\htmlonly
+@htmlonly
 </div>
-\endhtmlonly
+@endhtmlonly
 
-\section rationale Rationale
+@section rationale Rationale
 
-\subsection problem Problem statement
+@subsection problem Problem statement
 
 <p><b>Applications</b> often need to do something along the lines of</p>
 
@@ -199,7 +199,7 @@ can only be guaranteed by locking each and every variable every time they are ac
 which either leads to unpredictable deadlocks or thread-unsafe accesses when attempting
 to avoid 'unneeded' mutex locking.<p>
 
-\subsection objective The objective of AIStatefulTask.
+@subsection objective The objective of AIStatefulTask.
 
 <p><b>The design goal</b> of @htmlonly<span class="projectname">AIStatefulTask</span>@endhtmlonly was to create
 a framework that allows one to dispatch tasks to a thread pool without losing
@@ -221,7 +221,7 @@ Do this if an error occurs.&quot;</div>@endhtmlonly</p>
 
 <h4>Thread-safety And Object Orientation.</h4>
 
-<p>Each Task in @htmlonly<span class="projectname">AIStatefulTask</span>\endhtmlonly
+<p>Each Task in @htmlonly<span class="projectname">AIStatefulTask</span>@endhtmlonly
 is derived from class AIStatefulTask, overriding up to six virtual functions.</p>
 <p>These virtual functions allow the developer to perform
 initialization, execute code in the case something
@@ -289,7 +289,7 @@ it <em>is</em> possible to tell a Task in which thread to run.</p>
 
 See @ref usage for more detailed information.
 
-\htmlonly
+@htmlonly
 </div> <!-- mainpage -->
-\endhtmlonly
+@endhtmlonly
 */

@@ -117,9 +117,9 @@
 
 #ifdef DOXYGEN  // Only defined while generating documentation.
 
-/*!
+/**
  * @anchor example_task
- * @brief An example task class.
+ * An example task class.
  *
  * Every stateful task is (indirectly) derived from AIStatefulTask.
  *
@@ -165,10 +165,10 @@
  *    // Actually run the task.
  *    void multiplex_impl(state_type run_state) override;
  *
- *    // The following virtual function can be overridden (they have a default):
+ *    // The following virtual functions may be overridden (they have a default):
  *
  *    // Handle initializing the task object.
- *    // The default initialize_impl sets the starting state to maxstate,
+ *    // The default initialize_impl sets the starting state to AIStatefulTask::state_end,
  *    // which should be the first state of the derived class.
  *    void initialize_impl() override;
  *
@@ -185,8 +185,8 @@
 class Example : public AIStatefulTask
 {
  protected:
-  /*!
-   * @brief Stringify a run state, for debugging output.
+  /**
+   * Stringify a run state, for debugging output.
    *
    * @param run_state A user defined state.
    * @returns A string literal with the human readable name of the state.
@@ -214,8 +214,8 @@ class Example : public AIStatefulTask
    */
   char const* state_str_impl(state_type run_state) const override;
 
-  /*!
-   * @brief Initialization of a task.
+  /**
+   * Initialization of a task.
    *
    * The default @c initialize_impl sets the state to the first state,
    * as is done in the example below. When the default is overridden
@@ -232,8 +232,9 @@ class Example : public AIStatefulTask
    */
   void initialize_impl() override;
 
-  /*! @anchor multiplex_impl
-   * @brief The main implementation of the task. Run the task.
+  /**
+   * @anchor multiplex_impl
+   * The main implementation of the task. Run the task.
    *
    * @param run_state The current user defined state that the task is in.
    *
@@ -260,7 +261,8 @@ class Example : public AIStatefulTask
    */
   void multiplex_impl(state_type run_state) override;
 
-  /*! Handle aborting the task.
+  /**
+   * Handle aborting the task.
    *
    * Example implementation:
    *
@@ -272,7 +274,8 @@ class Example : public AIStatefulTask
    */
   void abort_impl() override;
 
-  /*! Handle finishing the task.
+  /**
+   * Handle finishing the task.
    *
    * Example implementation:
    *
@@ -284,7 +287,8 @@ class Example : public AIStatefulTask
    */
   void finish_impl() override;
 
-  /*! Handle being force killed.
+  /**
+   * Handle being force killed.
    *
    * This member function is called when a task is running in an AIEngine
    * and that engine is flushed (by calling AIEngine::flush()). The result
@@ -959,7 +963,7 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop()
   return sub_state_w->run_state;
 }
 
-//! Write a Handler to an ostream.
+/// Write a Handler to an ostream.
 std::ostream& operator<<(std::ostream& os, AIStatefulTask::Handler const& handler)
 {
   switch (handler.m_type)

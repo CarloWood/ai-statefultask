@@ -1,5 +1,5 @@
 /*!
-\page lifecycle A tasks life cycle
+@page lifecycle A tasks life cycle
 <h3>Creation, initialization, running and destruction.</h3>
 
 <p>Because Task objects are called by (possibly) multiple threads, although one at a time,
@@ -24,7 +24,7 @@ task->run(handler, callback_args);  // This will cause 'task' to
 <li> If you want to control the life-time of the Task.
 @code
 // In general 'm_task' will be a member variable of an object.
-boost::intrusive_ptr<MyTask> m_task = new MyTask(my_args);
+@oost::intrusive_ptr<MyTask> m_task = task::create<MyTask>(my_args);
 
 // Then, every time you want to run it:
 m_task->my_initialization(my_params);

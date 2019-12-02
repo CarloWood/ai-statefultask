@@ -78,6 +78,7 @@ void Task::multiplex_impl(state_type run_state)
       set_state(Task_dispatch);
     }
     case Task_dispatch:
+    {
       if (!m_calculate_factorial.dispatch())            // Execute the function `factorial' in its own thread.
       {
         yield_frames(1);
@@ -87,9 +88,11 @@ void Task::multiplex_impl(state_type run_state)
       break;                                            // `factorial' has finished executing.
     }
     case Task_done:
+    {
       std::cout << "The factorial of 5 = " << m_calculate_factorial.get() << std::endl;
       finish();
       break;
+    }
   }
 }
 #endif // EXAMPLE_CODE
@@ -99,8 +102,8 @@ template<typename F>
 class AIPackagedTask;   // not defined.
 #endif
 
-/*!
- * @brief A wrapper for a <em>(member) function</em> to be executed by the AIThreadPool.
+/**
+ * A wrapper for a <em>(member) function</em> to be executed by the AIThreadPool.
  *
  * An AIPackagedTask is supposed to be a member of a class (e.g. <code>MyTask</code>) derived from AIStatefulTask.
  * The <code>this</code> pointer of that task should be passed to the constructor, along with a function to
@@ -136,6 +139,7 @@ class AIPackagedTask;   // not defined.
  *   case MyTask_state20:
  *     m_retrieve(n, y);                   // Copy parameters to m_retrieve.
  *     set_state(MyTask_dispatch);
+ *     [[fallthrough]];
  *   case MyTask_dispatch:
  *     if (!m_retrieve.dispatch())         // Put m_retrieve in the queue.
  *     {
@@ -160,8 +164,8 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
   AIQueueHandle m_queue_handle;
 
  public:
-  /*!
-   * @brief Construct a packaged task for a free function.
+  /**
+   * Construct a packaged task for a free function.
    *
    * @param parent_task The task that @ref dispatch will call @ref wait_until and @link AIStatefulTask::signal signal@endlink on.
    * @param condition The condition to use for @ref wait_until and @link AIStatefulTask::signal signal@endlink.
@@ -171,8 +175,8 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
   AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, R (*fp)(Args...), AIQueueHandle object_queue_handle) :
       AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(fp), m_queue_handle(object_queue_handle) { }
 
-  /*!
-   * @brief Construct a packaged task for a member function.
+  /**
+   * Construct a packaged task for a member function.
    *
    * @param parent_task The task that @ref dispatch will call @ref wait_until and @link AIStatefulTask::signal signal@endlink on.
    * @param condition The condition to use for @ref wait_until and @link AIStatefulTask::signal signal@endlink.
@@ -184,10 +188,10 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
   AIPackagedTask(AIStatefulTask* parent_task, AIStatefulTask::condition_type condition, C* object, R (C::*memfp)(Args...), AIQueueHandle object_queue_handle) :
       AIFriendOfStatefulTask(parent_task), m_phase(standby), m_condition(condition), m_delayed_function(object, memfp), m_queue_handle(object_queue_handle) { }
 
-  //! Destructor.
+  /// Destructor.
   ~AIPackagedTask();
 
-  //! Exchange the state with that of @a other.
+  /// Exchange the state with that of @a other.
   void swap(AIPackagedTask& other) noexcept
   {
     std::swap(m_condition, other.m_condition);
@@ -195,11 +199,11 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
     std::swap(m_queue_handle, other.m_queue_handle);
   }
 
-  //! Copy the arguments.
+  /// Copy the arguments.
   void operator()(Args... args);
 
-  /*!
-   * @brief Put the task in a queue for execution in a different thread.
+  /**
+   * Put the task in a queue for execution in a different thread.
    *
    * Actually queue the task in the AIObjectQueue whose handle was passed to the constructor
    * and halt the @c parent_task as passed to the constructor until this task is finished.
@@ -214,8 +218,8 @@ class AIPackagedTask<R(Args...)> : public AIFriendOfStatefulTask
   void operator()();                                  // Invoke the function.
 #endif
 
-  /*!
-   * @brief Read out the result of the function.
+  /**
+   * Read out the result of the function.
    *
    * May only be called after <code>parent_task->signal(condition)</code> was called.
    */
