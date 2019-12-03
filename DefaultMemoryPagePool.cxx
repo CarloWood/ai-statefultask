@@ -30,6 +30,8 @@
 
 namespace statefultask {
 
+/// @cond Doxygen_Suppress
 utils::MemoryPagePool* DefaultMemoryPagePoolBase::s_instance;
+/// @endcond
 
 } // namespace statefultask

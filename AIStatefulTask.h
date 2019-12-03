@@ -133,7 +133,7 @@ class AIStatefulTask : public AIRefCount
    * When a Handler is constructed from an AIEngine pointer, then it describes that
    * a task should run in that engine.
    *
-   * Finally, a Handler can be constructed from @ref AIQueueHandle, describing that a
+   * Finally, a Handler can be constructed from AIQueueHandle, describing that a
    * task should run in the thread pool by adding it to the PriorityQueue of that
    * handle.
    */
@@ -155,6 +155,7 @@ class AIStatefulTask : public AIRefCount
     union Handle {
       AIEngine* engine;                 ///< The actual engine when this is an engine Handler.
       AIQueueHandle queue_handle;       ///< The actual thread pool queue when this is a thread pool Handler.
+
       /// Construct an uninitialized Handle.
       Handle() { }
       /// Construct a Handle from an AIEngine pointer.
@@ -164,6 +165,7 @@ class AIStatefulTask : public AIRefCount
     };
     Handle m_handle;    ///< Extra data that depends on m_type.
     type_t m_type;      ///< The type of this Handler.
+
     /// Construct a special Handler.
     Handler(special_t special) : m_type((type_t)special) { }
     /// Construct a Handler from an AIEngine pointer.
@@ -273,6 +275,7 @@ class AIStatefulTask : public AIRefCount
    *
    * The @a debug parameter only exists when CWDEBUG is defined.
    *
+   * The following parameter is only available in debug mode.
    * @param debug Write debug output for this task to dc::statefultask.
    */
   AIStatefulTask(CWDEBUG_ONLY(bool debug)) : mDefaultHandler(Handler::idle), mTargetHandler(Handler::idle), mYield(false),
@@ -613,8 +616,10 @@ class AIStatefulTask : public AIRefCount
    */
   bool is_immediate() const { return multiplex_state_type::crat(mState)->current_handler.is_immediate(); }
 
+  /// @cond Doxygen_Suppress
   // For debugging purposes mainly.
   bool default_is_immediate() const { return mDefaultHandler.is_immediate(); }
+  /// @endcond
 
   /**
    * Return true if the task finished.

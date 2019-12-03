@@ -32,10 +32,10 @@
 
 namespace statefultask {
 
-/// Base class of DefaultMemoryPagePool.
+/// @cond Doxygen_Suppress
 class DefaultMemoryPagePoolBase
 {
- private:
+ protected:
   static utils::MemoryPagePool* s_instance;
 
  protected:
@@ -53,23 +53,8 @@ class DefaultMemoryPagePoolBase
     delete s_instance;
     s_instance = nullptr;
   }
-
- public:
-  /**
-   * Returns a reference to the default @c{utils::MemoryPagePool}.
-   *
-   * This is the singleton that is initialized at the top of @c{main()}.
-   * @sa DefaultMemoryPagePool
-   */
-  static utils::MemoryPagePool& instance()
-  {
-    // Create a statefultask::DefaultMemoryPagePool at the top of main,
-    // and/or don't use anything from statefultask in constructors/destructors
-    // of global and/or static objects.
-    ASSERT(s_instance);
-    return *s_instance;
-  }
 };
+/// @endcond
 
 /**
  * The memory pool for all other memory pools.
@@ -80,7 +65,7 @@ class DefaultMemoryPagePoolBase
  * this singleton as their MemoryPagePool. Unless you know what you are doing
  * you're advised to use the default constructor and have all memory pools
  * that are based on an @c{utils::MemoryPagePool} use
- * @link statefultask::DefaultMemoryPagePoolBase::instance AIMemoryPagePool::instance() @endlink.
+ * @link statefultask::DefaultMemoryPagePool::instance AIMemoryPagePool::instance() @endlink.
  *
  * DefaultMemoryPagePool must be initialized at the start of main before
  * using anything else from statefultask.
@@ -127,7 +112,7 @@ class DefaultMemoryPagePoolBase
  * where `MyMPP` must be derived from @c{utils::MemoryPagePool}.
  */
 template<typename MPP = utils::MemoryPagePool>
-class DefaultMemoryPagePool : public DefaultMemoryPagePoolBase
+class DefaultMemoryPagePool : private DefaultMemoryPagePoolBase
 {
  public:
   /// Constructor with the same (default) arguments as @c{utils::MemoryPagePool}.
@@ -146,6 +131,21 @@ class DefaultMemoryPagePool : public DefaultMemoryPagePoolBase
   DefaultMemoryPagePool(ArgT&&... args)
   {
     init(new MPP(std::forward<ArgT>(args)...));
+  }
+
+  /**
+   * Returns a reference to the default @c{utils::MemoryPagePool}.
+   *
+   * This is the singleton that is initialized at the top of @c{main()}.
+   * @sa DefaultMemoryPagePool
+   */
+  static utils::MemoryPagePool& instance()
+  {
+    // Create a statefultask::DefaultMemoryPagePool at the top of main,
+    // and/or don't use anything from statefultask in constructors/destructors
+    // of global and/or static objects.
+    ASSERT(s_instance);
+    return *s_instance;
   }
 };
 

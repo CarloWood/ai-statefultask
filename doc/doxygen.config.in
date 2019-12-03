@@ -2051,6 +2051,9 @@ PREDEFINED             = "DOXYGEN" \
                            "DOXYGEN_STATIC=" \
                            "UNUSED_ARG(x)=" \
                            "DEBUG_ONLY(x)=x" \
+                           "CWDEBUG_ONLY(x)=x" \
+                           "COMMA_DEBUG_ONLY(x)=,x" \
+                           "COMMA_CWDEBUG_ONLY(x)=,x" \
                            "PRAGMA_DIAGNOSTIC_PUSH_IGNORE_maybe_uninitialized=" \
                            "PRAGMA_DIAGNOSTIC_POP="
 

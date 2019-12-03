@@ -57,7 +57,7 @@
  * which in turn calls <code>AIStatefulTask::multiplex(initial_run)</code>.
  * When a default engine was passed to @c{run} then @c{multiplex} adds the task to the queue of that engine.
  * When a thread pool queue was passed to @c run then the task is added to that queue of the thread pool.
- * If the special @ref AIQueueHandle @link AIStatefulTask::Handler::immediate_h immediate@endlink was passed
+ * If the special AIQueueHandle @link AIStatefulTask::Handler::immediate_h immediate@endlink was passed
  * to @c run then the task is being run immediately in the thread that called @c run and will <em>keep</em>
  * running until it is either aborted or one of @link AIStatefulTask::finish finish()@endlink,
  * @link group_yield yield*()@endlink or @link group_wait wait*()@endlink is called!

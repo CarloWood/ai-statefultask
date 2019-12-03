@@ -69,13 +69,15 @@ class AIStatefulTaskMutex
 {
   using condition_type = uint32_t;      // Must be the same as AIStatefulTask::condition_type
 
- protected:
-  /// %Node in a singly linked list of tasks that are waiting for this mutex.
+ private:
+  // Node in a singly linked list of tasks that are waiting for this mutex.
   struct Node
   {
     std::atomic<Node*> m_next;
     AIStatefulTask* m_task;
-    condition_type m_condition;
+    condition_type const m_condition;
+
+    Node(AIStatefulTask* task, condition_type condition) : m_next(nullptr), m_task(task), m_condition(condition) { }
   };
 
  public:
@@ -103,9 +105,7 @@ class AIStatefulTaskMutex
   {
     DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << condition << ") [" << this << "]");
 
-    Node* new_node = new (s_node_memory_resource.allocate(sizeof(Node))) Node;
-    std::atomic_init(&new_node->m_next, static_cast<Node*>(nullptr));
-    new_node->m_task = task;
+    Node* new_node = new (s_node_memory_resource.allocate(sizeof(Node))) Node(task, condition);
 
 //    Dout(dc::notice, "Create new node at " << new_node << " with m_next = " << new_node->m_next << "; m_task = " << new_node->m_task << " [" << task << "]");
 
@@ -138,8 +138,6 @@ class AIStatefulTaskMutex
     //
     // Below we set that m_next pointer to point to our node, so the
     // task in unlock() can escape the spin lock.
-//    Dout(dc::notice, "Setting m_condition of new_node (" << new_node << ") to " << condition << " [" << task << "]");
-    new_node->m_condition = condition;
 //    Dout(dc::notice, "Setting m_next of prev (" << prev << ") to " << new_node << " [" << task << "]");
     prev->m_next.store(new_node, std::memory_order_release);
 
@@ -173,7 +171,7 @@ class AIStatefulTaskMutex
     signal_next(owner COMMA_CWDEBUG_ONLY(task));
   }
 
-#ifdef CWDEBUG
+#if defined(CWDEBUG) && !defined(DOXYGEN)
   // The returned value might point to a task that was already destructed.
   AIStatefulTask* debug_get_owner() const
   {
