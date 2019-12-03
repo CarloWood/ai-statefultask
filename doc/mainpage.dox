@@ -175,7 +175,7 @@ manner. In both cases you probably need some kind of event mechanism to be notif
 
 <p><b>In reality</b> life isn't that simple.
 Often a task will use some&ndash; or possibly a significant amount of&ndash;
-CPU cycles alternated by the need to idle (i.e. waiting for network and/or disk access).
+CPU cycles alternated by the need to idle (e.g. waiting for network I/O).
 It might even never finish; requiring a timeout and/or error handling, etc.
 There certainly won't be an existing library that does this work asynchronously for you and unless
 you can spare a core to do the task synchronously passing the task to another thread won't
