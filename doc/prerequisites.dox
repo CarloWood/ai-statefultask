@@ -217,7 +217,7 @@ is destructed, so @c{mpp} must be destructed *after* @c{thread_pool}!
 Also note that the task is run by passing a handler. Try what happens
 when you don't pass anything and just call @c{run()}.</p>
 
-<p>It is also possible run a task in an AIEngine. An AIEngine requires
+<p>It is also possible to run a task in an AIEngine. An AIEngine requires
 a main loop somewhere to be run from, which we don't have in a small
 @tt{Hello World} type program, so we have to add one for demonstration
 purposes. I'm also adding the event loop back, pretending we're doing
@@ -265,7 +265,7 @@ int main()
     // Add an artificial main loop here.
     while (!test_finished)
     {
-      // Run tasks from a known point some libraries main loop.
+      // Run tasks from a known point in some libraries main loop.
       // This 'synchronizes' the task with the code of that particular library.
       engine.mainloop();
       // Pretend we're doing something else too.

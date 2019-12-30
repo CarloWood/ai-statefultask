@@ -250,7 +250,7 @@ class AIStatefulTask : public AIRefCount
   Handler mTargetHandler;             // Requested engine by a call to yield.
   bool mYield;                        // True when any yield function was called, except for yield_if_not when the passed engine already matched.
 
-#ifdef DEBUG
+#if CW_DEBUG
   // Debug stuff.
   std::thread::id mThreadId;          // The thread currently running multiplex() (or std::thread::id() when none).
   base_state_type mDebugLastState;    // The previous state that multiplex() had a normal run with.
@@ -279,7 +279,7 @@ class AIStatefulTask : public AIRefCount
    * @param debug Write debug output for this task to dc::statefultask.
    */
   AIStatefulTask(CWDEBUG_ONLY(bool debug)) : mDefaultHandler(Handler::idle), mTargetHandler(Handler::idle), mYield(false),
-#ifdef DEBUG
+#if CW_DEBUG
   mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
   mDebugSetStatePending(false), mDebugRefCalled(false),
 #endif

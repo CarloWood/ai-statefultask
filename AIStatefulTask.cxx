@@ -551,7 +551,9 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
       }
       else
         Dout(dc::statefultask(mSMDebug), "Running state " << state_str(state) << " [" << (void*)this << "]");
+#endif
 
+#if CW_DEBUG
       // This debug code checks that each task steps precisely through each of it's states correctly.
       if (state != bs_reset)
       {
@@ -612,7 +614,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
         Dout(dc::statefultask(mSMDebug), "Late abort detected! Running state " << state_str(state) << " instead [" << (void*)this << "]");
 #endif
       }
-#ifdef DEBUG
+#if CW_DEBUG
       mDebugLastState = state;
       // Make sure we only call ref() once and in balance with unref().
       if (state == bs_initialize)
