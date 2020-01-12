@@ -7,6 +7,8 @@ project( statefultask
 
 include( AICxxProject )
 
+add_subdirectory( doc )
+
 #==============================================================================
 # BUILD PROJECT
 #
