@@ -647,7 +647,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
             {
               state_w->wait_condition = nullptr;
               sub_state_type::wat(mSubState)->idle = 0;
-#ifdef DEBUG
+#if CW_DEBUG
               mDebugShouldRun = true;
 #endif
             }
@@ -898,7 +898,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
                 queue.notify_one();
             }
           }
-#ifdef DEBUG
+#if CW_DEBUG
           // We are leaving the loop, but we're not idle. The task should re-enter multiplex() again.
           mDebugShouldRun = true;
 #endif
@@ -910,7 +910,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
           state_w->current_handler = Handler::idle;
         }
 
-#ifdef DEBUG
+#if CW_DEBUG
         // Mark that we stop running the loop.
         mThreadId = std::thread::id();
 
@@ -957,7 +957,7 @@ AIStatefulTask::state_type AIStatefulTask::begin_loop()
   // Mark that we're currently not idle and wait() wasn't called (yet).
   sub_state_w->wait_called = false;
 
-#ifdef DEBUG
+#if CW_DEBUG
   // Mark that we're running the loop.
   mThreadId = std::this_thread::get_id();
   // This point marks handling wait() with pending signal().
@@ -1001,7 +1001,7 @@ void AIStatefulTask::run(Handler default_handler, AIStatefulTask* parent, condit
   // You can't request 'idle' as default handler.
   ASSERT(default_handler);
 
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // Can only be run when in one of these states.
@@ -1051,7 +1051,7 @@ void AIStatefulTask::run(Handler default_handler, std::function<void (bool)> cb_
   // You can't request 'idle' as default handler.
   ASSERT(default_handler);
 
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // Can only be run when in one of these states.
@@ -1148,7 +1148,7 @@ void AIStatefulTask::force_killed()
 void AIStatefulTask::kill()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::kill() [" << (void*)this << "]");
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // kill() may only be called from the call back function.
@@ -1164,7 +1164,7 @@ void AIStatefulTask::kill()
 void AIStatefulTask::reset()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::reset() [" << (void*)this << "]");
-#ifdef DEBUG
+#if CW_DEBUG
   mDebugAborted = false;
   mDebugSignalPending = false;
   mDebugSetStatePending = false;
@@ -1200,7 +1200,7 @@ void AIStatefulTask::reset()
 void AIStatefulTask::set_state(state_type new_state)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::set_state(" << state_str_impl(new_state) << ") [" << (void*)this << "]");
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // set_state() may only be called from initialize_impl() or multiplex_impl().
@@ -1218,7 +1218,7 @@ void AIStatefulTask::set_state(state_type new_state)
     ASSERT(sub_state_w->wait_called || !sub_state_w->idle);
     // Force current state to the requested state.
     sub_state_w->run_state = new_state;
-#ifdef DEBUG
+#if CW_DEBUG
     // We should run. This can only be cancelled by a call to wait().
     mDebugSetStatePending = !sub_state_w->wait_called;
 #endif
@@ -1228,7 +1228,7 @@ void AIStatefulTask::set_state(state_type new_state)
 void AIStatefulTask::wait(condition_type conditions)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << std::hex << conditions << std::dec << ") [" << (void*)this << "]");
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // wait() may only be called multiplex_impl().
@@ -1258,7 +1258,7 @@ void AIStatefulTask::wait(condition_type conditions)
 
     // Not sleeping (anymore).
     mSleep = 0;
-#ifdef DEBUG
+#if CW_DEBUG
     // From this moment.
     mDebugSignalPending = !sub_state_w->idle;
 #endif
@@ -1302,7 +1302,7 @@ bool AIStatefulTask::signal(condition_type condition)
       Dout(dc::statefultask(mSMDebug), "Ignoring because idle == " << std::hex << sub_state_w->idle << std::dec);
       return false;
     }
-#ifdef DEBUG
+#if CW_DEBUG
     mDebugSignalPending = sub_state_w->wait_called;
 #endif
     // Unblock this task.
@@ -1344,7 +1344,7 @@ void AIStatefulTask::abort()
     mRunMutex.lock();
   }
   mRunMutex.unlock();
-#ifdef DEBUG
+#if CW_DEBUG
   // When abort() returns, it may never run again.
   mDebugAborted = true;
 #endif
@@ -1353,7 +1353,7 @@ void AIStatefulTask::abort()
 void AIStatefulTask::finish()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::finish() [" << (void*)this << "]");
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // finish() may only be called from multiplex_impl().
@@ -1376,7 +1376,7 @@ void AIStatefulTask::finish()
 void AIStatefulTask::yield()
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield() [" << (void*)this << "]");
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // yield() may only be called from multiplex_impl().
@@ -1395,7 +1395,7 @@ void AIStatefulTask::target(Handler handler)
   // This is not possible. Do not specify Handler::immediate as (yield) target.
   // Use an actual AIEngine or AIQueueHandle. To turn off a target, use target(Handler::idle).
   ASSERT(!handler.is_immediate());
-#ifdef DEBUG
+#if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
     // May only be called by the thread that is holding mMultiplexMutex.

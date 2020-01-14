@@ -292,7 +292,7 @@ class AIStatefulTask : public AIRefCount
   /// Destructor.
   virtual ~AIStatefulTask()
   {
-#ifdef DEBUG
+#if CW_DEBUG
     base_state_type state = multiplex_state_type::rat(mState)->base_state;
     ASSERT(state == bs_killed || state == bs_reset);
 #endif
