@@ -1,3 +1,1 @@
-find_package( Doxygen
-              REQUIRED dot
-)
+find_package(Doxygen REQUIRED dot)
