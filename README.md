@@ -6,9 +6,9 @@ providing C++ utilities for larger projects, including:
 * Stuff here
 
 The root project should be using
-[autotools](https://en.wikipedia.org/wiki/GNU_Build_System_autotools),
+[cmake](https://cmake.org),
 [cwm4](https://github.com/CarloWood/cwm4) and
-[libcwd](https://github.com/CarloWood/libcwd).
+[libcwd](https://github.com/CarloWood/libcwd) (or [gitache](https://github.com/CarloWood/gitache)).
 
 ## Example
 
@@ -19,14 +19,14 @@ To clone a project example-project that uses ai-statefultask simply run:
 <pre>
 <b>git clone --recursive</b> &lt;<i>URL-to-project</i>&gt;<b>/example-project.git</b>
 <b>cd example-project</b>
-<b>./autogen.sh</b>
+<b>CMAKE_ONLY=1 ./autogen.sh</b>
 </pre>
 
 The <tt>--recursive</tt> is optional because <tt>./autogen.sh</tt> will fix
 it when you forgot it.
 
-Afterwards you probably want to use <tt>--enable-mainainer-mode</tt>
-as option to the generated <tt>configure</tt> script.
+Note: if you are using autotools instead of cmake, then afterwards you probably want to
+use <tt>--enable-mainainer-mode</tt> as option to the generated <tt>configure</tt> script.
 
 ## Adding the ai-statefultask submodule to a project
 
@@ -42,6 +42,8 @@ git submodule add https://github.com/CarloWood/ai-statefultask.git statefultask
 
 This should clone ai-statefultask into the subdirectory <tt>statefultask</tt>, or
 if you already cloned it there, it should add it.
+
+The following applies only when you use autotools (which from now on is deprecated):
 
 Changes to <tt>configure.ac</tt> and <tt>Makefile.am</tt>
 are taken care of by <tt>cwm4</tt>, except for linking
