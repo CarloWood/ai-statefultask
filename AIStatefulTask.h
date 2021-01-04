@@ -243,7 +243,7 @@ class AIStatefulTask : public AIRefCount
   condition_type mParentCondition;                    // The condition (bit) that the parent should be signalled with upon a successful finish.
   on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
   // From outside a stateful task:
-  std::function<void (bool)>mCallback;                // Pointer to signal/connection, or nullptr when not connected.
+  std::function<void (bool)> mCallback;               // Pointer to signal/connection, or nullptr when not connected.
 
   // Engine stuff.
   Handler mDefaultHandler;            // Default engine or queue.
