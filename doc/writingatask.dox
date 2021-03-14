@@ -31,6 +31,11 @@ class MyTask : public AIStatefulTask
   void initialize_impl() override;	// Default starts with first state.
   void abort_impl() override;		// Default does nothing.
   void finish_impl() override;		// Default does nothing.
+
+ public:
+  // In debug mode, passing `true` to the constructor of a task causes
+  // debug output to dc::statefultask regarding running the state machine.
+  MyTask(CWDEBUG_ONLY(bool debug)) : AIStatefulTask(CWDEBUG_ONLY(debug)) { }
 };
 
 char const* MyTask::state_str_impl(state_type run_state)
