@@ -1,6 +1,6 @@
 /*!
 @page prerequisites C++ Prerequisites
-<h3>Library initialization.</h3>
+<h3>Library initialization</h3>
 
 <p>Once the build system has been set up correctly (see @ref compiling)
 there are still a few things to be taken care of at the C++ level;
@@ -107,7 +107,8 @@ int main()
 }
 @endcode
 
-which requires linking with @tt{libcwds_r}.</p>
+which requires (linking with object code from) submodule [@tt{cwds}](https://github.com/CarloWood/cwds)
+(which in turn requires @tt{libcwd_r}).</p>
 
 <p>A minimal program that has a thread pool, looks something like this:
 
@@ -133,7 +134,8 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with @tt{libthreadpool libthreadsafe libutils}.</p>
+which requires, additionally, submodules [@tt{threadpool}](https://github.com/CarloWood/threadpool)
+[@tt{threadsafe}](https://github.com/CarloWood/ai-threadsafe) and [@tt{utils}](https://github.com/CarloWood/ai-utils).</p>
 
 <p>A minimal program that has an event loop (for I/O), looks something like this:
 
@@ -168,7 +170,7 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with @tt{libevio}.</p>
+which requires, additionally, submodule [@tt{evio}](https://github.com/CarloWood/evio).</p>
 
 <p>When you actually use a task, so far we only used submodules other than @tt{statefultask},
 it is a good idea to also create the @c{AIMemoryPagePool} object, just in case (although this
@@ -209,7 +211,8 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with @tt{libstatefultask.la} (and @tt{libhelloworldtask.la}).
+which requires, additionally, submodules [@tt{statefultask}](https://github.com/CarloWood/ai-statefultask)
+(and [@tt{helloworld-task}](https://github.com/CarloWood/helloworld-task)).
 
 Note that @c{AIMemoryPagePool} is created *before* @c{AIThreadPool}.
 This is important because tasks can continue running until the thread pool
@@ -287,4 +290,29 @@ int main()
   Dout(dc::notice, "Leaving main()");
 }
 @endcode
+
+<h3>Linking</h3>
+
+Using `cmake`, each submodule is an OBJECT library and needs to be added
+to `target_link_libraries` of the final executable (or shared library
+if you'd make that instead). To make that easier, they all automatically
+add themselves to the cmake variable `AICXX_OBJECTS_LIST`, so you only
+have to link with that. Task submodules are not added at the moment,
+so those have to be added specifically.
+
+For example the above would have the following entry in `CMakeLists.txt`:
+
+@code{.cmake}
+add_executable(helloworld helloworld.cxx)
+target_link_libraries(helloworld PRIVATE AICxx::helloworld-task ${AICXX_OBJECTS_LIST})
+@endcode
+
+while the `src/Makefile.am` when using GNU autotools would contain:
+
+@code{.am}
+helloworld_SOURCES = helloworld.cxx
+helloworld_CXXFLAGS = @LIBCWD_R_FLAGS@
+helloworld_LDADD = ../helloworld-task/libhelloworldtask.la ../statefultask/libstatefultask.la ../evio/libevio.la ../threadpool/libthreadpool.la ../threadsafe/libthreadsafe.la ../utils/libutils_r.la ../cwds/libcwds_r.la
+@endcode
+
 */
