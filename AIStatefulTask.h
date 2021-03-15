@@ -725,41 +725,40 @@ NAMESPACE_DEBUG_CHANNELS_END
 /// Tasks defined by the library project are put into this namespace.
 namespace task {
 
-/**
- * Convenience function to create tasks.
- *
- * Typical usage,
- *
- * @code
- * class ATask : public AIStatefulTask {
- *   ...
- *  public:
- *   void init(...);
- * };
- *
- * class SomeClass
- * {
- *   boost::intrusive_ptr<ATask> m_task;
- *
- *  public:
- *   SomeClass() : m_task(task::create<ATask>(/\* constructor arguments of ATask *\/)) { }
- *
- *   void initial_run(...)
- *   {
- *     m_task->init(...);
- *     m_task->run(...);
- *   }
- * };
- * @endcode
- *
- * Or, for a one-shot task
- *
- * @code
- * auto task = task::create<ATask>(/\* constructor arguments of ATask *\/);
- * task->init(...);
- * task->run(...);
- * @endcode
- */
+/// Convenience function to create tasks.
+///
+/// Typical usage,
+///
+/// @code
+/// class ATask : public AIStatefulTask {
+///   ...
+///  public:
+///   void init(...);
+/// };
+///
+/// class SomeClass
+/// {
+///   boost::intrusive_ptr<ATask> m_task;
+///
+///  public:
+///   SomeClass() : m_task(task::create<ATask>(/* constructor arguments of ATask */)) { }
+///
+///   void initial_run(...)
+///   {
+///     m_task->init(...);
+///     m_task->run(...);
+///   }
+/// };
+/// @endcode
+///
+///  Or, for a one-shot task
+///
+/// @code
+/// auto task = task::create<ATask>(/* constructor arguments of ATask */);
+/// task->init(...);
+/// task->run(...);
+/// @endcode
+///
 template<typename TaskType, typename... ARGS, typename = typename std::enable_if<std::is_base_of<AIStatefulTask, TaskType>::value>::type>
 boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 {
