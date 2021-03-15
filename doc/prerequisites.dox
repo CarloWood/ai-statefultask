@@ -78,13 +78,14 @@ file in the same project.</p>
 <p>If you are new to @projectname then I urge
 you to first clone <a href="https://github.com/CarloWood/ai-statefultask-testsuite">ai-statefultask-testsuite</a> and get that working;
 as that will require you to have all the bits and pieces for building a project
-that uses @projectname installed (hint: start
-with getting, compiling and installing <a href="https://github.com/CarloWood/libcwd">libcwd</a>
-and configure that for example with @tt{--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading}
+that uses @projectname installed (note: if you use autotools then start
+with getting, compiling and installing <a href="https://github.com/CarloWood/libcwd">libcwd</a>.
+Configure libcwd (for example) with @tt{--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading}
 because, respectivily, you got it with git, but you're not debugging libcwd itself, you don't need memory allocation
-debugging (slow), or printing source_file:line_number locations, and we only need the multithreaded version).</p>
+debugging (slow), or printing source_file:line_number locations, and we only need the multithreaded version. This is
+not necessary when you use cmake and set the environment variable `GITACHE_ROOT` (see @ref compiling)).</p>
 
-<p>If you run into any problems configuring, compiling and/or installing libcwd,
+<p>If you run into any problems configuring, compiling and/or installing libcwd using GNU autotools,
 please watch <a href="https://www.youtube.com/watch?v=JbDlUIz7oek&list=PLJzCXkV5Y8Ze6TtQWQSH6w5J-e-yIhgzP&t=172">this tutorial</a>.
 If you run into any problems with setting up the environment related to the git submodules (cwm4 and cwds), please
 watch <a href="https://www.youtube.com/watch?v=53wWV0wqOMA&list=PLJzCXkV5Y8Ze6TtQWQSH6w5J-e-yIhgzP&index=2">this tutorial</a>.</p>
