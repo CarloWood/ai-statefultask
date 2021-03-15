@@ -14,7 +14,7 @@ cw_option(BuildDocumentation
 
 if (OptionBuildDocumentation AND NOT DOXYGEN_FOUND)
   message(FATAL_ERROR "Doxygen is needed to build the documentation. "
-    "Use -DOptionBuildDocumentation:BOOL=OFF to skip building the documentation while using build type Release.")
+    "Use -DBuildDocumentation:BOOL=OFF to skip building the documentation while using build type Release.")
 endif ()
 
 if (Doxygen_dot_FOUND)
