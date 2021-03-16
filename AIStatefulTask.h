@@ -723,7 +723,7 @@ NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
 /// Tasks defined by the library project are put into this namespace.
-namespace task {
+namespace statefultask {
 
 /**
  * Convenience function to create tasks.
@@ -742,7 +742,7 @@ namespace task {
  *   boost::intrusive_ptr<ATask> m_task;
  *
  *  public:
- *   SomeClass() : m_task(task::create<ATask>(/\* constructor arguments of ATask *\/)) { }
+ *   SomeClass() : m_task(statefultask::create<ATask>(/\* constructor arguments of ATask *\/)) { }
  *
  *   void initial_run(...)
  *   {
@@ -755,7 +755,7 @@ namespace task {
  * Or, for a one-shot task
  *
  * @code
- * auto task = task::create<ATask>(/\* constructor arguments of ATask *\/);
+ * auto task = statefultask::create<ATask>(/\* constructor arguments of ATask *\/);
  * task->init(...);
  * task->run(...);
  * @endcode
@@ -766,21 +766,21 @@ boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 #ifdef CWDEBUG
 #if CWDEBUG_LOCATION
   LibcwDoutScopeBegin(LIBCWD_DEBUGCHANNELS, ::libcwd::libcw_do, dc::statefultask)
-  LibcwDoutStream << "Entering task::create<" << libcwd::type_info_of<TaskType>().demangled_name();
-  (LibcwDoutStream << ... << (", " + libcwd::type_info_of<ARGS>().demangled_name())) << ">(" << join(", ", args...) << ')';
+  LibcwDoutStream << "Entering statefultask::create<" << libcwd::type_info_of<TaskType>().demangled_name();
+  (LibcwDoutStream << ... << (std::string(", ") + libcwd::type_info_of<ARGS>().demangled_name())) << ">(" << join(", ", args...) << ')';
   LibcwDoutScopeEnd;
   ::NAMESPACE_DEBUG::Indent indentation(2);
 #else
-  DoutEntering(dc::evio, "task::create<>(" << join(", ", args...) << ')')
+  DoutEntering(dc::evio, "statefultask::create<>(" << join(", ", args...) << ')')
 #endif
 #endif
   TaskType* task = new TaskType(std::forward<ARGS>(args)...);
-  AllocTag2(task, "Created with task::create");
+  AllocTag2(task, "Created with statefultask::create");
   Dout(dc::statefultask, "Returning task pointer " << (void*)task << " [" << static_cast<AIStatefulTask*>(task) << "].");
   return task;
 }
 
-} // namespace task
+} // namespace statefultask
 
 #include "AIStatefulTaskMutex.h"
 
