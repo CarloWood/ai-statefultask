@@ -5,7 +5,8 @@
 @htmlonly
 <p><span class="projectname">AIStatefulTask</span> is a <tt>git submodule</tt>.
 It can just be checked out in its own subdirectory and be compiled as part
-of a larger project. The submodule <em>does</em> contain a <tt>Makefile.am</tt>
+of a larger project. The submodule <em>does</em> contain a <tt>CMakeLists.txt</tt>
+file to facilitate building with <a href="https://cmake.org/"><tt>cmake</tt></a>, and a <tt>Makefile.am</tt>
 file to facilitate building a libtool archive using the
 <a href="https://www.gnu.org/software/automake/manual/html_node/index.html"><tt>GNU</tt>&nbsp;<tt>autotools</tt></a>.</p>
 

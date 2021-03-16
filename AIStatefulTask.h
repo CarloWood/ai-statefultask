@@ -503,7 +503,7 @@ class AIStatefulTask : public AIRefCount
    * entries of @c mainloop this task will not be run.
    *
    * @param engine The engine to sleep in. This must be an engine with a max_duration set.
-   * @param frames The number frames to run before returning CPU to other tasks (if any).
+   * @param frames The number frames to run other tasks (if any) before running this task again.
    */
   void yield_frame(AIEngine* engine, unsigned int frames);
 
@@ -513,7 +513,7 @@ class AIStatefulTask : public AIRefCount
    * This function can only be used for an engine with a max_duration.
    *
    * @param engine The engine to sleep in. This must be an engine with a max_duration set.
-   * @param ms The number of miliseconds to run before returning CPU to other tasks (if any).
+   * @param ms The number of miliseconds to run other tasks (if any) before running this task again.
    */
   void yield_ms(AIEngine* engine, unsigned int ms);
 
@@ -725,41 +725,40 @@ NAMESPACE_DEBUG_CHANNELS_END
 /// Tasks defined by the library project are put into this namespace.
 namespace statefultask {
 
-/**
- * Convenience function to create tasks.
- *
- * Typical usage,
- *
- * @code
- * class ATask : public AIStatefulTask {
- *   ...
- *  public:
- *   void init(...);
- * };
- *
- * class SomeClass
- * {
- *   boost::intrusive_ptr<ATask> m_task;
- *
- *  public:
- *   SomeClass() : m_task(statefultask::create<ATask>(/\* constructor arguments of ATask *\/)) { }
- *
- *   void initial_run(...)
- *   {
- *     m_task->init(...);
- *     m_task->run(...);
- *   }
- * };
- * @endcode
- *
- * Or, for a one-shot task
- *
- * @code
- * auto task = statefultask::create<ATask>(/\* constructor arguments of ATask *\/);
- * task->init(...);
- * task->run(...);
- * @endcode
- */
+/// Convenience function to create tasks.
+///
+/// Typical usage,
+///
+/// @code
+/// class ATask : public AIStatefulTask {
+///   ...
+///  public:
+///   void init(...);
+/// };
+///
+/// class SomeClass
+/// {
+///   boost::intrusive_ptr<ATask> m_task;
+///
+///  public:
+///   SomeClass() : m_task(statefultask::create<ATask>(/* constructor arguments of ATask */)) { }
+///
+///   void initial_run(...)
+///   {
+///     m_task->init(...);
+///     m_task->run(...);
+///   }
+/// };
+/// @endcode
+///
+/// Or, for a one-shot task
+///
+/// @code
+/// auto task = statefultask::create<ATask>(/* constructor arguments of ATask */);
+/// task->init(...);
+/// task->run(...);
+/// @endcode
+///
 template<typename TaskType, typename... ARGS, typename = typename std::enable_if<std::is_base_of<AIStatefulTask, TaskType>::value>::type>
 boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 {

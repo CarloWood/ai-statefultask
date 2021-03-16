@@ -1,6 +1,6 @@
 /*!
 @page prerequisites C++ Prerequisites
-<h3>Library initialization.</h3>
+<h3>Library initialization</h3>
 
 <p>Once the build system has been set up correctly (see @ref compiling)
 there are still a few things to be taken care of at the C++ level;
@@ -78,13 +78,14 @@ file in the same project.</p>
 <p>If you are new to @projectname then I urge
 you to first clone <a href="https://github.com/CarloWood/ai-statefultask-testsuite">ai-statefultask-testsuite</a> and get that working;
 as that will require you to have all the bits and pieces for building a project
-that uses @projectname installed (hint: start
-with getting, compiling and installing <a href="https://github.com/CarloWood/libcwd">libcwd</a>
-and configure that for example with @tt{--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading}
+that uses @projectname installed (note: if you use autotools then start
+with getting, compiling and installing <a href="https://github.com/CarloWood/libcwd">libcwd</a>.
+Configure libcwd (for example) with @tt{--enable-maintainer-mode&nbsp;--enable-optimize&nbsp;--disable-alloc&nbsp;--disable-location&nbsp;--disable-nonthreading}
 because, respectivily, you got it with git, but you're not debugging libcwd itself, you don't need memory allocation
-debugging (slow), or printing source_file:line_number locations, and we only need the multithreaded version).</p>
+debugging (slow), or printing source_file:line_number locations, and we only need the multithreaded version. This is
+not necessary when you use cmake and set the environment variable `GITACHE_ROOT` (see @ref compiling)).</p>
 
-<p>If you run into any problems configuring, compiling and/or installing libcwd,
+<p>If you run into any problems configuring, compiling and/or installing libcwd using GNU autotools,
 please watch <a href="https://www.youtube.com/watch?v=JbDlUIz7oek&list=PLJzCXkV5Y8Ze6TtQWQSH6w5J-e-yIhgzP&t=172">this tutorial</a>.
 If you run into any problems with setting up the environment related to the git submodules (cwm4 and cwds), please
 watch <a href="https://www.youtube.com/watch?v=53wWV0wqOMA&list=PLJzCXkV5Y8Ze6TtQWQSH6w5J-e-yIhgzP&index=2">this tutorial</a>.</p>
@@ -106,7 +107,8 @@ int main()
 }
 @endcode
 
-which requires linking with @tt{libcwds_r}.</p>
+which requires (linking with object code from) submodule [@tt{cwds}](https://github.com/CarloWood/cwds)
+(which in turn requires @tt{libcwd_r}).</p>
 
 <p>A minimal program that has a thread pool, looks something like this:
 
@@ -132,7 +134,8 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with @tt{libthreadpool libthreadsafe libutils}.</p>
+which requires, additionally, submodules [@tt{threadpool}](https://github.com/CarloWood/threadpool)
+[@tt{threadsafe}](https://github.com/CarloWood/ai-threadsafe) and [@tt{utils}](https://github.com/CarloWood/ai-utils).</p>
 
 <p>A minimal program that has an event loop (for I/O), looks something like this:
 
@@ -167,7 +170,7 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with @tt{libevio}.</p>
+which requires, additionally, submodule [@tt{evio}](https://github.com/CarloWood/evio).</p>
 
 <p>When you actually use a task, so far we only used submodules other than @tt{statefultask},
 it is a good idea to also create the @c{AIMemoryPagePool} object, just in case (although this
@@ -208,7 +211,8 @@ int main()
 }
 @endcode
 
-which requires, additionally, linking with @tt{libstatefultask.la} (and @tt{libhelloworldtask.la}).
+which requires, additionally, submodules [@tt{statefultask}](https://github.com/CarloWood/ai-statefultask)
+(and [@tt{helloworld-task}](https://github.com/CarloWood/helloworld-task)).
 
 Note that @c{AIMemoryPagePool} is created *before* @c{AIThreadPool}.
 This is important because tasks can continue running until the thread pool
@@ -286,4 +290,29 @@ int main()
   Dout(dc::notice, "Leaving main()");
 }
 @endcode
+
+<h3>Linking</h3>
+
+Using `cmake`, each submodule is an OBJECT library and needs to be added
+to `target_link_libraries` of the final executable (or shared library
+if you'd make that instead). To make that easier, they all automatically
+add themselves to the cmake variable `AICXX_OBJECTS_LIST`, so you only
+have to link with that. Task submodules are not added at the moment,
+so those have to be added specifically.
+
+For example the above would have the following entry in `CMakeLists.txt`:
+
+@code{.cmake}
+add_executable(helloworld helloworld.cxx)
+target_link_libraries(helloworld PRIVATE AICxx::helloworld-task ${AICXX_OBJECTS_LIST})
+@endcode
+
+while the `src/Makefile.am` when using GNU autotools would contain:
+
+@code{.am}
+helloworld_SOURCES = helloworld.cxx
+helloworld_CXXFLAGS = @LIBCWD_R_FLAGS@
+helloworld_LDADD = ../helloworld-task/libhelloworldtask.la ../statefultask/libstatefultask.la ../evio/libevio.la ../threadpool/libthreadpool.la ../threadsafe/libthreadsafe.la ../utils/libutils_r.la ../cwds/libcwds_r.la
+@endcode
+
 */
