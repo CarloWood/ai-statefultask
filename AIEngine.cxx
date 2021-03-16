@@ -72,13 +72,14 @@ void AIEngine::mainloop()
     }
   }
   duration_type total_duration(duration_type::zero());
+  bool only_task = false;
   do
   {
     AIStatefulTask& stateful_task(queued_element->stateful_task());
     if (mHasMaxDuration)
     {
       clock_type::time_point start = clock_type::now();
-      if (!stateful_task.sleep(start))
+      if (!stateful_task.sleep(start) || only_task)
         stateful_task.multiplex(AIStatefulTask::normal_run, this);
       clock_type::duration delta = clock_type::now() - start;
       stateful_task.add(delta);
@@ -100,11 +101,18 @@ void AIEngine::mainloop()
     {
       ++queued_element;
     }
-    if (mHasMaxDuration && total_duration >= mMaxDuration && engine_state_w->list.size() > 2)
+    if (mHasMaxDuration)
     {
-      Dout(dc::statefultask, "Sorting " << engine_state_w->list.size() << " stateful tasks.");
-      engine_state_w->list.sort(QueueElementComp());
-      break;
+      only_task = engine_state_w->list.size() == 1;
+      if (total_duration >= mMaxDuration)
+      {
+        if (engine_state_w->list.size() > 2)
+        {
+          Dout(dc::statefultask, "Sorting " << engine_state_w->list.size() << " stateful tasks.");
+          engine_state_w->list.sort(QueueElementComp());
+        }
+        break;
+      }
     }
   }
   while (queued_element != end);

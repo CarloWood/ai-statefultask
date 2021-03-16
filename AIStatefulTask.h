@@ -503,7 +503,7 @@ class AIStatefulTask : public AIRefCount
    * entries of @c mainloop this task will not be run.
    *
    * @param engine The engine to sleep in. This must be an engine with a max_duration set.
-   * @param frames The number frames to run before returning CPU to other tasks (if any).
+   * @param frames The number frames to run other tasks (if any) before running this task again.
    */
   void yield_frame(AIEngine* engine, unsigned int frames);
 
@@ -513,7 +513,7 @@ class AIStatefulTask : public AIRefCount
    * This function can only be used for an engine with a max_duration.
    *
    * @param engine The engine to sleep in. This must be an engine with a max_duration set.
-   * @param ms The number of miliseconds to run before returning CPU to other tasks (if any).
+   * @param ms The number of miliseconds to run other tasks (if any) before running this task again.
    */
   void yield_ms(AIEngine* engine, unsigned int ms);
 
