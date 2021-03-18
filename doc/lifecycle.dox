@@ -24,7 +24,7 @@ task->run(handler, callback_args);  // This will cause 'task' to
 <li> If you want to control the life-time of the Task.
 @code
 // In general 'm_task' will be a member variable of an object.
-@oost::intrusive_ptr<MyTask> m_task = task::create<MyTask>(my_args);
+boost::intrusive_ptr<MyTask> m_task = task::create<MyTask>(my_args);
 
 // Then, every time you want to run it:
 m_task->my_initialization(my_params);
@@ -63,8 +63,8 @@ will be called with that state.</p>
 
 <p>@c multiplex_impl may never reentrant (cause itself to be called)
 and should end by callling either one of
-@link AIStatefulTask::wait wait@endlink,
-@link AIStatefulTask::yield yield@endlink,
+@link group_wait wait@endlink,
+@link group_yield yield@endlink,
 @link AIStatefulTask::finish finish@endlink
 [or @link AIStatefulTask::abort abort@endlink].</p>
 

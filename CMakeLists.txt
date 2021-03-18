@@ -38,6 +38,8 @@ target_sources(statefultask_ObjLib
     "AIStatefulTask.h"
     "AIStatefulTaskMutex.h"
     "AITimer.h"
+    "Broker.h"
+    "BrokerKey.h"
     "DefaultMemoryPagePool.h"
 )
 

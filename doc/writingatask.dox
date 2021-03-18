@@ -202,7 +202,8 @@ Simply running another task and waiting until it is finished:
   case MyTask_state30:
     m_task = new MyChildTask;
     m_task->run(handler, this, 2);  // 2 is just the condition bit to be used.
-    set_state(MyTask_state31);      // Continue with state31 once m_task has finished.
+    set_state(MyTask_state31);      // Continue with state31...
+    wait(2);                        // ...once m_task has finished.
     break;
 @endcode
 
@@ -238,4 +239,12 @@ class MyTask : AIStatefulTask
   {
     int result = m_calculate.get();     // Get the result.
 @endcode
+
+Note that upon a successful queue by @link AIPackagedTask<R(Args...)>::dispatch dispatch@endlink,
+@link AIStatefulTask::wait_until wait_until@endlink was already called on the current task;
+no additional call to wait is necessary here.
+
+@link AIPackagedTask< R(Args...)> AIPackagedTask@endlink also has a constructor that allows
+using a member function of some object to be used as callback.
+
 */
