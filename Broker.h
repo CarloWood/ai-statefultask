@@ -16,11 +16,11 @@ class Broker : public AIStatefulTask
   // The different states of the task.
   enum broker_state_type {
     Broker_start = direct_base_type::state_end,
-    Broker_do_callbacks
+    Broker_do_work
   };
 
  public:
-  static state_type constexpr state_end = Broker_do_callbacks + 1;      // The last state plus one.
+  static state_type constexpr state_end = Broker_do_work + 1;      // The last state plus one.
 
  private:
   struct CallbackQueue {
@@ -91,7 +91,11 @@ class Broker : public AIStatefulTask
     // the task is already finished will lead to an immediate call to the callback.
     // Otherwise the callback is performed from the Broken task (under the handler).
     m_is_immediate = handler.is_immediate();
-    AIStatefulTask::run(handler);
+    AIStatefulTask::run(handler, [](bool success){
+        // Can only be terminated by calling abort().
+        ASSERT(!success);
+        Dout(dc::notice, "task::Broker<" << libcwd::type_info_of<TaskType>().demangled_name() << "> terminated.");
+    });
   }
 
   // The returned pointer is meant to keep the task alive, not to access it (it is possibly shared between threads).
@@ -176,7 +180,7 @@ char const* Broker<TaskType, T>::state_str_impl(state_type run_state) const
   switch (run_state)
   {
     AI_CASE_RETURN(Broker_start);
-    AI_CASE_RETURN(Broker_do_callbacks);
+    AI_CASE_RETURN(Broker_do_work);
   }
   ASSERT(false);
   return "UNKNOWN STATE";
@@ -188,10 +192,10 @@ void Broker<TaskType, T>::multiplex_impl(state_type run_state)
   switch (run_state)
   {
     case Broker_start:
-      set_state(Broker_do_callbacks);
+      set_state(Broker_do_work);
       wait(1);
       break;
-    case Broker_do_callbacks:
+    case Broker_do_work:
     {
       // New callbacks have been added. A new task might also have been added however and needs to be run.
       // Get read access to the map with tasks.
