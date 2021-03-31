@@ -29,6 +29,7 @@ target_sources(statefultask_ObjLib
     "AIStatefulTask.cxx"
     "AIStatefulTaskMutex.cxx"
     "AITimer.cxx"
+    "Broker.cxx"
     "DefaultMemoryPagePool.cxx"
 
     "AIDelayedFunction.h"
