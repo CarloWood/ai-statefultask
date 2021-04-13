@@ -46,7 +46,6 @@ class AIStatefulTask;
  *
  *   // Required memory management.
  *   utils::MemoryPagePool mpp(0x8000);
- *   AIStatefulTaskMutex::init(&mpp);
  *   // A task mutex.
  *   AIStatefulTaskMutex m;
  *

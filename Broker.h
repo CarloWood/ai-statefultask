@@ -3,6 +3,7 @@
 #include "AIStatefulTask.h"
 #include "BrokerKey.h"
 #include "threadsafe/AIReadWriteMutex.h"
+#include "utils/threading/MpscQueue.h"
 #include <type_traits>
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
@@ -29,20 +30,12 @@ class Broker : public AIStatefulTask
   static state_type constexpr state_end = Broker_do_work + 1;      // The last state plus one.
 
  private:
-  struct CallbackQueue {
-    std::vector<std::function<void(bool)>> m_queue;
+  struct CallbackNode : utils::threading::MpscNode
+  {
+    std::function<void(bool)> m_callback;
 
-    // m_success is initialized here because it is UB to read it before initialized,
-    // and we might do that in run() in order to avoid a branch.
-    // Reserve only a capacity of four, because it is very unlikely that even
-    // more than one callback will be in the vector at the same time.
-    CallbackQueue(std::function<void(bool)>&& callback)
-    {
-      m_queue.reserve(4);
-      m_queue.emplace_back(std::move(callback));
-    }
+    CallbackNode(std::function<void(bool)>&& callback) : m_callback(std::move(callback)) { }
   };
-  using callbacks_type = aithreadsafe::Wrapper<CallbackQueue, aithreadsafe::policy::Primitive<std::mutex>>;
 
   // Constness of this object means that we have got access to it through by read-locking m_key2task.
   // In most cases that read-lock is even released again by the time this object is accessed.
@@ -53,7 +46,7 @@ class Broker : public AIStatefulTask
   struct TaskPointerAndCallbackQueue {
     boost::intrusive_ptr<TaskType> const m_task;
     // Concurrent access is fine since callbacks_type is thread safe: access is protected by its own mutex.
-    mutable callbacks_type m_callbacks;
+    mutable utils::threading::MpscQueue m_callbacks;
     // Only when m_finished is loaded with acquire and is true, the TaskType that m_task points to and the boolean m_success may be read.
     // m_finished is initialized at false and only set to true once by the Broker task, using memory_order_release.
     // Other threads only read m_success after loading m_finished with memory_order_acquire and seeing that being true - which means that
@@ -64,7 +57,7 @@ class Broker : public AIStatefulTask
     mutable bool m_running;
 
     TaskPointerAndCallbackQueue(boost::intrusive_ptr<TaskType>&& task, std::function<void(bool)>&& callback) :
-      m_task(std::move(task)), m_callbacks(std::move(callback)), m_finished(false), m_success(false), m_running(false) { }
+      m_task(std::move(task)), m_finished(false), m_success(false), m_running(false) { m_callbacks.push(NEW(CallbackNode(std::move(callback)))); }
 
 #ifdef CWDEBUG
     void print_on(std::ostream& os) const
@@ -177,8 +170,7 @@ boost::intrusive_ptr<TaskType const> Broker<TaskType, T>::run(statefultask::Brok
     {
       Dout(dc::broker, "Adding callback to the queue and wake up the Broker task.");
       // Queue the call back.
-      typename callbacks_type::wat callbacks_w(entry->m_callbacks);
-      callbacks_w->m_queue.emplace_back(std::move(callback));
+      entry->m_callbacks.push(NEW(CallbackNode(std::move(callback))));
       signal(1);
     }
   }
@@ -233,17 +225,15 @@ void Broker<TaskType, T>::multiplex_impl(state_type run_state)
           else if (entry.m_task->finished())
           {
             entry.m_success = !entry.m_task->aborted();
+            entry.m_finished.store(true, std::memory_order_release);
             // The task finished.
+            CallbackNode* head;
+            // Call all the callbacks that were registered so far.
+            while ((head = static_cast<CallbackNode*>(entry.m_callbacks.pop())))
             {
-              // Obtain lock and read/write access to the CallbackQueue object of this task.
-              typename callbacks_type::wat callbacks_w(entry.m_callbacks);
-              DoutEntering(dc::broker(mSMDebug && !callbacks_w->m_queue.empty()), "for-loop with " << callbacks_w->m_queue.size() << " pending callbacks.");
-              // Call all the callbacks that were registered so far.
-              for (auto&& callback : callbacks_w->m_queue)
-                callback(entry.m_success);
-              // Make sure we won't call them again.
-              callbacks_w->m_queue.clear();
-              entry.m_finished.store(true, std::memory_order_release);
+              CallbackNode* node = static_cast<CallbackNode*>(head);
+              node->m_callback(entry.m_success);
+              delete node;
             }
             Dout(dc::finish, "callback queue cleared.");
           }
@@ -267,8 +257,12 @@ void Broker<TaskType, T>::abort_impl()
   {
     TaskPointerAndCallbackQueue const& entry{it->second};
     entry.m_task->abort();
-    typename callbacks_type::wat callbacks_w(entry.m_callbacks);
-    callbacks_w->m_queue.clear();
+    utils::threading::MpscNode* head;
+    while ((head = entry.m_callbacks.pop()))
+    {
+      CallbackNode* node = static_cast<CallbackNode*>(head);
+      delete node;
+    }
   }
 }
 
