@@ -884,7 +884,14 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
                   access.move_in(
                       [task]()
                       {
+                        // FIXME: I am not sure if the following is correct? It seems not, because
+                        // this task is now being added to the thread pool. If before it is executed
+                        // the current_handler is set to an engine then due to the line below it
+                        // would run in that engine?!
                         Handler const handler{multiplex_state_type::crat(task->mState)->current_handler};
+                        // While if in the meantime current_handler is set to idle, then we need to bail.
+                        if (!handler)
+                          return false;
                         task->multiplex(normal_run, handler);
                         return task->active(handler);
                       }
