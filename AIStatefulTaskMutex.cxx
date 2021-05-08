@@ -29,22 +29,34 @@
 #include "AIStatefulTaskMutex.h"
 #include "AIStatefulTask.h"
 
-void AIStatefulTaskMutex::signal_next(Node* const owner COMMA_CWDEBUG_ONLY(AIStatefulTask* const task))
+void AIStatefulTaskMutex::unlock()
 {
-//    Dout(dc::notice, "m_head not changed it wasn't equal to owner (" << owner << "), m_head is " << expected << " [" << task << "]");
-  // Wait until the task that tried to get the lock first (after us) set m_next.
-  Node* next;
-//next = owner->m_next.load(std::memory_order_acquire);
-//    Dout(dc::notice, "owner->m_next = " << next << " [" << task << "]");
-  while (!(next = owner->m_next.load(std::memory_order_acquire)))
+  DoutEntering(dc::notice|flush_cf, "AIStatefulTaskMutex::unlock() [mutex:" << this << "]");
+
+  // We are the owner of the lock, hence there is a node in the queue which is the next to pop.
+  Node* owner;
+  while (!(owner = static_cast<Node*>(m_queue.pop())))
     cpu_relax();
-//    Dout(dc::notice, "deallocating " << owner << " [" << task << "]");
+
+#ifdef CWDEBUG
+  AIStatefulTask* const task = owner->m_task;
+  Dout(dc::notice, "Mutex released [" << task << "]");
+#endif
+
+  // Free our node.
   s_node_memory_resource.deallocate(owner);
-  Dout(dc::notice, "Setting m_owner to " << next << " [" << task << "]");
-  m_owner.store(next, std::memory_order_release);
-  Dout(dc::notice, "Calling signal(" << next->m_condition << ") on next->m_task (" << next->m_task << ") with next = " << next << " [" << task << "]");
-  next->m_task->signal(next->m_condition);
-//    Dout(dc::notice, "Leaving unlock()");
+
+  // Signal the next owner of the lock, if any.
+  Node const* next = static_cast<Node const*>(m_queue.peek());
+
+  // If this is false (is_stub is true), then it must be guaranteed
+  // that the owner of the front node didn't call push yet, or it did
+  // and that push will return True.
+  if (next)
+  {
+    Dout(dc::notice, "Calling signal(" << next->m_condition << ") on next->m_task (" << next->m_task << ") with next = " << next << " [" << task << "]");
+    next->m_task->signal(next->m_condition);
+  }
 }
 
 //static

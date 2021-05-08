@@ -29,10 +29,23 @@
 
 #include "threadsafe/aithreadsafe.h"
 #include "utils/NodeMemoryResource.h"
+#include "utils/threading/MpscQueue.h"
+#include "utils/FuzzyBool.h"
 #include "utils/cpu_relax.h"
 #include "debug.h"
 
 class AIStatefulTask;
+
+// Node in a singly linked list of tasks that are waiting for this mutex.
+struct AIStatefulTaskMutexNode : public utils::threading::MpscNode
+{
+  using condition_type = uint32_t;      // Must be the same as AIStatefulTask::condition_type
+
+  AIStatefulTask* m_task;
+  condition_type const m_condition;
+
+  AIStatefulTaskMutexNode(AIStatefulTask* task, condition_type condition) : m_task(task), m_condition(condition) { }
+};
 
 /**
  * A task mutex.
@@ -61,22 +74,130 @@ class AIStatefulTask;
  *     }
  *     [[fallthrough]];
  *   case MyTask_locked:
+ *   {
+ *     statefultask::Lock lock(m);
  *     do_work();
- *     m.unlock();
+ *     lock.unlock();   // Optional
+ *     ... code that does not require the lock...
+ *   }
  */
 class AIStatefulTaskMutex
 {
   using condition_type = uint32_t;      // Must be the same as AIStatefulTask::condition_type
+  using Node = AIStatefulTaskMutexNode;
 
  private:
-  // Node in a singly linked list of tasks that are waiting for this mutex.
-  struct Node
+  class Queue : public utils::threading::MpscQueue
   {
-    std::atomic<Node*> m_next;
-    AIStatefulTask* m_task;
-    condition_type const m_condition;
+    using MpscNode = utils::threading::MpscNode;
+    std::mutex m_abort_mutex;
 
-    Node(AIStatefulTask* task, condition_type condition) : m_next(nullptr), m_task(task), m_condition(condition) { }
+   public:
+    utils::FuzzyBool push(MpscNode* node)
+    {
+      node->m_next.store(nullptr, std::memory_order_relaxed);
+      MpscNode* prev = m_head.exchange(node, std::memory_order_relaxed);
+      // The only way node is guaranteed the next node that will be popped is when
+      // we just pushed to an empty list. In that case the situation right now is:
+      //
+      //   m_tail --> m_stub ==> nullptr, node
+      //                ^
+      //                |
+      //              prev
+      //
+      // This is a stable situation: calls to push by other threads just append
+      // on the right (change m_head), and calls to pop shouldn't happen (we
+      // are the owner of the lock; but even if it would happened, then pop will
+      // return nullptr and do nothing).
+      //
+      // If prev is not pointing to m_stub, then the situation is instead:
+      //
+      //   m_tail --> node1 ==> nullptr, node
+      //                ^
+      //                |
+      //              prev
+      //
+      // Possibly with more nodes (including m_stub) on the left, possibly incompletely
+      // linked, that can all be removed by calls to pop until we get this situation.
+      // That is also a stable situation as a call to pop in this case will return nullptr,
+      // because m_head is guaranteed unequal to m_tail.
+      //
+      // So in that case we are certain that at least one more pop() will finish
+      // before our node becomes the front node and we can return WasFalse.
+      //
+      // Assuming that prev does point to m_stub but we are not (yet) the next node
+      // that would be popped, for example, the situation is:
+      //
+      //   m_tail --> node1 ==> m_stub ==> nullptr, node
+      //                           ^
+      //                           |
+      //                         prev
+      //
+      // then pop will return node1 and set m_tail to point to m_stub to get
+      // the first situation. If we see that m_tail points to a node that is not
+      // m_stub, then the pop for that node did not finish yet and we can return
+      // WasFalse. If we see that m_tail points to m_stub then the call to pop
+      // for the previous node might have only JUST finished. However, in that
+      // case we can return True (resulting in no call to wait) because a
+      // subsequent signal will simply be ignored [or cause this task to continue
+      // running if somehow it tried to get the lock again (later) and fail to
+      // get it (causing a call to wait then); however that is not possible: we
+      // ARE at the front of the queue and that can not change no matter what
+      // other threads do].
+      //
+      bool is_front = prev == &m_stub && m_tail.load(std::memory_order_acquire) == &m_stub;
+
+      // Here m_head points to the new node, which either points to null
+      // or already points to the NEXT node that was pushed AND completed, etc.
+      // Now fix the next pointer of the node that m_head was pointing at.
+      prev->m_next.store(node, std::memory_order_release);
+
+      return is_front ? fuzzy::True : fuzzy::WasFalse;
+    }
+
+    // This function may only be called by the consumer!
+    //
+    // Returns the node that will be returned by the next call to pop.
+    //
+    // If nullptr is returned then the push, of the next non-null node that will be returned by
+    // pop, didn't complete yet (or wasn't even called yet).
+    //
+    // If &m_stub is returned then the push, of the next non-null node that will be returned by
+    // pop wasn't called yet and the list is empty.
+    MpscNode const* peek()
+    {
+      // If m_tail is not pointing to m_stub then it points to the node that will be
+      // returned by a call to pop.
+      //
+      // If m_head is not pointing to m_stub (and m_tail is) then m_stub->m_next is the
+      // next node that will be returned by a call to pop. If this m_next value is still
+      // nullptr then an on going push (that changed the value of m_head away from
+      // m_stub) didn't complete yet. In that case we wait until this m_next pointer is
+      // updated.
+      //
+      // If m_head points to m_stub (and m_tail too) then the queue is empty;
+      // m_stub.m_next is guaranteed to be null too in that case. We just return
+      // nullptr then.
+      MpscNode const* tail = m_tail.load(std::memory_order_relaxed);
+      if (tail != &m_stub)
+        return tail;
+      MpscNode const* head = m_head.load(std::memory_order_relaxed);
+      if (head == &m_stub)
+          return nullptr;
+      // Wait for the current push to complete.
+      MpscNode const* next;
+      while (!(next = m_stub.m_next.load(std::memory_order_acquire)))
+        cpu_relax();
+      return next;
+    }
+
+    // This function is only called by the task that owns node; in other words,
+    // node is the queue and will not be popped for the duration of this call.
+    utils::FuzzyBool is_front(MpscNode const* node) const
+    {
+      MpscNode const* tail = m_tail.load(std::memory_order_relaxed);
+      return (tail == node || tail == &m_stub && m_stub.m_next.load(std::memory_order_acquire) == node) ? fuzzy::True : fuzzy::WasFalse;
+    }
   };
 
  public:
@@ -87,116 +208,104 @@ class AIStatefulTaskMutex
   static utils::NodeMemoryResource s_node_memory_resource;      ///< Memory resource to allocate Node's from.
 
  private:
-  std::atomic<Node*> m_head;                            // The mutex is locked when this atomic has a non-nullptr value.
-  std::atomic<Node*> m_owner;                           // After locking this mutex, the owner sets this pointer to point to
-                                                        // its Node (m_owner->m_task will point to the owning task).
+  Queue m_queue;
+
  public:
   /// Construct an unlocked AIStatefulTaskMutex.
-  AIStatefulTaskMutex() : m_head(nullptr), m_owner(nullptr) { }
+  AIStatefulTaskMutex() { }
   // Immediately after construction, nobody owns the lock:
   //
-  // m_head --> nullptr
+  // m_head --> m_stub
 
   /// Try to obtain ownership for owner (recursive locking allowed).
   ///
-  /// @returns True upon success and false upon failure to obtain ownership.
-  bool lock(AIStatefulTask* task, condition_type condition)
+  /// @returns A handle pointer upon success and nullptr upon failure to obtain ownership.
+  ///
+  /// The returned handle must be passed to is_self_locked.
+  Node const* lock(AIStatefulTask* task, condition_type condition)
   {
-    DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << condition << ") [" << this << "]");
+    DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << condition << ") [mutex:" << this << "]");
 
     Node* new_node = new (s_node_memory_resource.allocate(sizeof(Node))) Node(task, condition);
+    Dout(dc::notice, "Create new node at " << new_node << " [" << task << "]");
 
-//    Dout(dc::notice, "Create new node at " << new_node << " with m_next = " << new_node->m_next << "; m_task = " << new_node->m_task << " [" << task << "]");
+    utils::FuzzyBool have_lock = m_queue.push(new_node);
 
-    Node* prev = m_head.exchange(new_node, std::memory_order_acq_rel);
-//    Dout(dc::notice, "Replaced m_head with " << new_node << ", previous value of m_head was " << prev << " [" << task << "]");
-    //            new_node:
-    // m_head -->.----------------.
-    //           | m_next --------+--> nullptr
-    //           | m_task -> task |
-    //           `----------------'
-    //
-    // If the previous value of m_head (prev) equal nullptr then we were
-    // the first and own the lock.
-    if (prev == nullptr)
+    // If the next return from pop() will return new_node, then have_lock MUST be True.
+    // If the next return from pop() will return another node then have_lock MUST be WasFalse.
+    if (have_lock.is_true())
     {
-      Dout(dc::notice, "Mutex acquired, setting m_owner to " << new_node << " [" << task << "]");
-      m_owner.store(new_node, std::memory_order_release);
-      return true;
+      Dout(dc::notice, "Mutex acquired [" << task << "]");
+      return new_node;
     }
-    Dout(dc::notice, "Mutex already locked by [" << task << "]");
-
-    // If prev is non-null then another task owned the lock at the moment
-    // we executed the above exchange. This task, when executing unlock(),
-    // will fail the compare_exchange_strong because we just changed the
-    // value of m_head.
-    //
-    // Moreover that task then will spin lock on reading m_owner->m_next
-    // because that was initialized with nullptr when that task entered
-    // lock() and never changed.
-    //
-    // Below we set that m_next pointer to point to our node, so the
-    // task in unlock() can escape the spin lock.
-//    Dout(dc::notice, "Setting m_next of prev (" << prev << ") to " << new_node << " [" << task << "]");
-    prev->m_next.store(new_node, std::memory_order_release);
+    Dout(dc::notice, "Mutex already locked [" << task << "]");
 
     // Obtaining the lock failed. Halt the task
-    return false;       // The caller must call task->wait(condition).
+    return nullptr;     // The caller must call task->wait(condition).
   }
 
   /// Undo one (succcessful) call to lock.
-  void unlock()
+  void unlock();
+
+  Node const* lock_blocking(AIStatefulTask* task)
   {
-    DoutEntering(dc::notice, "AIStatefulTaskMutex::unlock() [" << this << "]");
-
-    Node* const owner = m_owner.load(std::memory_order_relaxed);
-#ifdef CWDEBUG
-    // Note: this task might already have been destructed!
-    AIStatefulTask* const task = owner->m_task;
-#endif
-//    Dout(dc::notice, "Setting m_owner to nullptr, was " << owner << " [" << task << "]");
-    m_owner.store(nullptr, std::memory_order_relaxed);
-//    Dout(dc::notice, "Calling m_head.compare_exchange_strong(owner = " << owner << ", nullptr)");
-    Node* expected = owner;
-    if (m_head.compare_exchange_strong(expected, nullptr, std::memory_order_release, std::memory_order_relaxed))
-    {
-      Dout(dc::notice, "Success - m_head was reset to nullptr [" << task << "]");
-//      Dout(dc::notice, "deallocating " << owner << " [" << task << "]");
-      s_node_memory_resource.deallocate(owner);
-//      Dout(dc::notice, "Leaving unlock()");
-      return;
-    }
-
-    signal_next(owner COMMA_CWDEBUG_ONLY(task));
+    Node const* node = lock(task, 0);
+    if (node)
+      return node;
+    //FIXME
+    ASSERT(false);
+    return nullptr;
   }
-
-#if defined(CWDEBUG) && !defined(DOXYGEN)
-  // The returned value might point to a task that was already destructed.
-  AIStatefulTask* debug_get_owner() const
-  {
-    // Very racy, not-thread-safe code for debugging output only.
-    Node* owner;
-    if (m_head.load(std::memory_order_relaxed) == nullptr || (owner = m_owner.load(std::memory_order_relaxed)) == nullptr)
-      return nullptr;
-    return owner->m_task;
-  }
-#endif
 
  private:
-  void signal_next(Node* const owner COMMA_CWDEBUG_ONLY(AIStatefulTask* const task));
-
   friend class AIStatefulTask;
   // Is this object currently owned (locked) by us?
   // May only be called from some multiplex_impl passing its own AIStatefulTask pointer,
   // and therefore only by AIStatefulTask::is_self_locked(AIStatefulTaskMutex&).
   //
-  //   case SomeState:
+  //   case MyTask_lock:
+  //     set_state(MyTask_locked);
+  //     if (!(m_handle = the_mutex.lock(this, MyTask_locked)))
+  //     {
+  //       wait(1);
+  //       break;
+  //     }
+  //     [[fallthrough]];
+  //   case MyTask_locked:
+  //   {
+  //     statefultask::Lock lock(the_mutex);
   //     ...
-  //     if (is_self_locked(the_mutex))
+  //     if (is_self_locked(the_mutex, m_handle))
   //      ...
-  bool is_self_locked(AIStatefulTask const* caller) const
+  utils::FuzzyBool is_self_locked(Node const* handle) const
   {
-    Node* owner = m_owner.load(std::memory_order_acquire);
-    return owner && owner->m_task == caller;
+    return m_queue.is_front(handle);
   }
 };
+
+namespace statefultask {
+
+// Convenience class to automatically unlock the mutex upon leaving the current scope.
+class AdoptLock
+{
+ private:
+  AIStatefulTaskMutex* m_mutex;
+
+ public:
+  AdoptLock(AIStatefulTaskMutex& mutex) : m_mutex(&mutex) { }
+  ~AdoptLock() { unlock(); }
+
+  void unlock()
+  {
+    if (m_mutex)
+      m_mutex->unlock();
+    m_mutex = nullptr;
+  }
+
+  void skip_unlock()
+  {
+    m_mutex = nullptr;
+  }
+};
+
+} // namespace statefultask

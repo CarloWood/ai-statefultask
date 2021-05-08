@@ -46,6 +46,7 @@
 #include "threadpool/AIQueueHandle.h"
 #include "utils/AIRefCount.h"
 #include "utils/macros.h"
+#include "utils/FuzzyBool.h"
 #include "debug.h"
 #include <list>
 #include <chrono>
@@ -53,6 +54,7 @@
 
 class AIEngine;
 class AIStatefulTaskMutex;
+struct AIStatefulTaskMutexNode;
 
 /// The type of the functor that must be passed as first parameter to AIStatefulTask::wait_until.
 using AIWaitConditionFunc = std::function<bool()>;
@@ -446,8 +448,10 @@ class AIStatefulTask : public AIRefCount
 
   /**
    * Return true when stateful_task_mutex is self locked.
+   *
+   * handle must be the handle returned by AIStatefulTaskMutex::lock.
    */
-  inline bool is_self_locked(AIStatefulTaskMutex& stateful_task_mutex);
+  inline utils::FuzzyBool is_self_locked(AIStatefulTaskMutex const& stateful_task_mutex, AIStatefulTaskMutexNode const* handle);
 
   /**
    * A call to yield*() has basically no effect on a task, except that its
@@ -783,9 +787,9 @@ boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 
 #include "AIStatefulTaskMutex.h"
 
-bool AIStatefulTask::is_self_locked(AIStatefulTaskMutex& stateful_task_mutex)
+utils::FuzzyBool AIStatefulTask::is_self_locked(AIStatefulTaskMutex const& stateful_task_mutex, AIStatefulTaskMutexNode const* handle)
 {
-  return stateful_task_mutex.is_self_locked(this);
+  return stateful_task_mutex.is_self_locked(handle);
 }
 
 #endif // AISTATEFULTASK_H
