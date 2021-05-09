@@ -54,7 +54,7 @@ void AIStatefulTaskMutex::unlock()
   // and that push will return True.
   if (next)
   {
-    Dout(dc::notice, "Calling signal(" << next->m_condition << ") on next->m_task (" << next->m_task << ") with next = " << next << " [" << task << "]");
+    Dout(dc::notice, "The mutex is now held by " << next->m_task << " [" << task << "]");
     next->m_task->signal(next->m_condition);
   }
 }
