@@ -859,16 +859,19 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
       {
         if (need_new_run)
         {
-          // Add us to an engine if necessary.
+          // Add us to an engine / thread pool if necessary.
           if (handler != state_w->current_handler)
           {
-            // Mark that we want to run in this engine, and at the same time, that we don't want to run in the previous one.
+            // Mark that we want to run in this engine (thread pool), and at the same time, that we don't want to run in the previous one.
             state_w->current_handler = handler;
-            // Actually add the task to the engine.
             if (handler.is_engine())
+            {
+              // Actually add the task to the engine.
               handler.m_handle.engine->add(this);
+            }
             else
             {
+              // Add the task to the thread pool.
               AIQueueHandle queue_handle = handler.get_queue_handle();
               AIThreadPool& thread_pool{AIThreadPool::instance()};
               auto queues_access = thread_pool.queues_read_access();

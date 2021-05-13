@@ -65,7 +65,7 @@ struct AIStatefulTaskMutexNode : public utils::threading::MpscNode
  * Then multiple running tasks could use this to prevent concurrent access:
  *
  * ...
- *   case MyTask_lock:
+ *   case MyTask_wait_for_lock:
  *     set_state(MyTask_locked);
  *     if (!m.lock(this, 1))
  *     {

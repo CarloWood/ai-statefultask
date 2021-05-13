@@ -178,6 +178,8 @@ class AIStatefulTask : public AIRefCount
     bool is_engine() const { return m_type == engine_h; }
     /// Return true if this is an @link immediate_h immediate @endlink Handler.
     bool is_immediate() const { return m_type == immediate_h; }
+    /// Return true if this is a thread pool handler.
+    bool is_thread_pool() const { return m_type == thread_pool_h; }
     /// Return the AIQueueHandle to use (only call when appropriate).
     AIQueueHandle get_queue_handle() const { return m_type == thread_pool_h ? m_handle.queue_handle : AIQueueHandle((std::size_t)0); }
     /// Return true when not idle / unused.

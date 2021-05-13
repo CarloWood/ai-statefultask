@@ -59,7 +59,7 @@
  * @code
  * AITimer* timer = new AITimer;
  *
- * timer->set_interval(5.5);     // 5.5 seconds time out interval.
+ * timer->set_interval(5.5);    // 5.5 seconds time out interval.
  * timer->run(...);             // Start timer and pass callback; see AIStatefulTask.
  * @endcode
  *
