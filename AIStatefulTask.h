@@ -89,6 +89,10 @@ class AIStatefulTask : public AIRefCount
  public:
   using state_type = uint32_t;        ///< The type of run_state.
   using condition_type = uint32_t;    ///< The type of the busy, skip_wait and idle bit masks.
+  // The two most significant bits are reserved for flow control.
+  static constexpr condition_type slow_down_condition = 0x40000000;             // This task was running when the thread pool ran full.
+  static constexpr condition_type thread_pool_full_condition = 0x80000000;      // This task couldn't be added to the thread pool queue because that was full.
+  static constexpr condition_type AND_conditions_mask = 0xf0000000;
 
  private:
   /// The type of event that causes <code>multiplex(event_type event)</code> to be called.
@@ -210,13 +214,15 @@ class AIStatefulTask : public AIRefCount
   struct sub_state_st {
     condition_type busy;              ///< Each bit represents being not-idle for that condition-bit: wait(condition_bit) was never called or signal(condition_bit) was called last.
     condition_type skip_wait;         ///< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit: signal(condition_bit) was called while already busy.
-    condition_type idle;              ///< A the idle state at the end of the last call to wait(conditions) (~busy & conditions).
+    condition_type idle;              ///< The idle state at the end of the last call to wait(conditions) (~busy & conditions).
     state_type run_state;
     bool reset;
     bool need_run;
-    bool wait_called;
     bool aborted;
     bool finished;
+#if CW_DEBUG
+    bool wait_called;
+#endif
   };
 
  private:
@@ -264,6 +270,8 @@ class AIStatefulTask : public AIRefCount
   bool mDebugSetStatePending;         // True while set_state() was called by not handled yet.
   bool mDebugRefCalled;               // True when ref() is called (or will be called within the critial area of mMultiplexMutex).
 #endif
+
+  static thread_local AIStatefulTask* tl_parent_task;
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
  protected:
@@ -718,6 +726,11 @@ class AIStatefulTask : public AIRefCount
   }
 
   void add(duration_type delta) { mDuration += delta; }
+
+  void add_task_to_thread_pool(AIQueueHandle queue_handle);                     // Attempt to add this task to a theadpool queue.
+  void slow_down();                                                             // Called when the task is to slow down (flow control). This will cause the the task to be halted (and continued later on).
+  void defer(Handler handler, std::function<void (Handler)> lambda);            // Called when handler was full. Executing lambda should recover the delay and continue possibly halted tasks.
+  void wait_AND(condition_type required);                                       // Stop running until all `required` bits have been signalled (plus at least one of any other wait() condition).
 
   friend class AIEngine;      // Calls multiplex(), force_killed() and add().
 };

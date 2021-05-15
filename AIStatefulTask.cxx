@@ -638,7 +638,12 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
         case bs_multiplex:
           ASSERT(!mDebugAborted);
           if (!waiting)
+          {
+            AIStatefulTask* prev_task = tl_parent_task;
+            tl_parent_task = this;
             multiplex_impl(run_state);
+            tl_parent_task = prev_task;
+          }
           else
           {
             multiplex_state_type::wat state_w(mState);
@@ -871,42 +876,8 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
             }
             else
             {
-              // Add the task to the thread pool.
-              AIQueueHandle queue_handle = handler.get_queue_handle();
-              AIThreadPool& thread_pool{AIThreadPool::instance()};
-              auto queues_access = thread_pool.queues_read_access();
-              auto& queue = thread_pool.get_queue(queues_access, queue_handle);
-              int const capacity = queue.capacity();
-              int length;
-              {
-                auto access = queue.producer_access();
-                length = access.length();
-                if (length < capacity) // Buffer not full?
-                {
-                  boost::intrusive_ptr<AIStatefulTask> task(this);
-                  access.move_in(
-                      [task]()
-                      {
-                        // FIXME: I am not sure if the following is correct? It seems not, because
-                        // this task is now being added to the thread pool. If before it is executed
-                        // the current_handler is set to an engine then due to the line below it
-                        // would run in that engine?!
-                        Handler const handler{multiplex_state_type::crat(task->mState)->current_handler};
-                        // While if in the meantime current_handler is set to idle, then we need to bail.
-                        if (!handler)
-                          return false;
-                        task->multiplex(normal_run, handler);
-                        return task->active(handler);
-                      }
-                  );
-                }
-              }
-              if (AI_UNLIKELY(length == capacity))
-              {
-                ASSERT(false); // FIXME
-              }
-              else
-                queue.notify_one();
+              ASSERT(handler.is_thread_pool());
+              add_task_to_thread_pool(handler.get_queue_handle());
             }
           }
 #if CW_DEBUG
@@ -960,13 +931,96 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
   }
 }
 
+//static
+thread_local AIStatefulTask* AIStatefulTask::tl_parent_task;
+
+void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle)
+{
+  // Add the task to the thread pool.
+  AIThreadPool& thread_pool{AIThreadPool::instance()};
+  auto queues_access = thread_pool.queues_read_access();
+  auto& queue = thread_pool.get_queue(queues_access, queue_handle);
+  int const capacity = queue.capacity();
+  int length;
+  {
+    auto access = queue.producer_access();
+    length = access.length();
+    if (length < capacity) // Buffer not full?
+    {
+      boost::intrusive_ptr<AIStatefulTask> task(this);
+      access.move_in(
+          [task]()
+          {
+            // FIXME: I am not sure if the following is correct? It seems not, because
+            // this task is now being added to the thread pool. If before it is executed
+            // the current_handler is set to an engine then due to the line below it
+            // would run in that engine?!
+            Handler const handler{multiplex_state_type::crat(task->mState)->current_handler};
+            // While if in the meantime current_handler is set to idle, then we need to bail.
+            if (!handler)
+              return false;
+            task->multiplex(normal_run, handler);
+            return task->active(handler);
+          }
+      );
+    }
+  }
+  if (AI_UNLIKELY(length == capacity))
+  {
+    Dout(dc::warning|continued_cf, "Threadpool queue " << queue_handle << " full, can not run [" << this << "]");
+    // We should add something to the thread pool that executes task->multiplex(normal_run, handler);
+    // but we can't because the threadpool queue is full. Pass it to the magical function `slow_down`
+    // instead.
+    boost::intrusive_ptr<AIStatefulTask> task(this);
+    // Stop the responsible parent task, if any.
+    if (tl_parent_task)
+    {
+      Dout(dc::finish, " Slowing down parent task " << tl_parent_task << ".");
+      boost::intrusive_ptr<AIStatefulTask> parent_task(tl_parent_task);
+      parent_task->slow_down();
+      // This will call the lamba after a while.
+      defer(Handler{queue_handle}, [parent_task, task](Handler h)
+          {
+            task->add_task_to_thread_pool(h.get_queue_handle());
+            parent_task->signal(slow_down_condition);
+          });
+    }
+    else
+    {
+      Dout(dc::finish, ".");
+      // This will call the lamba after a while.
+      defer(Handler{queue_handle}, [task](Handler h)
+          {
+            task->add_task_to_thread_pool(h.get_queue_handle());
+          });
+    }
+  }
+  else
+    queue.notify_one();
+}
+
+void AIStatefulTask::slow_down()
+{
+  //FIXME: wait may only be called from multiplex_impl.
+  wait_AND(slow_down_condition);
+}
+
+void AIStatefulTask::defer(Handler handler, std::function<void (Handler)> lambda)
+{
+  DoutEntering(dc::notice, "AIStatefulTask::defer(" << handler << ", ...)");
+}
+
 AIStatefulTask::state_type AIStatefulTask::begin_loop()
 {
   sub_state_type::wat sub_state_w(mSubState);
   // Mark that we're about to honor all previous run requests.
   sub_state_w->need_run = false;
+#if CW_DEBUG
   // Mark that we're currently not idle and wait() wasn't called (yet).
   sub_state_w->wait_called = false;
+#endif
+  // Paranoia check: we shouldn't be running when we're idle?!
+  ASSERT(!sub_state_w->idle);
 
 #if CW_DEBUG
   // Mark that we're running the loop.
@@ -1198,6 +1252,7 @@ void AIStatefulTask::reset()
     // We're not waiting for a condition.
     sub_state_w->idle = 0;
     sub_state_w->busy = ~sub_state_w->idle;
+    sub_state_w->skip_wait = 0;
     // Keep running till we reach at least bs_multiplex.
     sub_state_w->need_run = true;
   }
@@ -1236,13 +1291,111 @@ void AIStatefulTask::set_state(state_type new_state)
   }
 }
 
+// If `idle` is non-zero then the task is idle (should not run).
+// 
+// `idle` is set to 0 in reset() which is called at the end of run().
+// Then upon entering multiplex_impl(), it can be set to a non-zero
+// value by calling wait(conditions), after which multiplex_impl must
+// immediately return.
+//
+// However, it isn't set to `conditions` but to `~busy & conditions`,
+// in other words, if a bit in busy is set then the corresponding
+// call to wait is ignored.
+//
+// `busy` is set to all ones in reset(), but upon entering  wait(conditions)
+// the bits that are set in `conditions` are replaced with those of
+// `skip_wait`, and reset in the latter.
+//
+// `skip_wait` is set to zero in reset(). A call to signal(condition)
+// causes the bit(s) set in `condition` to be copied from `busy`.
+//
+// Since all operations are bitwise, it is sufficient to analyse a
+// single bit. The functions then have the following effect (in pseudo
+// code):
+//
+// wait:
+//      busy = skip_wait
+//      skip_wait = 0
+//      idle = !busy
+//
+// signal:
+//      skip_wait = busy
+//      busy = 1
+//      if (!idle)
+//        return false;
+//      idle = 0;       // reset ALL bits in idle.
+//      ...schedule a new run (reentering of multiplex)...
+//      return true;
+//
+// The state space then contains 3 bits: one in `idle` (i),
+// one in `busy` (b) and one in `skip_wait` (s) with a total of eight
+// states:
+//
+//   bsi        signal          wait
+//   000        100 (false)     001
+//   001        100 (true)      001
+//   010        100 (false)     100
+//   011        100 (true)      100
+//   100        110 (false)     001
+//   101        110 (true)      001
+//   110        110 (false)     100
+//   111        110 (true)      100
+//
+// Since reset() results in 100 there are really just three states:
+//
+//                 --signal-->     --signal-.
+//         100                 110          |
+//                 <--wait----     <--------'
+//       |     ^
+//       |     |
+//      wait signal (schedules a new run)
+//       |     |
+//       v     |
+//         001   (idle, hence wait() can not be called again)
+//       |     ^
+//       |     |
+//      wait   |(illegal)
+//       |     |
+//       `-----'
+//
+// However, since a call to signal can cause idle to be set to 0,
+// it is possible that state 001 suddenly changes to 000.
+// The behavior of 001 and 000 are almost the same, except for
+// the return value of signal: aka, we are waiting for a signal(1)
+// and the call to signal(1) causes the task to wake up, it will
+// return true. But if the task was already woken up by another
+// signal (that we were also waiting for) then it returns false.
+// In both cases the resulting state is 100.
+//
+// Note that using just two masks, instead of three, would actually
+// make things more complicated. For example,
+//
+//                                                idle
+// prev state:   000                              001                  100                    110
+//
+//                   -------------------signal(false)----------------->
+//                   <--woken-up-by-other-signal--    --signal(true)-->    --signal(false)-->     --signal(false)--.
+//                01                               00                   10                     11                  |
+//                   -----------wait------------->    <------wait------    <------wait-------     <----------------'
+//                                                /  ^
+//                                               /    \
+//                                              /      \
+//                                              `-wait-'
+//
+// `idle` would have to involve both masks to determine if exactly one of
+// the four states is active. And the state transitions are "complicated"
+// bit manipulations involving both masks in every case. None of the bits
+// would have an independent meaning anymore.
+//
 void AIStatefulTask::wait(condition_type conditions)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << std::hex << conditions << std::dec << ") [" << (void*)this << "]");
+  // The bits in AND_conditions_mask are reserved, don't use them.
+  ASSERT(!(conditions & AND_conditions_mask));
 #if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
-    // wait() may only be called multiplex_impl().
+    // wait() may only be called from multiplex_impl().
     ASSERT(state_r->base_state == bs_multiplex);
     // May only be called by the thread that is holding mMultiplexMutex.
     ASSERT(mThreadId == std::this_thread::get_id());
@@ -1253,9 +1406,13 @@ void AIStatefulTask::wait(condition_type conditions)
   {
     sub_state_type::wat sub_state_w(mSubState);
     // As wait() may only be called from within the stateful task, it should never happen that the task is already idle.
-    ASSERT(!sub_state_w->idle);
+    // Only call wait() from inside multiplex_impl() and always immediately leave that function afterwards (do not call
+    // wait() twice on a row).
+    ASSERT(!(sub_state_w->idle & ~AND_conditions_mask));
+#if CW_DEBUG
     // Mark that we at least attempted to go idle.
     sub_state_w->wait_called = true;
+#endif
 
     // Determine if we must go idle.
 
@@ -1264,8 +1421,51 @@ void AIStatefulTask::wait(condition_type conditions)
     sub_state_w->busy |= sub_state_w->skip_wait & conditions;           // Then set the masked bit if it is set in skip_wait.
     // Reset the masked bit in skip_wait.
     sub_state_w->skip_wait &= ~conditions;
-    // Mark that we are waiting for the condition corresponding to conditions.
+    // Mark that, besides the bits set in AND_conditions_mask, we are now waiting for the condition corresponding to conditions.
+    sub_state_w->idle &= AND_conditions_mask;
     sub_state_w->idle = ~sub_state_w->busy & conditions;
+
+    // Not sleeping (anymore).
+    mSleep = 0;
+#if CW_DEBUG
+    // From this moment.
+    mDebugSignalPending = !sub_state_w->idle;
+#endif
+  }
+}
+
+void AIStatefulTask::wait_AND(condition_type conditions)
+{
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait_AND(" << std::hex << conditions << std::dec << ") [" << (void*)this << "]");
+  // Only use the reserved bits in AND_conditions_mask here.
+  ASSERT(conditions && (conditions & AND_conditions_mask) == conditions);
+#if CW_DEBUG
+  {
+    multiplex_state_type::rat state_r(mState);
+    // wait_AND() may only be called from (a function called from) multiplex_impl().
+    ASSERT(state_r->base_state == bs_multiplex);
+    // May only be called by the thread that is holding mMultiplexMutex.
+    ASSERT(mThreadId == std::this_thread::get_id());
+  }
+  // wait_AND() following set_state() cancels the reason to run because of the call to set_state.
+  mDebugSetStatePending = false;
+#endif
+  {
+    sub_state_type::wat sub_state_w(mSubState);
+#if CW_DEBUG
+    // Mark that we at least attempted to go idle.
+    sub_state_w->wait_called = true;
+#endif
+
+    // Determine if we must go idle.
+
+    // Copy bits from skip_wait to busy.
+    sub_state_w->busy &= ~conditions;                                   // Reset the masked bit.
+    sub_state_w->busy |= sub_state_w->skip_wait & conditions;           // Then set the masked bit if it is set in skip_wait.
+    // Reset the masked bit in skip_wait.
+    sub_state_w->skip_wait &= ~conditions;
+    // Mark that we are now also waiting for the condition corresponding to conditions.
+    sub_state_w->idle |= ~sub_state_w->busy & conditions;
 
     // Not sleeping (anymore).
     mSleep = 0;
@@ -1300,6 +1500,7 @@ bool AIStatefulTask::signal(condition_type condition)
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signal(" << std::hex << condition << std::dec << ") [" << (void*)this << "]");
   // It is not allowed to call this function with an empty mask.
   ASSERT(condition);
+  bool need_run;
   {
     sub_state_type::wat sub_state_w(mSubState);
     // Copy bits from busy to skip_wait.
@@ -1317,13 +1518,13 @@ bool AIStatefulTask::signal(condition_type condition)
     mDebugSignalPending = sub_state_w->wait_called;
 #endif
     // Unblock this task.
-    sub_state_w->idle = 0;
+    sub_state_w->idle &= AND_conditions_mask & ~condition;
     // Mark that a re-entry of multiplex() is necessary.
-    sub_state_w->need_run = true;
+    need_run = sub_state_w->need_run = !sub_state_w->idle;
   }
-  if (!mMultiplexMutex.is_self_locked())
+  if (need_run && !mMultiplexMutex.is_self_locked())
     multiplex(schedule_run);
-  return true;
+  return need_run;
 }
 
 void AIStatefulTask::abort()
