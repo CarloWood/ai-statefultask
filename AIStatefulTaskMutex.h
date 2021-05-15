@@ -164,7 +164,7 @@ class AIStatefulTaskMutex
     //
     // If &m_stub is returned then the push, of the next non-null node that will be returned by
     // pop wasn't called yet and the list is empty.
-    MpscNode const* peek()
+    MpscNode const* peek() const
     {
       // If m_tail is not pointing to m_stub then it points to the node that will be
       // returned by a call to pop.
@@ -256,6 +256,25 @@ class AIStatefulTaskMutex
     ASSERT(false);
     return nullptr;
   }
+
+#if CW_DEBUG
+  // This is obviously a racy condition, unless called by the only consumer thread;
+  // which would be the thread running the task that currently has the lock, so if
+  // we know that that is the case then we don't need to call this function :p.
+  //
+  // Most notably, theoretically a task could be returned that is deleted by the time
+  // you use it. So, don't use the result. It is intended only for debug output
+  // (printing the returned pointer).
+  AIStatefulTask* debug_get_owner() const
+  {
+    AIStatefulTaskMutexNode const* next = static_cast<AIStatefulTaskMutexNode const*>(m_queue.peek());
+    // next might get deallocated right here, but even if that is the case then this still
+    // isn't UB since it is allocated from a utils::SimpleSegregatedStorage which never
+    // *actually* frees memory. At most next->m_task is a non-sensical value, although the
+    // chance for that is extremely small.
+    return next ? next->m_task : nullptr;
+  }
+#endif
 
  private:
   friend class AIStatefulTask;
