@@ -1197,12 +1197,12 @@ void AIStatefulTask::initialize_impl()
 
 void AIStatefulTask::abort_impl()
 {
-  Dout(dc::statefultask, "Calling default abort_impl() [" << (void*)this << "]");
+  Dout(dc::statefultask(mSMDebug), "Calling default abort_impl() [" << (void*)this << "]");
 }
 
 void AIStatefulTask::finish_impl()
 {
-  Dout(dc::statefultask, "Calling default finish_impl() [" << (void*)this << "]");
+  Dout(dc::statefultask(mSMDebug), "Calling default finish_impl() [" << (void*)this << "]");
 }
 
 void AIStatefulTask::force_killed()
@@ -1251,7 +1251,6 @@ void AIStatefulTask::reset()
     sub_state_w->reset = true;
     // We're not waiting for a condition.
     sub_state_w->idle = 0;
-    sub_state_w->busy = ~sub_state_w->idle;
     sub_state_w->skip_wait = 0;
     // Keep running till we reach at least bs_multiplex.
     sub_state_w->need_run = true;
@@ -1291,101 +1290,130 @@ void AIStatefulTask::set_state(state_type new_state)
   }
 }
 
-// If `idle` is non-zero then the task is idle (should not run).
-// 
-// `idle` is set to 0 in reset() which is called at the end of run().
-// Then upon entering multiplex_impl(), it can be set to a non-zero
-// value by calling wait(conditions), after which multiplex_impl must
-// immediately return.
+// The signal/wait system is intended to allow a task to start
+// something that will result in a signal (when finished) and
+// then go to sleep until that signal happened.
 //
-// However, it isn't set to `conditions` but to `~busy & conditions`,
-// in other words, if a bit in busy is set then the corresponding
-// call to wait is ignored.
+// Typically this looks like this:
 //
-// `busy` is set to all ones in reset(), but upon entering  wait(conditions)
-// the bits that are set in `conditions` are replaced with those of
-// `skip_wait`, and reset in the latter.
+//   case Test_Obtain:
+//     set_state(Test_Obtained);
+//     start_obtaining(condition_obtained);
+//     wait(condition_obtained);
+//     break;
+//   case Test_Obtained:
 //
-// `skip_wait` is set to zero in reset(). A call to signal(condition)
-// causes the bit(s) set in `condition` to be copied from `busy`.
+// For proper functioning a few rules have to be followed:
 //
-// Since all operations are bitwise, it is sufficient to analyse a
-// single bit. The functions then have the following effect (in pseudo
-// code):
+// 1) wait() may only be called from multiplex_impl.
+// 2) Any call to wait() must immediately be followed by a break;
+// 3) Each wait() should use a different condition bit.
 //
-// wait:
-//      busy = skip_wait
-//      skip_wait = 0
-//      idle = !busy
+// Since each wait() is immediately followed by a break;
+// it is not possible to have two wait()'s after another
+// without going first through begin_loop(), which is the
+// function that returns the run_state passed to multiplex_impl.
 //
-// signal:
-//      skip_wait = busy
-//      busy = 1
-//      if (!idle)
-//        return false;
-//      idle = 0;       // reset ALL bits in idle.
-//      ...schedule a new run (reentering of multiplex)...
-//      return true;
+// In the simplest case, a call to wait(bit) causes the task
+// to go idle until signal(bit) is received. Any subsequent
+// signals are irrelevant since we shouldn't be waiting for
+// the same bit again.
 //
-// The state space then contains 3 bits: one in `idle` (i),
-// one in `busy` (b) and one in `skip_wait` (s) with a total of eight
-// states:
+// In the case of multiple bits being used at the same time we make
+// a distinction between the conditions in AND_conditions_mask and
+// the other bits, OR_conditions_mask.
 //
-//   bsi        signal          wait
-//   000        100 (false)     001
-//   001        100 (true)      001
-//   010        100 (false)     100
-//   011        100 (true)      100
-//   100        110 (false)     001
-//   101        110 (true)      001
-//   110        110 (false)     100
-//   111        110 (true)      100
+// As long as we're waiting for any bit in AND_conditions_mask
+// the task may not run. All the bits together in the
+// OR_conditions_mask act as a single AND bit, as in:
 //
-// Since reset() results in 100 there are really just three states:
+//   running = running1 && running2 && running3 && (running4 || running5 || running 6)
 //
-//                 --signal-->     --signal-.
-//         100                 110          |
-//                 <--wait----     <--------'
-//       |     ^
-//       |     |
-//      wait signal (schedules a new run)
-//       |     |
-//       v     |
-//         001   (idle, hence wait() can not be called again)
-//       |     ^
-//       |     |
-//      wait   |(illegal)
-//       |     |
-//       `-----'
+// where 1, 2 and 3 are in the AND_conditions_mask and
+// 4, 5 and 6 in the OR_conditions_mask.
 //
-// However, since a call to signal can cause idle to be set to 0,
-// it is possible that state 001 suddenly changes to 000.
-// The behavior of 001 and 000 are almost the same, except for
-// the return value of signal: aka, we are waiting for a signal(1)
-// and the call to signal(1) causes the task to wake up, it will
-// return true. But if the task was already woken up by another
-// signal (that we were also waiting for) then it returns false.
-// In both cases the resulting state is 100.
+// Every time the task starts running again, all previous
+// waits and signals are irrelevant (because we are no longer
+// waiting for them), but still being used to determine if
+// we're idle or not. Therefore, whenever a signal is received
+// for a bit in the OR_conditions_mask, every bit in that mask
+// is set to non-idle.
 //
-// Note that using just two masks, instead of three, would actually
-// make things more complicated. For example,
+// Finally, it is of course possible that a signal is received
+// during the run of a multiplex_impl for a bit that we're not
+// waiting for yet. This also has to work. Hence the functionality
+// of wait() is much like that of signal(): if we first get
+// a signal(bit) followed by a wait(bit) then this must result
+// in the exact same state as when the order was swapped.
 //
-//                                                idle
-// prev state:   000                              001                  100                    110
+// Nevertheless a different state can result when combining
+// multiple OR conditions. For example:
 //
-//                   -------------------signal(false)----------------->
-//                   <--woken-up-by-other-signal--    --signal(true)-->    --signal(false)-->     --signal(false)--.
-//                01                               00                   10                     11                  |
-//                   -----------wait------------->    <------wait------    <------wait-------     <----------------'
-//                                                /  ^
-//                                               /    \
-//                                              /      \
-//                                              `-wait-'
+//     start_obtaining(3);      // Results in signal(1) and signal(2) to be called, eventually.
+//     wait(3);                 // Wake up at the first signal.
+//     break;
 //
-// `idle` would have to involve both masks to determine if exactly one of
-// the four states is active. And the state transitions are "complicated"
-// bit manipulations involving both masks in every case. None of the bits
-// would have an independent meaning anymore.
+// can lead to
+//
+//     signal(2);               // idle=0; skip_wait=2
+//     signal(1);               // idle=0; skip_wait=3
+//     wait(3);                 // idle=0; skip_wait=0
+//
+// but also to
+//
+//     signal(2);               // idle=0; skip_wait=2
+//     wait(3);                 // idle=0; skip_wait=0
+//     signal(1);               // idle=0; skip_wait=1
+//
+// The reason for the difference is that in the second
+// case, because of the match with signal(2) the wait(3)
+// acts the same as the trivial:
+//
+//     wait(2);                 // idle=1; skip_wait=0
+//     signal(2);               // idle=0; skip_wait=0
+//
+// That is, we are not idle. Note how this is, and should be, the same result as
+//
+//     signal(2);               // idle=0; skip_wait=2
+//     wait(2);                 // idle=0; skip_wait=0
+//
+// If at this point wait(1) would be called then the
+// result would be idle=1; skip_wait=0. You are not
+// allowed to call wait twice on a row, but the task
+// is still running, so it could happen in a new state/run:
+//
+//     signal(2);               // idle=0; skip_wait=2
+//     wait(2);                 // idle=0; skip_wait=0
+//     wait(1);                 // idle=1; skip_wait=0
+//     signal(1);               // idle=0; skip_wait=0
+//
+// However, the wait(3) means: wait for signal 1 OR signal 2,
+// and reset ALL idle bits (from the OR_conditions_mask) when
+// any of the signals is received.
+//
+// Therefore the wait(1) part of it gets lost and the
+// later signal(1) would combine with a subsequent wait(1),
+// not with the wait(3) that it was intended for.
+//
+// This is why you should never reuse the condition bits
+// of the OR_conditions_mask in a wait when having used
+// them in a wait with more than one bit set. In general
+// it is highly advised to simply have every wait() in
+// the task use different condition bits period.
+//
+//
+// The above requires three states per bit:
+//
+// a) wait() called but not signal() received yet (idle).
+// b) One (or more) signal() received but no wait() called yet (skip_wait).
+// c) None of the above.
+//
+// This requires two bits, and hence two masks for everything
+// together: `idle` is a mask that indicates if any condition
+// bit is `idle` (wait called, but no signal).
+//
+// `skip_wait` has a bit set when signal() was received but
+// no wait() was called yet.
 //
 void AIStatefulTask::wait(condition_type conditions)
 {
@@ -1408,7 +1436,7 @@ void AIStatefulTask::wait(condition_type conditions)
     // As wait() may only be called from within the stateful task, it should never happen that the task is already idle.
     // Only call wait() from inside multiplex_impl() and always immediately leave that function afterwards (do not call
     // wait() twice on a row).
-    ASSERT(!(sub_state_w->idle & ~AND_conditions_mask));
+    ASSERT(!sub_state_w->idle);
 #if CW_DEBUG
     // Mark that we at least attempted to go idle.
     sub_state_w->wait_called = true;
@@ -1416,14 +1444,15 @@ void AIStatefulTask::wait(condition_type conditions)
 
     // Determine if we must go idle.
 
-    // Copy bits from skip_wait to busy.
-    sub_state_w->busy &= ~conditions;                                   // Reset the masked bit.
-    sub_state_w->busy |= sub_state_w->skip_wait & conditions;           // Then set the masked bit if it is set in skip_wait.
-    // Reset the masked bit in skip_wait.
+    // Mark that we are now also waiting for the condition corresponding to conditions.
+    sub_state_w->idle |= conditions & ~sub_state_w->skip_wait;
+    // Reset the masked bits in skip_wait.
     sub_state_w->skip_wait &= ~conditions;
-    // Mark that, besides the bits set in AND_conditions_mask, we are now waiting for the condition corresponding to conditions.
-    sub_state_w->idle &= AND_conditions_mask;
-    sub_state_w->idle = ~sub_state_w->busy & conditions;
+
+    // Detect if this wait was combined with a signal in the OR_conditions_mask.
+    condition_type mask = (conditions & ~sub_state_w->idle & OR_conditions_mask) ? OR_conditions_mask : 0;
+    // Reset all OR_conditions_mask bits if that was the case.
+    sub_state_w->idle &= ~mask;
 
     // Not sleeping (anymore).
     mSleep = 0;
@@ -1459,13 +1488,10 @@ void AIStatefulTask::wait_AND(condition_type conditions)
 
     // Determine if we must go idle.
 
-    // Copy bits from skip_wait to busy.
-    sub_state_w->busy &= ~conditions;                                   // Reset the masked bit.
-    sub_state_w->busy |= sub_state_w->skip_wait & conditions;           // Then set the masked bit if it is set in skip_wait.
-    // Reset the masked bit in skip_wait.
+    // Mark that we are now (also) waiting for the condition corresponding to conditions.
+    sub_state_w->idle |= conditions & ~sub_state_w->skip_wait;
+    // Reset the maskeds bit in skip_wait.
     sub_state_w->skip_wait &= ~conditions;
-    // Mark that we are now also waiting for the condition corresponding to conditions.
-    sub_state_w->idle |= ~sub_state_w->busy & conditions;
 
     // Not sleeping (anymore).
     mSleep = 0;
@@ -1500,31 +1526,41 @@ bool AIStatefulTask::signal(condition_type condition)
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signal(" << std::hex << condition << std::dec << ") [" << (void*)this << "]");
   // It is not allowed to call this function with an empty mask.
   ASSERT(condition);
-  bool need_run;
   {
     sub_state_type::wat sub_state_w(mSubState);
-    // Copy bits from busy to skip_wait.
-    sub_state_w->skip_wait &= ~condition;                       // Reset the masked bits.
-    sub_state_w->skip_wait |= sub_state_w->busy & condition;    // Then set masked bits that are set in busy.
-    // Set the masked bits in busy;
-    sub_state_w->busy |= condition;
-    // Test if we are idle or not.
-    if (!(sub_state_w->idle & condition))
+    // Remember if we're idle at this moment.
+    condition_type prev_idle = sub_state_w->idle;
+    // Set skip_wait if we didn't already see a wait.
+    sub_state_w->skip_wait |= condition & ~prev_idle;
+    // Did we wake up a condition in the OR_conditions_mask? Then pretend we received a signal for all of them.
+    condition |= (condition & ~sub_state_w->skip_wait & OR_conditions_mask) ? OR_conditions_mask : 0;
+    // If a wait WAS seen before then now we're no longer idle for condition.
+    sub_state_w->idle &= ~condition;
+
+    // Did this signal NOT cause us to wake up?
+    if (!prev_idle || sub_state_w->idle)
     {
-      Dout(dc::statefultask(mSMDebug), "Ignoring because idle == " << std::hex << sub_state_w->idle << std::dec);
+#ifdef CWDEBUG
+      if (mSMDebug)
+      {
+        if (prev_idle)
+          Dout(dc::statefultask, "Task is not waiting for " << std::hex << condition << std::dec <<
+              " (idle == " << std::hex << sub_state_w->idle << std::dec << "). Signal queued for possible subsequent wait.");
+        else
+          Dout(dc::statefultask, "Task is not waiting. Signal queued for possible subsequent wait.");
+      }
+#endif
       return false;
     }
 #if CW_DEBUG
     mDebugSignalPending = sub_state_w->wait_called;
 #endif
-    // Unblock this task.
-    sub_state_w->idle &= AND_conditions_mask & ~condition;
     // Mark that a re-entry of multiplex() is necessary.
-    need_run = sub_state_w->need_run = !sub_state_w->idle;
+    sub_state_w->need_run = true;
   }
-  if (need_run && !mMultiplexMutex.is_self_locked())
+  if (!mMultiplexMutex.is_self_locked())
     multiplex(schedule_run);
-  return need_run;
+  return true;
 }
 
 void AIStatefulTask::abort()

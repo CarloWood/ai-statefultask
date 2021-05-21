@@ -88,11 +88,12 @@ class AIStatefulTask : public AIRefCount
 {
  public:
   using state_type = uint32_t;        ///< The type of run_state.
-  using condition_type = uint32_t;    ///< The type of the busy, skip_wait and idle bit masks.
+  using condition_type = uint32_t;    ///< The type of the skip_wait and idle bit masks.
   // The two most significant bits are reserved for flow control.
   static constexpr condition_type slow_down_condition = 0x40000000;             // This task was running when the thread pool ran full.
   static constexpr condition_type thread_pool_full_condition = 0x80000000;      // This task couldn't be added to the thread pool queue because that was full.
   static constexpr condition_type AND_conditions_mask = 0xf0000000;
+  static constexpr condition_type OR_conditions_mask = 0x0fffffff;
 
  private:
   /// The type of event that causes <code>multiplex(event_type event)</code> to be called.
@@ -212,9 +213,9 @@ class AIStatefulTask : public AIRefCount
   };
 
   struct sub_state_st {
-    condition_type busy;              ///< Each bit represents being not-idle for that condition-bit: wait(condition_bit) was never called or signal(condition_bit) was called last.
-    condition_type skip_wait;         ///< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit: signal(condition_bit) was called while already busy.
-    condition_type idle;              ///< The idle state at the end of the last call to wait(conditions) (~busy & conditions).
+    condition_type skip_wait;         ///< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit:
+                                      ///  signal(condition_bit) was called since the last idle -> non-idle transition.
+    condition_type idle;              ///< The idle state at the end of the last call to wait(conditions) and/or signal(condition_bit).
     state_type run_state;
     bool reset;
     bool need_run;
@@ -794,7 +795,13 @@ boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 #endif
   TaskType* task = new TaskType(std::forward<ARGS>(args)...);
   AllocTag2(task, "Created with statefultask::create");
-  Dout(dc::statefultask, "Returning task pointer " << (void*)task << " [" << static_cast<AIStatefulTask*>(task) << "].");
+#ifdef CWDEBUG
+  Dout(dc::statefultask|continued_cf, "Returning task pointer " << (void*)task);
+  if ((void*)task != (void*)static_cast<AIStatefulTask*>(task))
+    Dout(dc::finish, " [" << static_cast<AIStatefulTask*>(task) << "].");
+  else
+    Dout(dc::finish, ".");
+#endif
   return task;
 }
 

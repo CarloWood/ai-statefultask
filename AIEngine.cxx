@@ -94,7 +94,7 @@ void AIEngine::mainloop()
     engine_state_type::wat engine_state_w(mEngineState);
     if (!active)
     {
-      Dout(dc::statefultask(stateful_task.mSMDebug), "Erasing stateful task [" << (void*)&stateful_task << "] from " << mName);
+      Dout(dc::statefultask(stateful_task.mSMDebug), "Erasing stateful task [" << (void*)&stateful_task << "] from engine \"" << mName << "\".");
       engine_state_w->list.erase(queued_element++);
     }
     else
