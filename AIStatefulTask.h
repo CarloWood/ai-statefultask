@@ -41,6 +41,7 @@
 #ifndef AISTATEFULTASK_H
 #define AISTATEFULTASK_H
 
+#include "threadpool/Timer.h"
 #include "threadsafe/aithreadsafe.h"
 #include "threadsafe/AIMutex.h"
 #include "threadpool/AIQueueHandle.h"
@@ -248,6 +249,9 @@ class AIStatefulTask : public AIRefCount
 
   clock_type::rep mSleep;   ///< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
 
+  // Slow down facilities.
+  threadpool::Timer m_slow_down_timer;
+
   // Callback facilities.
   // From within an other stateful task:
   boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
@@ -277,6 +281,8 @@ class AIStatefulTask : public AIRefCount
 #if defined(CWDEBUG) && !defined(DOXYGEN)
  protected:
   bool mSMDebug;                      // Print debug output only when true.
+ public:
+  bool m_may_not_be_deleted;
 #endif
 
  private:
@@ -297,7 +303,7 @@ class AIStatefulTask : public AIRefCount
   mDebugSetStatePending(false), mDebugRefCalled(false),
 #endif
 #ifdef CWDEBUG
-  mSMDebug(debug),
+  mSMDebug(debug), m_may_not_be_deleted(false),
 #endif
   mDuration(duration_type::zero()) { }
 
@@ -308,6 +314,7 @@ class AIStatefulTask : public AIRefCount
 #if CW_DEBUG
     base_state_type state = multiplex_state_type::rat(mState)->base_state;
     ASSERT(state == bs_killed || state == bs_reset);
+    ASSERT(!m_may_not_be_deleted);
 #endif
   }
 
@@ -728,10 +735,9 @@ class AIStatefulTask : public AIRefCount
 
   void add(duration_type delta) { mDuration += delta; }
 
-  void add_task_to_thread_pool(AIQueueHandle queue_handle);                     // Attempt to add this task to a theadpool queue.
-  void slow_down();                                                             // Called when the task is to slow down (flow control). This will cause the the task to be halted (and continued later on).
-  void defer(Handler handler, std::function<void (Handler)> lambda);            // Called when handler was full. Executing lambda should recover the delay and continue possibly halted tasks.
-  void wait_AND(condition_type required);                                       // Stop running until all `required` bits have been signalled (plus at least one of any other wait() condition).
+  void add_task_to_thread_pool(AIQueueHandle queue_handle, int failure_count = 0);      // Attempt to add this task to a theadpool queue.
+  void defer(AIQueueHandle queue_handle, std::function<void()> lambda);                 // Called when handler was full. Executing lambda should recover the delay and continue possibly halted tasks.
+  void wait_AND(condition_type required);                                               // Stop running until all `required` bits have been signalled (plus at least one of any other wait() condition).
 
   friend class AIEngine;      // Calls multiplex(), force_killed() and add().
 };

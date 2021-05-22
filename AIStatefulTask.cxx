@@ -934,8 +934,10 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
 //static
 thread_local AIStatefulTask* AIStatefulTask::tl_parent_task;
 
-void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle)
+void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, int failure_count)
 {
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::add_task_to_thread_pool(" << queue_handle << ", " << failure_count << ")");
+
   // Add the task to the thread pool.
   AIThreadPool& thread_pool{AIThreadPool::instance()};
   auto queues_access = thread_pool.queues_read_access();
@@ -967,31 +969,36 @@ void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle)
   }
   if (AI_UNLIKELY(length == capacity))
   {
-    Dout(dc::warning|continued_cf, "Threadpool queue " << queue_handle << " full, can not run [" << this << "]");
+    Dout(dc::warning|continued_cf, "Threadpool queue " << queue_handle << " full, can not run [" << this << "].");
     // We should add something to the thread pool that executes task->multiplex(normal_run, handler);
-    // but we can't because the threadpool queue is full. Pass it to the magical function `slow_down`
-    // instead.
+    // but we can't because the threadpool queue is full. Pass it to the magical function `defer` instead.
     boost::intrusive_ptr<AIStatefulTask> task(this);
     // Stop the responsible parent task, if any.
     if (tl_parent_task)
     {
       Dout(dc::finish, " Slowing down parent task " << tl_parent_task << ".");
       boost::intrusive_ptr<AIStatefulTask> parent_task(tl_parent_task);
-      parent_task->slow_down();
+      // Since tl_parent_task is set prior to calling multiplex_impl on that task (and reset after returning)
+      // we are now inside tl_parent_task->multiplex_impl and not yet idle (we're still running, clearly).
+      // Hence it is OK to assert on wait() not having been called yet (with a condition from OR_conditions_mask)
+      // as if that were the case multiplex_impl should immediately return.
+      parent_task->wait_AND(slow_down_condition);
       // This will call the lamba after a while.
-      defer(Handler{queue_handle}, [parent_task, task](Handler h)
+      parent_task->m_may_not_be_deleted = true;
+      defer(queue_handle, [parent_task, task, queue_handle, failure_count]()
           {
-            task->add_task_to_thread_pool(h.get_queue_handle());
+            task->add_task_to_thread_pool(queue_handle, failure_count + 1);
             parent_task->signal(slow_down_condition);
+            parent_task->m_may_not_be_deleted = false;
           });
     }
     else
     {
-      Dout(dc::finish, ".");
+      Dout(dc::finish, "");
       // This will call the lamba after a while.
-      defer(Handler{queue_handle}, [task](Handler h)
+      defer(queue_handle, [task, failure_count, queue_handle]()
           {
-            task->add_task_to_thread_pool(h.get_queue_handle());
+            task->add_task_to_thread_pool(queue_handle, failure_count + 1);
           });
     }
   }
@@ -999,15 +1006,10 @@ void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle)
     queue.notify_one();
 }
 
-void AIStatefulTask::slow_down()
+void AIStatefulTask::defer(AIQueueHandle queue_handle, std::function<void()> lambda)
 {
-  //FIXME: wait may only be called from multiplex_impl.
-  wait_AND(slow_down_condition);
-}
-
-void AIStatefulTask::defer(Handler handler, std::function<void (Handler)> lambda)
-{
-  DoutEntering(dc::notice, "AIStatefulTask::defer(" << handler << ", ...)");
+  DoutEntering(dc::notice, "AIStatefulTask::defer(" << queue_handle << ", lambda)");
+  m_slow_down_timer.start(threadpool::Interval<1, std::chrono::seconds>(), lambda);
 }
 
 AIStatefulTask::state_type AIStatefulTask::begin_loop()
@@ -1436,7 +1438,8 @@ void AIStatefulTask::wait(condition_type conditions)
     // As wait() may only be called from within the stateful task, it should never happen that the task is already idle.
     // Only call wait() from inside multiplex_impl() and always immediately leave that function afterwards (do not call
     // wait() twice on a row).
-    ASSERT(!sub_state_w->idle);
+    // Mask OR_conditions_mask because it is possible that wait_AND() was already called this run.
+    ASSERT(!(sub_state_w->idle & OR_conditions_mask));
 #if CW_DEBUG
     // Mark that we at least attempted to go idle.
     sub_state_w->wait_called = true;
@@ -1481,6 +1484,9 @@ void AIStatefulTask::wait_AND(condition_type conditions)
 #endif
   {
     sub_state_type::wat sub_state_w(mSubState);
+    // It should be impossible that we are idle since we can only get here from inside multiplex_impl.
+    // See the comments in AIStatefulTask::add_task_to_thread_pool.
+    ASSERT(!(sub_state_w->idle & OR_conditions_mask));
 #if CW_DEBUG
     // Mark that we at least attempted to go idle.
     sub_state_w->wait_called = true;
