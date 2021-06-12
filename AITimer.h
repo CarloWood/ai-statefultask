@@ -48,7 +48,7 @@
  *
  * When the task finishes it calls the callback, use parameter _1,
  * (success) to check whether or not the task actually timed out or
- * was cancelled. The boolean is true when it expired and false if the
+ * was canceled. The boolean is true when it expired and false if the
  * task was aborted.
  *
  * Objects of this type can be reused multiple times, see

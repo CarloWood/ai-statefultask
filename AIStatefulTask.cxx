@@ -1286,7 +1286,7 @@ void AIStatefulTask::set_state(state_type new_state)
     // Force current state to the requested state.
     sub_state_w->run_state = new_state;
 #if CW_DEBUG
-    // We should run. This can only be cancelled by a call to wait().
+    // We should run. This can only be canceled by a call to wait().
     mDebugSetStatePending = !sub_state_w->wait_called;
 #endif
   }
