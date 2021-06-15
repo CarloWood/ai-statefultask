@@ -505,6 +505,11 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
     {
       // This just should never happen; a call to run() should always set the base state beyond bs_reset.
       ASSERT(event != initial_run);
+      // FIXME: when does this happen?
+      // If a task can be (attempted to be) run in parallel, then isn't there a race condition
+      // in threadpool where the 'active' state of the task is determined by calling active(handler)
+      // immediately after returning from multiplex()?
+      ASSERT(false);
       Dout(dc::statefultask(mSMDebug), "Leaving because it is already being run [" << (void*)this << "]");
       return;
     }
@@ -934,9 +939,9 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
 //static
 thread_local AIStatefulTask* AIStatefulTask::tl_parent_task;
 
-void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, int failure_count)
+void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t const failure_count)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::add_task_to_thread_pool(" << queue_handle << ", " << failure_count << ")");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::add_task_to_thread_pool(" << queue_handle << ", " << (int)failure_count << ")");
 
   // Add the task to the thread pool.
   AIThreadPool& thread_pool{AIThreadPool::instance()};
@@ -984,19 +989,23 @@ void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, int fai
       // as if that were the case multiplex_impl should immediately return.
       parent_task->wait_AND(slow_down_condition);
       // This will call the lamba after a while.
+#ifdef CWDEBUG
       parent_task->m_may_not_be_deleted = true;
-      defer(queue_handle, [parent_task, task, queue_handle, failure_count]()
+#endif
+      thread_pool.defer(queue_handle, failure_count, [parent_task, task, queue_handle, failure_count]()
           {
             task->add_task_to_thread_pool(queue_handle, failure_count + 1);
             parent_task->signal(slow_down_condition);
+#ifdef CWDEBUG
             parent_task->m_may_not_be_deleted = false;
+#endif
           });
     }
     else
     {
       Dout(dc::finish, "");
       // This will call the lamba after a while.
-      defer(queue_handle, [task, failure_count, queue_handle]()
+      thread_pool.defer(queue_handle, failure_count, [task, failure_count, queue_handle]()
           {
             task->add_task_to_thread_pool(queue_handle, failure_count + 1);
           });
@@ -1004,12 +1013,6 @@ void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, int fai
   }
   else
     queue.notify_one();
-}
-
-void AIStatefulTask::defer(AIQueueHandle queue_handle, std::function<void()> lambda)
-{
-  DoutEntering(dc::notice, "AIStatefulTask::defer(" << queue_handle << ", lambda)");
-  m_slow_down_timer.start(threadpool::Interval<1, std::chrono::seconds>(), lambda);
 }
 
 AIStatefulTask::state_type AIStatefulTask::begin_loop()

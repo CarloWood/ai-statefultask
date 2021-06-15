@@ -249,9 +249,6 @@ class AIStatefulTask : public AIRefCount
 
   clock_type::rep mSleep;   ///< Non-zero while the task is sleeping. Negative means frames, positive means clock periods.
 
-  // Slow down facilities.
-  threadpool::Timer m_slow_down_timer;
-
   // Callback facilities.
   // From within an other stateful task:
   boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
@@ -735,9 +732,8 @@ class AIStatefulTask : public AIRefCount
 
   void add(duration_type delta) { mDuration += delta; }
 
-  void add_task_to_thread_pool(AIQueueHandle queue_handle, int failure_count = 0);      // Attempt to add this task to a theadpool queue.
-  void defer(AIQueueHandle queue_handle, std::function<void()> lambda);                 // Called when handler was full. Executing lambda should recover the delay and continue possibly halted tasks.
-  void wait_AND(condition_type required);                                               // Stop running until all `required` bits have been signalled (plus at least one of any other wait() condition).
+  void add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t const failure_count = 0);    // Attempt to add this task to a theadpool queue.
+  void wait_AND(condition_type required);                                                       // Stop running until all `required` bits have been signalled (plus at least one of any other wait() condition).
 
   friend class AIEngine;      // Calls multiplex(), force_killed() and add().
 };
