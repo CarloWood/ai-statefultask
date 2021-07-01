@@ -77,13 +77,13 @@ class Broker : public AIStatefulTask
   bool m_is_immediate;
 
  protected:
-  ~Broker() override = default;
+  ~Broker() override { DoutEntering(dc::broker(mSMDebug), "~Broker() [" << (void*)this << "]"); }
   char const* state_str_impl(state_type run_state) const override;
   void multiplex_impl(state_type run_state) override;
   void abort_impl() override;
 
  public:
-  Broker(CWDEBUG_ONLY(bool debug = false)) : AIStatefulTask(CWDEBUG_ONLY(debug)), m_is_immediate(false) { }
+  Broker(CWDEBUG_ONLY(bool debug = false)) : AIStatefulTask(CWDEBUG_ONLY(debug)), m_is_immediate(false) { DoutEntering(dc::broker(mSMDebug), "Broker(true) [" << (void*)this << "]"); }
 
   void run(AIStatefulTask::Handler handler = AIStatefulTask::Handler::immediate)
   {
