@@ -75,7 +75,7 @@ struct AIStatefulTaskMutexNode : public utils::threading::MpscNode
  *     [[fallthrough]];
  *   case MyTask_locked:
  *   {
- *     statefultask::Lock lock(m);
+ *     statefultask::AdoptLock lock(m);
  *     do_work();
  *     lock.unlock();   // Optional
  *     ... code that does not require the lock...
