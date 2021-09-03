@@ -24,7 +24,7 @@ task->run(handler, callback_args);  // This will cause 'task' to
 <li> If you want to control the life-time of the Task.
 @code
 // In general 'm_task' will be a member variable of an object.
-boost::intrusive_ptr<MyTask> m_task = task::create<MyTask>(my_args);
+boost::intrusive_ptr<MyTask> m_task = statefultask::create<MyTask>(my_args);
 
 // Then, every time you want to run it:
 m_task->my_initialization(my_params);
