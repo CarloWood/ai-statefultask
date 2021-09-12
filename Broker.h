@@ -4,6 +4,7 @@
 #include "BrokerKey.h"
 #include "threadsafe/AIReadWriteMutex.h"
 #include "utils/threading/MpscQueue.h"
+#include "utils/threading/Gate.h"
 #include <type_traits>
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
@@ -75,6 +76,7 @@ class Broker : public AIStatefulTask
 
   map_type m_key2task;
   bool m_is_immediate;
+  utils::threading::Gate m_finished;
 
  protected:
   ~Broker() override { DoutEntering(dc::broker(mSMDebug), "~Broker() [" << (void*)this << "]"); }
@@ -89,13 +91,29 @@ class Broker : public AIStatefulTask
   {
     // If the handler passed here is immediate, then a call to run(key, callback) while
     // the task is already finished will lead to an immediate call to the callback.
-    // Otherwise the callback is performed from the Broken task (under the handler).
+    // Otherwise the callback is performed from the Broker task (under the handler).
     m_is_immediate = handler.is_immediate();
-    AIStatefulTask::run(handler, [](bool success){
+    AIStatefulTask::run(handler, [this](bool success){
         // Can only be terminated by calling abort().
         ASSERT(!success);
         Dout(dc::broker, "task::Broker<" << libcwd::type_info_of<TaskType>().demangled_name() << "> terminated.");
+        m_finished.open();
     });
+  }
+
+  void terminate()
+  {
+    abort();
+    m_finished.wait();
+  }
+
+  // Abort and run callback(task) for each task in m_key2task.
+  void terminate(std::function<void (TaskType*)> callback)
+  {
+    terminate();
+    typename map_type::wat key2task_w(m_key2task);
+    for (auto& element : *key2task_w)
+      callback(element.second.m_task.get());
   }
 
   // The returned pointer is meant to keep the task alive, not to access it (it is possibly shared between threads).
