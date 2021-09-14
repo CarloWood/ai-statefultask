@@ -198,7 +198,7 @@ int main()
 
   try
   {
-    auto task = task::create<task::HelloWorld>();
+    auto task = statefultask::create<task::HelloWorld>();
     task->initialize(42);
     task->run(low_priority_queue);      // Must have a non-immediate handler because it calls yield().
   }
@@ -254,7 +254,7 @@ int main()
     bool test_finished = false;
 
     // All tasks are created (somewhere, often as member variable of an object).
-    auto task = task::create<task::HelloWorld>();
+    auto task = statefultask::create<task::HelloWorld>();
     // Often initialized before (re)running them.
     task->initialize(42);
     // And finally started by calling one of the run() member functions.
