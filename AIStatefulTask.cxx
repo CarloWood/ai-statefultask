@@ -505,11 +505,17 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
     {
       // This just should never happen; a call to run() should always set the base state beyond bs_reset.
       ASSERT(event != initial_run);
-      // FIXME: when does this happen?
+      // We can get here when multiplex() was called from signal(). That call to signal() also
+      // did set need_run - requesting a entry from the top of multiplex(). If mMultiplexMutex
+      // is already locked then the call to multiplex() from signal wasn't needed: the thread
+      // that is currently executing multiplex() will see that need_run is set and then return
+      // to the top (unless it called wait() before returning from multiplex_impl - which effectively
+      // cancels the need to run by the signal wake-up).
+      //
+      // FIXME:
       // If a task can be (attempted to be) run in parallel, then isn't there a race condition
       // in threadpool where the 'active' state of the task is determined by calling active(handler)
       // immediately after returning from multiplex()?
-      ASSERT(false);
       Dout(dc::statefultask(mSMDebug), "Leaving because it is already being run [" << (void*)this << "]");
       return;
     }
@@ -1460,6 +1466,32 @@ void AIStatefulTask::wait(condition_type conditions)
     // Reset all OR_conditions_mask bits if that was the case.
     sub_state_w->idle &= ~mask;
 
+    // need_run can be true at this point as the result of a call to signal() (or abort()).
+    // Now signal() would only set need_run when that caused the task to wake up, when
+    // idle when from non-zero to zero, and thus when wait_AND() was called since the
+    // beginning of this loop (if it happened before the beginning of this loop then
+    // need_run would be false, since that is reset in begin_loop). It must have been a
+    // call to wait_AND(), and not wait(), because a task is required to return from
+    // multiplex_impl immediate after a call to wait() and it didn't because we are now
+    // executing a call to wait(). In other words we could have seen the following sequence:
+    // - begin_loop()                           // This resets need_run.
+    // - wait_AND(slow_down_condition)
+    // - signal(slow_down_condition)            // This caused need_run to be set.
+    // - wait(conditions)                       // We are here now.
+    // In that particular case we need to do the same thing as when this had happened (race condition):
+    // - begin_loop()                           // This resets need_run.
+    // - wait_AND(slow_down_condition)
+    // - wait(conditions)
+    // - signal(slow_down_condition)            // This wouldn't cause need_run to be set because we're still idle.
+    if (AI_UNLIKELY(sub_state_w->need_run && sub_state_w->idle))
+    {
+      // If abort was called, then we shouldn't got "idle".
+      if (sub_state_w->aborted)
+        sub_state_w->idle = 0;
+      else
+        sub_state_w->need_run = false;
+    }
+
     // Not sleeping (anymore).
     mSleep = 0;
 #if CW_DEBUG
@@ -1499,7 +1531,7 @@ void AIStatefulTask::wait_AND(condition_type conditions)
 
     // Mark that we are now (also) waiting for the condition corresponding to conditions.
     sub_state_w->idle |= conditions & ~sub_state_w->skip_wait;
-    // Reset the maskeds bit in skip_wait.
+    // Reset the masked bits in skip_wait.
     sub_state_w->skip_wait &= ~conditions;
 
     // Not sleeping (anymore).
@@ -1568,6 +1600,9 @@ bool AIStatefulTask::signal(condition_type condition)
     sub_state_w->need_run = true;
   }
   if (!mMultiplexMutex.is_self_locked())
+    // Note that this call to multiplex can be ignored when the task is already running;
+    // this is why need_run was set: in that case the thread that is already running this
+    // task will start multiplex() from the top once it reaches the end.
     multiplex(schedule_run);
   return true;
 }
