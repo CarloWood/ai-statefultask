@@ -21,6 +21,12 @@ class MyTask : public AIStatefulTask
  public:
   static state_type constexpr state_end = MyTask_done + 1;	// The last state plus one.
 
+  // Construct a MyTask object.
+  MyTask(CWDEBUG_ONLY(bool debug = false)) : AIStatefulTask(CWDEBUG_ONLY(debug))
+  {
+    DoutEntering(dc::statefultask(mSMDebug), "MyTask() [" << (void*)this << "]");
+  }
+
  ...
 
  protected:
