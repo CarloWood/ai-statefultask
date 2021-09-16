@@ -278,7 +278,7 @@ class AIStatefulTask : public AIRefCount
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
  protected:
-  bool mSMDebug;                      // Print debug output only when true.
+  bool mSMDebug;                      // Print debug output only when true (SM = 'State Machine', the name of this class before it was renamed to StatefulTask).
  public:
   bool m_may_not_be_deleted;
 #endif
