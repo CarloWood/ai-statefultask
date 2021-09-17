@@ -34,7 +34,7 @@
 #pragma once
 
 #include <functional>
-#include "utils/apply_function.h"
+#include <tuple>
 
 #ifndef DOXYGEN
 template<typename F>
@@ -107,7 +107,7 @@ class AIDelayedFunction<R(Args...)>
   void operator()(Args... args) { m_args = std::make_tuple(args...); }
 
   /// Actually invoke the call to the stored function with the stored arguments.
-  void invoke() { m_result = utils::apply_function(m_function, m_args); }
+  void invoke() { m_result = std::apply(m_function, m_args); }
 
   /// Get the result, only valid after invoke was called.
   R const& get() const { return m_result; }
@@ -138,5 +138,5 @@ class AIDelayedFunction<void(Args...)>
   void operator()(Args... args) { m_args = std::make_tuple(args...); }
 
   /// Actually invoke the call to the stored function with the stored arguments.
-  void invoke() { utils::apply_function(m_function, m_args); }
+  void invoke() { std::apply(m_function, m_args); }
 };
