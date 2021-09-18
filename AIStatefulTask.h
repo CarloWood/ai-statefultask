@@ -739,6 +739,13 @@ class AIStatefulTask : public AIRefCount
   friend class AIEngine;      // Calls multiplex(), force_killed() and add().
 };
 
+namespace task {
+
+template<typename Type>
+concept TaskType = std::is_base_of_v<AIStatefulTask, Type>;
+
+} // namespace task
+
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct statefultask;

@@ -6,6 +6,7 @@
 #include "utils/threading/MpscQueue.h"
 #include "utils/threading/Gate.h"
 #include <type_traits>
+#include <tuple>
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
@@ -15,7 +16,7 @@ NAMESPACE_DEBUG_CHANNELS_END
 
 namespace task {
 
-template<typename TaskType, typename = typename std::enable_if<std::is_base_of<AIStatefulTask, TaskType>::value>::type>
+template<TaskType Task, typename... Args>
 class Broker : public AIStatefulTask
 {
  protected:
@@ -45,10 +46,10 @@ class Broker : public AIStatefulTask
   //
   // The members are made mutable because this access also involves writing.
   struct TaskPointerAndCallbackQueue {
-    boost::intrusive_ptr<TaskType> const m_task;
+    boost::intrusive_ptr<Task> const m_task;
     // Concurrent access is fine since callbacks_type is thread safe: access is protected by its own mutex.
     mutable utils::threading::MpscQueue m_callbacks;
-    // Only when m_finished is loaded with acquire and is true, the TaskType that m_task points to and the boolean m_success may be read.
+    // Only when m_finished is loaded with acquire and is true, the Task that m_task points to and the boolean m_success may be read.
     // m_finished is initialized at false and only set to true once by the Broker task, using memory_order_release.
     // Other threads only read m_success after loading m_finished with memory_order_acquire and seeing that being true - which means that
     // it is safe for the Broker task to write to m_success before setting m_finished to true.
@@ -57,13 +58,13 @@ class Broker : public AIStatefulTask
     // This variable is only accessed by the Broker task; and thus it is virtually single-threaded.
     mutable bool m_running;
 
-    TaskPointerAndCallbackQueue(boost::intrusive_ptr<TaskType>&& task, std::function<void(bool)>&& callback) :
+    TaskPointerAndCallbackQueue(boost::intrusive_ptr<Task>&& task, std::function<void(bool)>&& callback) :
       m_task(std::move(task)), m_finished(false), m_success(false), m_running(false) { m_callbacks.push(NEW(CallbackNode(std::move(callback)))); }
 
 #ifdef CWDEBUG
     void print_on(std::ostream& os) const
     {
-      os << '"' << libcwd::type_info_of<TaskType>().demangled_name() << '"';
+      os << '"' << libcwd::type_info_of<Task>().demangled_name() << '"';
     }
 #endif
   };
@@ -77,6 +78,7 @@ class Broker : public AIStatefulTask
   map_type m_key2task;
   bool m_is_immediate;
   utils::threading::Gate m_finished;
+  std::tuple<CWDEBUG_ONLY(bool,) Args...> m_debugflag_task_args;
 
  protected:
   ~Broker() override { DoutEntering(dc::broker(mSMDebug), "~Broker() [" << (void*)this << "]"); }
@@ -85,7 +87,11 @@ class Broker : public AIStatefulTask
   void abort_impl() override;
 
  public:
-  Broker(CWDEBUG_ONLY(bool debug = false)) : AIStatefulTask(CWDEBUG_ONLY(debug)), m_is_immediate(false) { DoutEntering(dc::broker(mSMDebug), "Broker(true) [" << (void*)this << "]"); }
+  Broker(CWDEBUG_ONLY(bool debug,) Args... task_args) :
+    AIStatefulTask(CWDEBUG_ONLY(debug)), m_is_immediate(false), m_debugflag_task_args(CWDEBUG_ONLY(debug,) task_args...)
+  {
+    DoutEntering(dc::broker(mSMDebug), "Broker(" << join(", ", task_args...) << ") [" << (void*)this << "]");
+  }
 
   void run(AIStatefulTask::Handler handler = AIStatefulTask::Handler::immediate)
   {
@@ -96,7 +102,7 @@ class Broker : public AIStatefulTask
     AIStatefulTask::run(handler, [this](bool success){
         // Can only be terminated by calling abort().
         ASSERT(!success);
-        Dout(dc::broker, "task::Broker<" << libcwd::type_info_of<TaskType>().demangled_name() << "> terminated.");
+        Dout(dc::broker, "task::Broker<" << libcwd::type_info_of<Task>().demangled_name() << "> terminated.");
         m_finished.open();
     });
   }
@@ -108,7 +114,7 @@ class Broker : public AIStatefulTask
   }
 
   // Abort and run callback(task) for each task in m_key2task.
-  void terminate(std::function<void (TaskType*)> callback)
+  void terminate(std::function<void (Task*)> callback)
   {
     terminate();
     typename map_type::wat key2task_w(m_key2task);
@@ -118,14 +124,14 @@ class Broker : public AIStatefulTask
 
   // The returned pointer is meant to keep the task alive, not to access it (it is possibly shared between threads).
   // Read access is allowed only after (during) the callback was called.
-  boost::intrusive_ptr<TaskType const> run(statefultask::BrokerKey const& key, std::function<void(bool)>&& callback);
+  boost::intrusive_ptr<Task const> run(statefultask::BrokerKey const& key, std::function<void(bool)>&& callback);
 };
 
-template<typename TaskType, typename T>
-boost::intrusive_ptr<TaskType const> Broker<TaskType, T>::run(statefultask::BrokerKey const& key, std::function<void(bool)>&& callback)
+template<TaskType Task, typename... Args>
+boost::intrusive_ptr<Task const> Broker<Task, /*T,*/ Args...>::run(statefultask::BrokerKey const& key, std::function<void(bool)>&& callback)
 {
-  DoutEntering(dc::broker, "Broker<" << libcwd::type_info_of<TaskType>().demangled_name() << ", void>::run(" << key << ", callback)");
-  // This function returns a pointer to an immutable TaskType, because the returned
+  DoutEntering(dc::broker, "Broker<" << libcwd::type_info_of<Task>().demangled_name() << ", void>::run(" << key << ", callback)");
+  // This function returns a pointer to an immutable Task, because the returned
   // task is shared between threads and readonly. Note reading it is only allowed
   // after the task finished running because otherwise writing may occur at the same
   // time, which is UB.
@@ -150,7 +156,8 @@ boost::intrusive_ptr<TaskType const> Broker<TaskType, T>::run(statefultask::Brok
         typename map_type::wat key2task_w(key2task_r);                         // This might throw.
         // Create the task and put the boost::intrusive_ptr to it into the unordered_map together with a CallbackQueue object
         // already filled with callback, under key. Store the pointer to the new pair into entry.
-        entry = &key2task_w->try_emplace(key.copy(), statefultask::create<TaskType>(CWDEBUG_ONLY(mSMDebug)), std::move(callback)).first->second;
+        boost::intrusive_ptr<Task> task = std::apply([](auto&&... args){ return statefultask::create<Task>(std::forward<decltype(args)>(args)...); }, m_debugflag_task_args);
+        entry = &key2task_w->try_emplace(key.canonical_copy(), std::move(task), std::move(callback)).first->second;
       }
       else
       {
@@ -171,7 +178,7 @@ boost::intrusive_ptr<TaskType const> Broker<TaskType, T>::run(statefultask::Brok
   if (task_created)
   {
     // It is safe to do this without a read or write lock on m_key2task, because no
-    // other threads are accessing the (just created) TaskType. They are just waiting for
+    // other threads are accessing the (just created) Task. They are just waiting for
     // it to be finished.
     key.initialize(entry->m_task);
     // Wake up the Broker task.
@@ -195,8 +202,8 @@ boost::intrusive_ptr<TaskType const> Broker<TaskType, T>::run(statefultask::Brok
   return entry->m_task;
 }
 
-template<typename TaskType, typename T>
-char const* Broker<TaskType, T>::state_str_impl(state_type run_state) const
+template<TaskType Task, typename... Args>
+char const* Broker<Task, /*T,*/ Args...>::state_str_impl(state_type run_state) const
 {
   switch (run_state)
   {
@@ -207,8 +214,8 @@ char const* Broker<TaskType, T>::state_str_impl(state_type run_state) const
   return "UNKNOWN STATE";
 }
 
-template<typename TaskType, typename T>
-void Broker<TaskType, T>::multiplex_impl(state_type run_state)
+template<TaskType Task, typename... Args>
+void Broker<Task, /*T,*/ Args...>::multiplex_impl(state_type run_state)
 {
   switch (run_state)
   {
@@ -266,10 +273,10 @@ void Broker<TaskType, T>::multiplex_impl(state_type run_state)
   }
 }
 
-template<typename TaskType, typename T>
-void Broker<TaskType, T>::abort_impl()
+template<TaskType Task, typename... Args>
+void Broker<Task, /*T,*/ Args...>::abort_impl()
 {
-  DoutEntering(dc::broker(mSMDebug), "Broker<"<< libcwd::type_info_of<TaskType>().demangled_name() << ">::abort_impl()");
+  DoutEntering(dc::broker(mSMDebug), "Broker<"<< libcwd::type_info_of<Task>().demangled_name() << ">::abort_impl()");
   typename map_type::rat key2task_r(m_key2task);
   for (typename unordered_map_type::const_iterator it = key2task_r->begin(); it != key2task_r->end(); ++it)
   {

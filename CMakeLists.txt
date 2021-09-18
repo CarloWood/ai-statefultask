@@ -51,9 +51,9 @@ target_include_directories(statefultask_ObjLib
     "${CWDS_INTERFACE_INCLUDE_DIRECTORIES}" # For sys.h and debug.h.
 )
 
-# Require support for C++17.
+# Require support for C++20.
 target_compile_features(statefultask_ObjLib
-  PUBLIC cxx_std_17
+  PUBLIC cxx_std_20
 )
 
 # Set link dependencies.

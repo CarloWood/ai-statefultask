@@ -24,7 +24,7 @@ class BrokerKey
 
   virtual uint64_t hash() const = 0;
   virtual void initialize(boost::intrusive_ptr<AIStatefulTask> task) const = 0;
-  virtual unique_ptr copy() const = 0;
+  virtual unique_ptr canonical_copy() const = 0;
   virtual void print_on(std::ostream& os) const = 0;
 
  public:
