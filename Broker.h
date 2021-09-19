@@ -157,7 +157,7 @@ boost::intrusive_ptr<Task const> Broker<Task, /*T,*/ Args...>::run(statefultask:
         // Create the task and put the boost::intrusive_ptr to it into the unordered_map together with a CallbackQueue object
         // already filled with callback, under key. Store the pointer to the new pair into entry.
         boost::intrusive_ptr<Task> task = std::apply([](auto&&... args){ return statefultask::create<Task>(std::forward<decltype(args)>(args)...); }, m_debugflag_task_args);
-        entry = &key2task_w->try_emplace(key.canonical_copy(), std::move(task), std::move(callback)).first->second;
+        entry = &key2task_w->try_emplace(key.copy(), std::move(task), std::move(callback)).first->second;
       }
       else
       {
