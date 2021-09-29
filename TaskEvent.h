@@ -36,11 +36,11 @@ class TaskEvent
   using container_type = std::deque<data_type, utils::DequeAllocator<data_type>>;
   using registered_tasks_t = aithreadsafe::Wrapper<container_type, aithreadsafe::policy::Primitive<std::mutex>>;
 
-  utils::NodeMemoryResource m_nmr{AIMemoryPagePool::instance()};
-  registered_tasks_t m_registered_tasks{utils::DequeAllocator<data_type>(m_nmr)};
+  mutable utils::NodeMemoryResource m_nmr{AIMemoryPagePool::instance()};
+  mutable registered_tasks_t m_registered_tasks{utils::DequeAllocator<data_type>(m_nmr)};
   std::atomic_bool m_triggered = false;
 
-  void trigger(container_type const& waiting_tasks)
+  void trigger(container_type const& waiting_tasks) const
   {
     for (auto& p : waiting_tasks)
       p.first->signal(p.second);
@@ -49,7 +49,10 @@ class TaskEvent
  public:
   // Call task->signal(condition) if trigger() was already called, otherwise
   // keep task alive and call signal when trigger is called.
-  void register_task(AIStatefulTask* task, AIStatefulTask::condition_type condition)
+  // Not really "const" because it alters m_registered_tasks and m_nmr, but this way is
+  // more convenient: now we can call m_other_task->some_event.register_task(this, my_condition)
+  // from a task where m_other_task is pointer to (otherwise) const.
+  void register_task(AIStatefulTask* task, AIStatefulTask::condition_type condition) const
   {
     using std::memory_order;
     if (m_triggered.load(memory_order::relaxed))
