@@ -70,7 +70,7 @@ using AIWaitConditionFunc = std::function<bool()>;
  * <table class="implement_table">
  * <tr><td class="item">@link example_task direct_base_type @endlink<td>The immediate base class of the derived class.
  * <tr><td class="item">@link example_task foo_state_type @endlink<td>An <code>enum</code> with the (additional) states of the task, where the first state must have the value <code>direct_base_type::state_end</code>.
- * <tr><td class="item">@link example_task state_end @endlink<td>A <code>static state_type constexpr</code> with a value one larger than its largest state.
+ * <tr><td class="item">@link example_task state_end @endlink<td>A <code>static constexpr state_type</code> with a value one larger than its largest state.
  * <tr><td class="item">@link Example::state_str_impl state_str_impl @endlink<td>A member function that returns a <code>char const*</code> to a human readable string for each of its states (for debug purposes).
  * <tr><td class="item">@link Example::multiplex_impl multiplex_impl @endlink<td>The core function with a <code>switch</code> on the current state to be run.
  * </table>
@@ -119,7 +119,7 @@ class AIStatefulTask : public AIRefCount
 
  public:
   /// The next state value to use for derived classes.
-  static state_type constexpr state_end = bs_killed + 1;
+  static constexpr state_type state_end = bs_killed + 1;
   /// What to do when a child task is aborted.
   enum on_abort_st {
     abort_parent,             ///< Call abort() on the parent.

@@ -150,7 +150,7 @@
  *
  *  public:
  *   // Each derived class must define a state_end that is one beyond its last state.
- *   static state_type constexpr state_end = Example_done + 1;
+ *   static constexpr state_type state_end = Example_done + 1;
  *
  *  public:
  *   // The derived class must have a default constructor.

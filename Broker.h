@@ -29,7 +29,7 @@ class Broker : public AIStatefulTask
   };
 
  public:
-  static state_type constexpr state_end = Broker_do_work + 1;      // The last state plus one.
+  static constexpr state_type state_end = Broker_do_work + 1;      // The last state plus one.
 
  private:
   struct CallbackNode : utils::threading::MpscNode

@@ -64,7 +64,7 @@ class Task : public AIStatefulTask
   void multiplex_impl(state_type run_state) override;
 
  public:
-  static state_type constexpr state_end = Task_done + 1;      // One beyond the largest state.
+  static constexpr state_type state_end = Task_done + 1;      // One beyond the largest state.
   Task() : AIStatefulTask(DEBUG_ONLY(true)),
       m_calculate_factorial(this, 1, &factorial) { }          // Prepare to run `factorial' in its own thread.
 
@@ -124,7 +124,7 @@ class AIPackagedTask;   // not defined.
  * class MyTask : public AIStatefulTask
  * {
  *   AIPackagedTask<bool(int, double)> m_retrieve;              // Space holder for all variables involved.
- *   static condition_type constexpr retrieve_condition = 1;    // The condition bit to be used.
+ *   static constexpr condition_type retrieve_condition = 1;    // The condition bit to be used.
  *  public:
  *   MyTask(AIQueueHandle queue_handle) : m_retrieve(this, retrieve_condition, &foo, &Foo::retrieve, queue_handle) { }
  * ...

@@ -82,7 +82,7 @@ class AITimer : public AIStatefulTask
 
  public:
   /// One beyond the largest state of this task.
-  static state_type constexpr state_end = AITimer_expired + 1;
+  static constexpr state_type state_end = AITimer_expired + 1;
 
  private:
   std::atomic_bool mHasExpired;                 ///< Set to true after the timer expired.
