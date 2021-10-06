@@ -21,7 +21,7 @@ namespace statefultask {
 // Other tasks have a state that does:
 //
 //  case WaitForFoo:
-//     task_a->register_task(this, foo_available_conditon);
+//     task_a->m_foo_available.register_task(this, foo_available_conditon);
 //     set_state(FooAvailable);
 //     wait(foo_available_conditon);
 //     break;
