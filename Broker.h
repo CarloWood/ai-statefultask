@@ -132,7 +132,7 @@ boost::intrusive_ptr<Task const> Broker<Task, /*T,*/ Args...>::run(statefultask:
 {
   DoutEntering(dc::broker, "Broker<" << libcwd::type_info_of<Task>().demangled_name() << ", void>::run(" << key << ", callback)");
   // This function returns a pointer to an immutable Task, because the returned
-  // task is shared between threads and readonly. Note reading it is only allowed
+  // task is shared between threads and readonly. Note that reading it is only allowed
   // after the task finished running because otherwise writing may occur at the same
   // time, which is UB.
   // This must be a const* because we set it while only having a read lock on the unordered_map.
