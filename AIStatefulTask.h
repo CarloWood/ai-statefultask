@@ -720,13 +720,17 @@ class AIStatefulTask : public AIRefCount
 
   state_type begin_loop();                            // Called from multiplex() at the start of a loop.
   void callback();                                    // Called when the task finished.
-  bool sleep(clock_type::time_point current_time)     // Count frames if necessary and return true when the task is still sleeping.
+  // Count frames if necessary and return true when the task is still sleeping.
+  // Sleeping in milliseconds (as opposed to counting frames) is assumed to only be done in order
+  // to give other tasks cpu. Therefore, if 'only_task' is set and this sleep is not counting
+  // frames, then stop sleeping.
+  bool sleep(clock_type::time_point current_time, bool only_task)
   {
     if (mSleep == 0)
       return false;
     else if (mSleep < 0)
       ++mSleep;
-    else if (mSleep <= current_time.time_since_epoch().count())
+    else if (mSleep <= current_time.time_since_epoch().count() || only_task)
       mSleep = 0;
     return mSleep != 0;
   }

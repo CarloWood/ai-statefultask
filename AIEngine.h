@@ -43,6 +43,7 @@
 #include "threadsafe/aithreadsafe.h"
 #include "threadsafe/ConditionVariable.h"
 #include "AIStatefulTask.h"
+#include "utils/FuzzyBool.h"
 #include "debug.h"
 #include <list>
 #include <chrono>
@@ -181,8 +182,13 @@ class AIEngine
    * Run all tasks that were @link add added@endlink to the engine until
    * they are all finished and/or idle, or until mMaxDuration milliseconds
    * have passed if a maximum duration was set.
+   *
+   * Returns true if there are still tasks in the engine that require CPU
+   * and mainloop() must be called again (the next frame). This is the case
+   * when one or more tasks called yield or when the call exceeded max_duration
+   * and there is still one or more task left that wasn't executed.
    */
-  void mainloop();
+  utils::FuzzyBool mainloop();
 
   /// Wake up a sleeping engine.
   void wake_up();
