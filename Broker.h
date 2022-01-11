@@ -7,6 +7,9 @@
 #include "utils/threading/Gate.h"
 #include <type_traits>
 #include <tuple>
+#ifdef CWDEBUG
+#include "utils/has_print_on.h"
+#endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
@@ -15,6 +18,9 @@ NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
 namespace task {
+#ifdef CWDEBUG
+using utils::has_print_on::operator<<;
+#endif
 
 template<TaskType Task, typename... Args>
 class Broker : public AIStatefulTask

@@ -27,6 +27,7 @@ class BrokerKey
   virtual unique_ptr copy() const = 0;
 #ifdef CWDEBUG
   virtual void print_on(std::ostream& os) const = 0;
+  friend std::ostream& operator<<(std::ostream& os, BrokerKey const& data) { data.print_on(os); return os; }
 #endif
 
  public:
