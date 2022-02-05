@@ -52,6 +52,7 @@
 #include <list>
 #include <chrono>
 #include <functional>
+#include <tuple>
 
 class AIEngine;
 class AIStatefulTaskMutex;
@@ -793,7 +794,7 @@ namespace statefultask {
 /// task->run(...);
 /// @endcode
 ///
-template<typename TaskType, typename... ARGS, typename = typename std::enable_if<std::is_base_of<AIStatefulTask, TaskType>::value>::type>
+template<task::TaskType TaskType, typename... ARGS>
 boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 {
 #ifdef CWDEBUG
@@ -809,6 +810,29 @@ boost::intrusive_ptr<TaskType> create(ARGS&&... args)
 #endif
   TaskType* task = new TaskType(std::forward<ARGS>(args)...);
   AllocTag2(task, "Created with statefultask::create");
+#ifdef CWDEBUG
+  Dout(dc::statefultask|continued_cf, "Returning task pointer " << (void*)task);
+  if ((void*)task != (void*)static_cast<AIStatefulTask*>(task))
+    Dout(dc::finish, " [" << static_cast<AIStatefulTask*>(task) << "].");
+  else
+    Dout(dc::finish, ".");
+#endif
+  return task;
+}
+
+template<task::TaskType TaskType, typename... ARGS>
+boost::intrusive_ptr<TaskType> create_from_tuple(std::tuple<ARGS...>&& args)
+{
+#ifdef CWDEBUG
+#if CWDEBUG_LOCATION
+  DoutEntering(dc::statefultask, "statefultask::create_from_tuple<" << libcwd::type_info_of<TaskType>().demangled_name() <<
+      ((LibcwDoutStream << ... << (std::string(", ") + libcwd::type_info_of<ARGS>().demangled_name())), ">(") << args << ')');
+#else
+  DoutEntering(dc::statefultask, "statefultask::create_from_tuple<>(" << join_from_tuple(", ", std::move(args)) << ')')
+#endif
+#endif
+  TaskType* task = new TaskType(std::make_from_tuple<TaskType>(std::move(args)));
+  AllocTag2(task, "Created with statefultask::create_from_tuple");
 #ifdef CWDEBUG
   Dout(dc::statefultask|continued_cf, "Returning task pointer " << (void*)task);
   if ((void*)task != (void*)static_cast<AIStatefulTask*>(task))
