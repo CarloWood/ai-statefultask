@@ -134,7 +134,7 @@ class Broker : public AIStatefulTask
 };
 
 template<TaskType Task, typename... Args>
-boost::intrusive_ptr<Task const> Broker<Task, /*T,*/ Args...>::run(statefultask::BrokerKey const& key, std::function<void(bool)>&& callback)
+boost::intrusive_ptr<Task const> Broker<Task, Args...>::run(statefultask::BrokerKey const& key, std::function<void(bool)>&& callback)
 {
   DoutEntering(dc::broker, "Broker<" << libcwd::type_info_of<Task>().demangled_name() << ", void>::run(" << key << ", callback)");
   // This function returns a pointer to an immutable Task, because the returned
@@ -209,7 +209,7 @@ boost::intrusive_ptr<Task const> Broker<Task, /*T,*/ Args...>::run(statefultask:
 }
 
 template<TaskType Task, typename... Args>
-char const* Broker<Task, /*T,*/ Args...>::state_str_impl(state_type run_state) const
+char const* Broker<Task, Args...>::state_str_impl(state_type run_state) const
 {
   switch (run_state)
   {
@@ -221,7 +221,7 @@ char const* Broker<Task, /*T,*/ Args...>::state_str_impl(state_type run_state) c
 }
 
 template<TaskType Task, typename... Args>
-void Broker<Task, /*T,*/ Args...>::multiplex_impl(state_type run_state)
+void Broker<Task, Args...>::multiplex_impl(state_type run_state)
 {
   switch (run_state)
   {
@@ -280,7 +280,7 @@ void Broker<Task, /*T,*/ Args...>::multiplex_impl(state_type run_state)
 }
 
 template<TaskType Task, typename... Args>
-void Broker<Task, /*T,*/ Args...>::abort_impl()
+void Broker<Task, Args...>::abort_impl()
 {
   DoutEntering(dc::broker(mSMDebug), "Broker<"<< libcwd::type_info_of<Task>().demangled_name() << ">::abort_impl()");
   typename map_type::rat key2task_r(m_key2task);
