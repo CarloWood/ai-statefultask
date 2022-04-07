@@ -96,7 +96,10 @@ class Broker : public AIStatefulTask
   Broker(CWDEBUG_ONLY(bool debug,) Args... task_args) :
     AIStatefulTask(CWDEBUG_ONLY(debug)), m_is_immediate(false), m_debugflag_task_args(CWDEBUG_ONLY(debug,) task_args...)
   {
-    DoutEntering(dc::broker(mSMDebug), "Broker(" << join(", ", task_args...) << ") [" << (void*)this << "]");
+    DoutEntering(dc::broker(mSMDebug), "Broker<" <<
+        libcwd::type_info_of<Task>().demangled_name() <<
+        ((LibcwDoutStream << ... << (std::string(", ") + libcwd::type_info_of<Args>().demangled_name())), ">::Broker(") <<
+        join(", ", task_args...) << ") [" << (void*)this << "]");
   }
 
   void run(AIStatefulTask::Handler handler = AIStatefulTask::Handler::immediate)

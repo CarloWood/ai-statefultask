@@ -95,7 +95,7 @@ class AITimer : public AIStatefulTask
 #ifdef CWDEBUG
     AIStatefulTask(debug),
 #endif
-    mHasExpired(false), mTimer([this](){ expired(); }) { DoutEntering(dc::statefultask(mSMDebug), "AITimer() [" << (void*)this << "]"); }
+    mHasExpired(false), mTimer([this](){ expired(); }) { DoutEntering(dc::statefultask(mSMDebug), "AITimer::AITimer() [" << (void*)this << "]"); }
 
   /**
    * Set the interval after which the timer should expire.
@@ -115,7 +115,7 @@ class AITimer : public AIStatefulTask
 
  protected:
   /// Call finish() (or abort()), not delete.
-  ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "~AITimer() [" << (void*)this << "]"); /* mFrameTimer.cancel(); */ }
+  ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "AITimer::~AITimer() [" << (void*)this << "]"); /* mFrameTimer.cancel(); */ }
 
   /// Implemenation of state_str for run states.
   char const* state_str_impl(state_type run_state) const override;
