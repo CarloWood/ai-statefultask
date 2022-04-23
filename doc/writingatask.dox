@@ -6,8 +6,8 @@ A typical Task will look like,
 @code
 #include "statefultask/AIStatefulTask.h"
 
-class MyTask : public AIStatefulTask
-{
+class MyTask final : public AIStatefulTask      // Use final unless other tasks are allowed
+{                                               // to derive from this task.
  protected:
   using direct_base_type = AIStatefulTask;      // The immediate base class of this task.
 
@@ -46,6 +46,9 @@ class MyTask : public AIStatefulTask
 
 char const* MyTask::state_str_impl(state_type run_state)
 {
+  // Use the following two lines when this class is not final.
+  // If this fails then a derived class forgot to add an AI_CASE_RETURN for this state.
+  ASSERT(run_state < state_end);
   switch (run_state)
   {
     // A complete listing of my_task_state_type.
@@ -53,8 +56,8 @@ char const* MyTask::state_str_impl(state_type run_state)
     ...a list of all states...
     AI_CASE_RETURN(MyTask_done);
   }
-  ASSERT(false);
-  return "UNKNOWN STATE";
+  AI_NEVER_REACHED      // Use this when this task is derived from AIStatefulTask.
+  return direct_base_type::state_str_impl(run_state);   // Use this instead when it is derived from a task that it extents.
 }
 
 void MyTask::multiplex_impl(state_type run_state)
