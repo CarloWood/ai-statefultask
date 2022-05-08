@@ -139,6 +139,7 @@ class ResourcePool
 template<ConceptResourceFactory RF>
 size_t ResourcePool<RF>::acquire(resource_type* resources, size_t const size)
 {
+  DoutEntering(dc::notice|continued_cf, "ResourcePool<" << type_info_of<RF>().demangled_name() << ">::acquire(resources (" << resources << "), " << size << ") = ");
   // The number of already allocated, free resources.
   size_t const in_pool = m_free_list.size();
   // The index into resources[] that must be filled next.
@@ -149,7 +150,10 @@ size_t ResourcePool<RF>::acquire(resource_type* resources, size_t const size)
     auto resource = m_free_list.begin();
     // Get size resources from the free list, or however many are in there.
     while (index < std::min(in_pool, size))
+    {
+      Dout(dc::notice, "resources[" << index << "] = " << *resource << " (from m_free_list)");
       resources[index++] = *resource++;
+    }
     // Erase the used resources from the free list.
     m_free_list.erase(m_free_list.begin(), resource);
   }
@@ -163,24 +167,36 @@ size_t ResourcePool<RF>::acquire(resource_type* resources, size_t const size)
     if (to_allocate > 0)
     {
       m_factory.do_allocate(&resources[index], to_allocate);
+#ifdef CWDEBUG
+      for (int j = 0; j < to_allocate; ++j)
+        Dout(dc::notice, "resources[" << (index + j) << "] = " << resources[index + j] << " (from m_factory)");
+#endif
       index += to_allocate;
       m_allocations += to_allocate;
     }
   }
   // Return the number of actually acquired resources.
+  Dout(dc::finish, index);
   return index;
 }
 
 template<ConceptResourceFactory RF>
 void ResourcePool<RF>::release(resource_type const* resources, size_t size)
 {
+  DoutEntering(dc::notice, "ResourcePool<" << type_info_of<RF>().demangled_name() << ">::release(resources (" << resources << "), " << size << ")");
   // In case of future dynamic adjustments of m_max_allocations.
   if (AI_UNLIKELY(m_allocations > m_max_allocations))
   {
     // Free some or all of the resources immediately.
     size_t to_free = std::min(size, m_allocations - m_max_allocations);
     if (to_free > 0)    // Might be zero when size is zero for some reason. No need to assert in that case.
+    {
+#ifdef CWDEBUG
+      for (int j = 0; j < to_free; ++j)
+        Dout(dc::notice, resources[j] << " is returned to m_factory.");
+#endif
       m_factory.do_free(resources, to_free);
+    }
     m_allocations -= to_free;
     size -= to_free;
     resources += to_free;
@@ -188,7 +204,10 @@ void ResourcePool<RF>::release(resource_type const* resources, size_t size)
   // Put `size` resources on the free list.
   size_t index = 0;
   while (index < size)
+  {
+    Dout(dc::notice, resources[index] << " put back on m_free_list.");
     m_free_list.push_back(resources[index++]);
+  }
   // Notify waiting tasks.
   std::vector<EventRequest> must_be_notified;
   {
