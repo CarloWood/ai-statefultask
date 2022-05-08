@@ -21,7 +21,8 @@ class MyTask final : public AIStatefulTask      // Use final unless other tasks 
  public:
   static state_type constexpr state_end = MyTask_done + 1;	// The last state plus one.
 
-  // Construct a MyTask object.
+  // In debug mode, passing `true` to the constructor of a task causes
+  // debug output to dc::statefultask regarding running the state machine.
   MyTask(CWDEBUG_ONLY(bool debug = false)) : AIStatefulTask(CWDEBUG_ONLY(debug))
   {
     DoutEntering(dc::statefultask(mSMDebug), "MyTask() [" << (void*)this << "]");
@@ -37,11 +38,6 @@ class MyTask final : public AIStatefulTask      // Use final unless other tasks 
   void initialize_impl() override;	// Default starts with first state.
   void abort_impl() override;		// Default does nothing.
   void finish_impl() override;		// Default does nothing.
-
- public:
-  // In debug mode, passing `true` to the constructor of a task causes
-  // debug output to dc::statefultask regarding running the state machine.
-  MyTask(CWDEBUG_ONLY(bool debug = false)) : AIStatefulTask(CWDEBUG_ONLY(debug)) { }
 };
 
 char const* MyTask::state_str_impl(state_type run_state)
