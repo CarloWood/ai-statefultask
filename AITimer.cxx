@@ -45,8 +45,7 @@ char const* AITimer::state_str_impl(state_type run_state) const
     AI_CASE_RETURN(AITimer_start);
     AI_CASE_RETURN(AITimer_expired);
   }
-  ASSERT(false);
-  return "UNKNOWN STATE";
+  AI_NEVER_REACHED;
 }
 
 void AITimer::expired()

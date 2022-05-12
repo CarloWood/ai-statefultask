@@ -219,8 +219,7 @@ char const* Broker<Task, Args...>::state_str_impl(state_type run_state) const
     AI_CASE_RETURN(Broker_start);
     AI_CASE_RETURN(Broker_do_work);
   }
-  ASSERT(false);
-  return "UNKNOWN STATE";
+  AI_NEVER_REACHED;
 }
 
 template<TaskType Task, typename... Args>
