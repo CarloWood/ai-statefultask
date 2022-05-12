@@ -287,7 +287,7 @@ void AIPackagedTask<R(Args...)>::operator()(Args... args)
 }
 
 // Called by parent task to dispatch the job to its own thread.
-// After finishing the job, the parent will be signalled with
+// After finishing the job, the parent will be signaled with
 // m_condition set during construction.
 //
 // Returns true upon a successful queue; false when the queue is full

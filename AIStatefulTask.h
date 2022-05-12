@@ -216,7 +216,7 @@ class AIStatefulTask : public AIRefCount
   };
 
   struct sub_state_st {
-    condition_type skip_wait;         ///< Each bit represents having been signalled ahead of the call to wait(condition_bit) for that condition-bit:
+    condition_type skip_wait;         ///< Each bit represents having been signaled ahead of the call to wait(condition_bit) for that condition-bit:
                                       ///  signal(condition_bit) was called since the last idle -> non-idle transition.
     condition_type idle;              ///< The idle state at the end of the last call to wait(conditions) and/or signal(condition_bit).
     state_type run_state;
@@ -254,7 +254,7 @@ class AIStatefulTask : public AIRefCount
   // Callback facilities.
   // From within an other stateful task:
   boost::intrusive_ptr<AIStatefulTask> mParent;       // The parent object that started this task, or nullptr if there isn't any.
-  condition_type mParentCondition;                    // The condition (bit) that the parent should be signalled with upon a successful finish.
+  condition_type mParentCondition;                    // The condition (bit) that the parent should be signaled with upon a successful finish.
   on_abort_st mOnAbort;                               // What to do with the parent (if any) when aborted.
   // From outside a stateful task:
   std::function<void (bool)> mCallback;               // Pointer to signal/connection, or nullptr when not connected.
@@ -344,11 +344,11 @@ class AIStatefulTask : public AIRefCount
    * (Re)run a task with default handler @a default_handler, requesting
    * to signal the parent on condition @a condition when successfully finished.
    *
-   * Upon an abort the parent can either still be signalled, also aborted or be left in limbo (do nothing).
+   * Upon an abort the parent can either still be signaled, also aborted or be left in limbo (do nothing).
    *
    * @param default_handler The way that this task should be handled by default.
    * @param parent The parent task.
-   * @param condition The condition of the parent that will be signalled.
+   * @param condition The condition of the parent that will be signaled.
    * @param on_abort What to do with the parent when this task is aborted.
    */
   void run(Handler default_handler, AIStatefulTask* parent, condition_type condition, on_abort_st on_abort = abort_parent);
@@ -417,7 +417,7 @@ class AIStatefulTask : public AIRefCount
   /**
    * Wait for @a condition.
    *
-   * Go idle if non of the bits of @a conditions were signalled <em>twice</em> or more since the last call to <code>wait(</code>that_bit<code>)</code>.
+   * Go idle if non of the bits of @a conditions were signaled <em>twice</em> or more since the last call to <code>wait(</code>that_bit<code>)</code>.
    * The task will continue whenever <code>signal(condition)</code> is called where <code>conditions &amp; condition != 0</code>.
    *
    * @param conditions A bit mask of conditions to wait for.
@@ -739,7 +739,7 @@ class AIStatefulTask : public AIRefCount
   void add(duration_type delta) { mDuration += delta; }
 
   void add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t const failure_count = 0);    // Attempt to add this task to a theadpool queue.
-  void wait_AND(condition_type required);                                                       // Stop running until all `required` bits have been signalled (plus at least one of any other wait() condition).
+  void wait_AND(condition_type required);                                                       // Stop running until all `required` bits have been signaled (plus at least one of any other wait() condition).
 
   friend class AIEngine;      // Calls multiplex(), force_killed() and add().
 };
