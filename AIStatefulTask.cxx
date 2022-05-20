@@ -1656,8 +1656,8 @@ void AIStatefulTask::finish()
 #endif
   {
     sub_state_type::wat sub_state_w(mSubState);
-    // finish() should not be called when idle.
-    ASSERT(!sub_state_w->idle);
+    // finish() should not be called when idle (except when the idle is caused by slow_down_condition).
+    ASSERT(!(sub_state_w->idle & ~slow_down_condition));
     // But reset idle to stop subsequent calls to signal() from calling multiplex().
     sub_state_w->idle = 0;
     // Mark that we are finished.
