@@ -97,6 +97,14 @@ class AIStatefulTask : public AIRefCount
   static constexpr condition_type AND_conditions_mask = 0xf0000000;
   static constexpr condition_type OR_conditions_mask = 0x0fffffff;
 
+  struct Actuation
+  {
+    boost::intrusive_ptr<AIStatefulTask> task;
+    condition_type condition;
+
+    void signal() const { task->signal(condition); }
+  };
+
  private:
   /// The type of event that causes <code>multiplex(event_type event)</code> to be called.
   enum event_type {
