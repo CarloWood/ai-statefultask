@@ -21,6 +21,12 @@ class RunningTasksTracker
   using index_type = aithreadsafe::VoidPointerStorage::index_type;
   static constexpr index_type s_aborted = std::numeric_limits<index_type>::max();
 
+ private:
+  aithreadsafe::PointerStorage<AIStatefulTask> m_tasks;
+
+ public:
+  RunningTasksTracker(uint32_t initial_size) : m_tasks(initial_size) { }
+
   index_type add(AIStatefulTask* task)
   {
     if (AI_UNLIKELY(m_aborted))
@@ -39,9 +45,6 @@ class RunningTasksTracker
   }
 
   void abort_all();
-
- private:
-  aithreadsafe::PointerStorage<AIStatefulTask> m_tasks;
   bool m_aborted{false};
 };
 
