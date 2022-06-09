@@ -117,7 +117,7 @@ class AITimer : public AIStatefulTask
   /// Call finish() (or abort()), not delete.
   ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "AITimer::~AITimer() [" << (void*)this << "]"); /* mFrameTimer.cancel(); */ }
 
-  /// Implemenation of state_str for run states.
+  /// Implementation of state_str for run states.
   char const* state_str_impl(state_type run_state) const override;
 
   /// Handle mRunState.

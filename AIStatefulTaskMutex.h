@@ -25,7 +25,8 @@
  * along with ai-statefultask.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#ifndef AISTATEFULTASKMUTEX_H
+#define AISTATEFULTASKMUTEX_H
 
 #include "threadsafe/aithreadsafe.h"
 #include "utils/NodeMemoryResource.h"
@@ -222,27 +223,7 @@ class AIStatefulTaskMutex
   /// @returns A handle pointer upon success and nullptr upon failure to obtain ownership.
   ///
   /// The returned handle must be passed to is_self_locked.
-  Node const* lock(AIStatefulTask* task, condition_type condition)
-  {
-    DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << condition << ") [mutex:" << this << "]");
-
-    Node* new_node = new (s_node_memory_resource.allocate(sizeof(Node))) Node(task, condition);
-    Dout(dc::notice, "Create new node at " << new_node << " [" << task << "]");
-
-    utils::FuzzyBool have_lock = m_queue.push(new_node);
-
-    // If the next return from pop() will return new_node, then have_lock MUST be True.
-    // If the next return from pop() will return another node then have_lock MUST be WasFalse.
-    if (have_lock.is_true())
-    {
-      Dout(dc::notice, "Mutex acquired [" << task << "]");
-      return new_node;
-    }
-    Dout(dc::notice, "Mutex already locked [" << task << "]");
-
-    // Obtaining the lock failed. Halt the task
-    return nullptr;     // The caller must call task->wait(condition).
-  }
+  inline Node const* lock(AIStatefulTask* task, condition_type condition);
 
   /// Undo one (succcessful) call to lock.
   void unlock();
@@ -328,3 +309,33 @@ class AdoptLock
 };
 
 } // namespace statefultask
+
+#include "AIStatefulTask.h"
+#endif // AISTATEFULTASKMUTEX_H
+
+#ifndef AISTATEFULTASKMUTEX_H_definitions
+#define AISTATEFULTASKMUTEX_H_definitions
+
+AIStatefulTaskMutex::Node const* AIStatefulTaskMutex::lock(AIStatefulTask* task, condition_type condition)
+{
+  DoutEntering(dc::notice, "AIStatefulTaskMutex::lock(" << task << ", " << task->print_conditions(condition) << ") [mutex:" << this << "]");
+
+  Node* new_node = new (s_node_memory_resource.allocate(sizeof(Node))) Node(task, condition);
+  Dout(dc::notice, "Create new node at " << new_node << " [" << task << "]");
+
+  utils::FuzzyBool have_lock = m_queue.push(new_node);
+
+  // If the next return from pop() will return new_node, then have_lock MUST be True.
+  // If the next return from pop() will return another node then have_lock MUST be WasFalse.
+  if (have_lock.is_true())
+  {
+    Dout(dc::notice, "Mutex acquired [" << task << "]");
+    return new_node;
+  }
+  Dout(dc::notice, "Mutex already locked [" << task << "]");
+
+  // Obtaining the lock failed. Halt the task
+  return nullptr;     // The caller must call task->wait(condition).
+}
+
+#endif // AISTATEFULTASKMUTEX_H_definitions

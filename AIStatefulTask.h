@@ -48,6 +48,7 @@
 #include "utils/AIRefCount.h"
 #include "utils/macros.h"
 #include "utils/FuzzyBool.h"
+#include "utils/is_power_of_two.h"
 #include "debug.h"
 #include <list>
 #include <chrono>
@@ -212,6 +213,29 @@ class AIStatefulTask : public AIRefCount
 
     friend std::ostream& operator<<(std::ostream& os, Handler const& handler);
   };
+
+  struct Conditions
+  {
+    AIStatefulTask const* m_task;
+    condition_type m_conditions;
+    Conditions(AIStatefulTask const* task, condition_type conditions) : m_task(task), m_conditions(conditions) { }
+
+    void print_on(std::ostream& os) const;
+
+    friend std::ostream& operator<<(std::ostream& os, Conditions conditions)
+    {
+      os << std::hex << conditions.m_conditions << std::dec << " (";
+      if (AI_LIKELY(utils::is_power_of_two(conditions.m_conditions)))
+        return os << conditions.m_task->condition_str_impl(conditions.m_conditions) << ')';
+      conditions.print_on(os);
+      return os << ')';
+    }
+  };
+
+  Conditions print_conditions(condition_type conditions)
+  {
+    return { this, conditions };
+  }
 
  protected:
 #ifndef DOXYGEN
@@ -703,6 +727,8 @@ class AIStatefulTask : public AIRefCount
    *
    * See @ref example_task for a description of the virtual functions.
    */
+  /// Called to stringify a condition type for debugging output.
+  virtual char const* condition_str_impl(condition_type condition) const;
   /// Called to stringify a run state for debugging output. Must be overridden.
   virtual char const* state_str_impl(state_type run_state) const;
   /// Called for base state @ref bs_initialize.
@@ -839,10 +865,14 @@ boost::intrusive_ptr<TaskType> create_from_tuple(std::tuple<ARGS...>&& args)
 } // namespace statefultask
 
 #include "AIStatefulTaskMutex.h"
+#endif // AISTATEFULTASK_H
+
+#ifndef AISTATEFULTASK_H_definitions
+#define AISTATEFULTASK_H_definitions
 
 utils::FuzzyBool AIStatefulTask::is_self_locked(AIStatefulTaskMutex const& stateful_task_mutex, AIStatefulTaskMutexNode const* handle)
 {
   return stateful_task_mutex.is_self_locked(handle);
 }
 
-#endif // AISTATEFULTASK_H
+#endif // AISTATEFULTASK_H_definitions

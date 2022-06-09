@@ -190,6 +190,33 @@ class Example : public AIStatefulTask
 {
  protected:
   /**
+   * Stringify a condition, for debugging output.
+   *
+   * @param condition A user defined condition.
+   * @returns A string literal with the human readable name of the condition.
+   *
+   * This is a virtual function of the base class AIStatefulTask and
+   * should be overridden by every derived class.
+   *
+   * Example implementation:
+   *
+   * @code
+   * char const* Example::condition_str_impl(condition_type condition) const
+   * {
+   *   switch(condition)
+   *   {
+   *     // A complete listing of all condition_type bits defined by Example.
+   *     AI_CASE_RETURN(foo_condition);
+   *     // ...
+   *     AI_CASE_RETURN(bar_condition);
+   *   }
+   *   return direct_base_type::condition_str_impl(condition);
+   * }
+   * @endcode
+   */
+  char const* condition_str_impl(condition_type run_state) const override;
+
+  /**
    * Stringify a run state, for debugging output.
    *
    * @param run_state A user defined state.
@@ -1070,7 +1097,7 @@ void AIStatefulTask::run(Handler default_handler, AIStatefulTask* parent, condit
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::run(" <<
       "default_handler = " << default_handler <<
-      ", " << (void*)parent << ", condition = " << std::hex << condition << std::dec <<
+      ", " << (void*)parent << ", condition = " << parent->print_conditions(condition) <<
       ", on_abort = " << ((on_abort == abort_parent) ? "abort_parent" : (on_abort == signal_parent) ? "signal_parent" : "do_nothing") <<
       ") [" << (void*)this << "]");
 
@@ -1190,6 +1217,15 @@ void AIStatefulTask::callback()
     // Not restarted by callback. Allow run() to be called later on.
     mParent = nullptr;
   }
+}
+
+char const* AIStatefulTask::condition_str_impl(condition_type condition) const
+{
+  if (condition == slow_down_condition)
+    return "slow_down_condition";
+  else if (condition == thread_pool_full_condition)
+    return "thread_pool_full_condition";
+  return "UNKNOWN CONDITION";
 }
 
 char const* AIStatefulTask::state_str_impl(state_type) const
@@ -1428,7 +1464,7 @@ void AIStatefulTask::set_state(state_type new_state)
 //
 void AIStatefulTask::wait(condition_type conditions)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << std::hex << conditions << std::dec << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait(" << print_conditions(conditions) << ") [" << (void*)this << "]");
   // The bits in AND_conditions_mask are reserved, don't use them.
   ASSERT(!(conditions & AND_conditions_mask));
 #if CW_DEBUG
@@ -1503,7 +1539,7 @@ void AIStatefulTask::wait(condition_type conditions)
 
 void AIStatefulTask::wait_AND(condition_type conditions)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait_AND(" << std::hex << conditions << std::dec << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::wait_AND(" << print_conditions(conditions) << ") [" << (void*)this << "]");
   // Only use the reserved bits in AND_conditions_mask here.
   ASSERT(conditions && (conditions & AND_conditions_mask) == conditions);
 #if CW_DEBUG
@@ -1564,7 +1600,7 @@ void AIStatefulTask::wait_until(std::function<bool()> const& wait_condition, con
 // Returns true if the stateful task was unblocked, false if it was already unblocked.
 bool AIStatefulTask::signal(condition_type condition)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signal(" << std::hex << condition << std::dec << ") [" << (void*)this << "]");
+  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::signal(" << print_conditions(condition) << ") [" << (void*)this << "]");
   // It is not allowed to call this function with an empty mask.
   ASSERT(condition);
   {
@@ -1585,7 +1621,7 @@ bool AIStatefulTask::signal(condition_type condition)
       if (mSMDebug)
       {
         if (prev_idle)
-          Dout(dc::statefultask, "Task is not waiting for " << std::hex << condition << std::dec <<
+          Dout(dc::statefultask, "Task is not waiting for " << print_conditions(condition) <<
               " (idle == " << std::hex << sub_state_w->idle << std::dec << "). Signal queued for possible subsequent wait.");
         else
           Dout(dc::statefultask, "Task is not waiting. Signal queued for possible subsequent wait.");
@@ -1750,6 +1786,19 @@ char const* AIStatefulTask::state_str(base_state_type state)
   }
   ASSERT(false);
   return "UNKNOWN BASE STATE";
+}
+
+void AIStatefulTask::Conditions::print_on(std::ostream& os) const
+{
+  char const* prefix = "";
+  for (condition_type bit{1}; bit; bit <<= 1)
+  {
+    if ((m_conditions & bit))
+    {
+      os << m_task->condition_str_impl(bit);
+      prefix = "|";
+    }
+  }
 }
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
