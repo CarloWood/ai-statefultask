@@ -25,6 +25,7 @@ class RunningTasksTracker
 
  private:
   aithreadsafe::PointerStorage<AIStatefulTask> m_tasks;
+  bool m_aborted{false};
 
  public:
   RunningTasksTracker(uint32_t initial_size) : m_tasks(initial_size) { }
@@ -47,7 +48,6 @@ class RunningTasksTracker
   }
 
   void abort_all();
-  bool m_aborted{false};
 };
 
 } // namespace statefultask

@@ -32,6 +32,7 @@ target_sources(statefultask_ObjLib
     "Broker.cxx"
     "DefaultMemoryPagePool.cxx"
     "RunningTasksTracker.cxx"
+    "TaskCounterGate.cxx"
 
     "AIDelayedFunction.h"
     "AIEngine.h"
@@ -44,6 +45,7 @@ target_sources(statefultask_ObjLib
     "BrokerKey.h"
     "DefaultMemoryPagePool.h"
     "RunningTasksTracker.h"
+    "TaskCounterGate.h"
 )
 
 # Required include search-paths.
