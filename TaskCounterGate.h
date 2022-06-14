@@ -4,6 +4,7 @@
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
+#include <exception>
 #include "debug.h"
 
 namespace statefultask {
@@ -12,22 +13,23 @@ namespace statefultask {
 // in initialization_impl and `decrement` in finish_impl) are finished.
 //
 // It is only safe when no thread calls `increment` anymore once `wait` has been called.
-// Therefore, thread that calls `wait` must make sure that no new tasks (that use this object)
-// will be created anymore.
+// Therefore, the thread that calls `wait` must make sure that no new tasks (that use this object)
+// will be created and/or run anymore.
 //
 // Tasks that need to be waited for at program termination should call `increment` as soon as
-// possible but no sooner than that it is guaranteed that they will also be run. Tasks that
-// do not restart (by calling run() from the callback) can call `increment` from their constructor
-// when their create and run are in the same scope. For example:
-//
-//   auto task = statefultask::create<task::Foo> foo(args);
-//   ...
-//   task->run(...);
+// possible but no sooner than that it is guaranteed that they will also be run and execute
+// initialize_impl. Tasks that do not restart (by calling run() from the callback) can call
+// `increment` from their constructor and `decrement` from their destructor.
 //
 // If a task might be restarted, or when they are created elsewhere and run later, should
 // call `increment` from their initialization_impl. Because every class has an initialization_impl
 // and finish_impl that are called anyway; it is best to always use those to call increment
-// and decrement.
+// and decrement whenever possible.
+//
+// Note that there is a race condition when calling increment() from initialization_impl when
+// a task is not run in immediate mode (ie, from the thread pool): such tasks might already be
+// created and added to the thread pool; making it possible for them to start and call initialization_impl
+// after `wait` has already been called.
 //
 class TaskCounterGate
 {
@@ -49,8 +51,13 @@ class TaskCounterGate
   // Call from initialize_impl().
   void increment()
   {
-    // Never call increment() after wait() was already called.
-    ASSERT(!is_waiting());
+    // If increment() is called after wait() was already called we can't run this task;
+    // it would be possible that the waiting thread already left wait().
+    if (is_waiting())
+    {
+      Dout(dc::warning, "TaskCounterGate::increment called after wait [" << this << "]");
+      throw std::exception();
+    }
     m_counter.fetch_add(1, std::memory_order::relaxed);
   }
 
