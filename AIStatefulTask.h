@@ -312,6 +312,8 @@ class AIStatefulTask : public AIRefCount
 #if defined(CWDEBUG) && !defined(DOXYGEN)
  protected:
   bool mSMDebug;                      // Print debug output only when true (SM = 'State Machine', the name of this class before it was renamed to StatefulTask).
+#endif
+#if CW_DEBUG && !defined(DOXYGEN)
  public:
   bool m_may_not_be_deleted;
 #endif
@@ -334,7 +336,10 @@ class AIStatefulTask : public AIRefCount
   mDebugSetStatePending(false), mDebugRefCalled(false),
 #endif
 #ifdef CWDEBUG
-  mSMDebug(debug), m_may_not_be_deleted(false),
+  mSMDebug(debug),
+#endif
+#if CW_DEBUG
+  m_may_not_be_deleted(false),
 #endif
   mDuration(duration_type::zero()) { }
 
