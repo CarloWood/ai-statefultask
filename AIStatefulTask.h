@@ -726,6 +726,11 @@ class AIStatefulTask : public AIRefCount
    */
   duration_type getDuration() const { return mDuration; }
 
+  /**
+   * Return human readable name of (most derived) task.
+   */
+  char const* task_name() const { return task_name_impl(); }
+
  protected:
   /**
    * @{
@@ -736,6 +741,9 @@ class AIStatefulTask : public AIRefCount
   virtual char const* condition_str_impl(condition_type condition) const;
   /// Called to stringify a run state for debugging output. Must be overridden.
   virtual char const* state_str_impl(state_type run_state) const;
+  /// This can be used to get a human readable name of the most-derived class.
+  /// It must be guaranteed to always return the same pointer value so it can be used with Tracy (for example).
+  virtual char const* task_name_impl() const = 0;
   /// Called for base state @ref bs_initialize.
   virtual void initialize_impl();
   /// Called for base state @ref bs_multiplex.

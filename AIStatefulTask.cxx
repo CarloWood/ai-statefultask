@@ -246,6 +246,24 @@ class Example : public AIStatefulTask
   char const* state_str_impl(state_type run_state) const override;
 
   /**
+   * Return a human readable name for the most derived class.
+   *
+   * @returns A string literal with the human readable name of the (most derived) task.
+   *
+   * This is a virtual function of the base class AIStatefulTask and
+   * must be overridden by every derived class.
+   *
+   * Example implementation:
+   *
+   * @code
+   * char const* Example::task_name_impl() const
+   * {
+   *   return "Example";
+   * }
+   */
+  char const* task_name_impl() const override;
+
+  /**
    * Initialization of a task.
    *
    * The default @c initialize_impl sets the state to the first state,

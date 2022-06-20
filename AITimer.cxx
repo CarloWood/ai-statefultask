@@ -48,6 +48,11 @@ char const* AITimer::state_str_impl(state_type run_state) const
   AI_NEVER_REACHED;
 }
 
+char const* AITimer::task_name_impl() const
+{
+  return "AITimer";
+}
+
 void AITimer::expired()
 {
   mHasExpired.store(true, std::memory_order_relaxed);

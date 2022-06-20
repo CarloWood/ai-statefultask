@@ -89,6 +89,7 @@ class Broker : public AIStatefulTask
  protected:
   ~Broker() override { DoutEntering(dc::broker(mSMDebug), "~Broker() [" << (void*)this << "]"); }
   char const* state_str_impl(state_type run_state) const override;
+  char const* task_name_impl() const override;
   void multiplex_impl(state_type run_state) override;
   void abort_impl() override;
 
@@ -220,6 +221,12 @@ char const* Broker<Task, Args...>::state_str_impl(state_type run_state) const
     AI_CASE_RETURN(Broker_do_work);
   }
   AI_NEVER_REACHED;
+}
+
+template<TaskType Task, typename... Args>
+char const* Broker<Task, Args...>::task_name_impl() const
+{
+  return "Broker<>";
 }
 
 template<TaskType Task, typename... Args>
