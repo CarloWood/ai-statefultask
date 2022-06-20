@@ -50,10 +50,15 @@
 #include "utils/FuzzyBool.h"
 #include "utils/is_power_of_two.h"
 #include "debug.h"
+#include <Tracy.hpp>
 #include <list>
 #include <chrono>
 #include <functional>
 #include <tuple>
+#ifdef TRACY_FIBERS
+#include <cstring>
+#include <cstdlib>
+#endif
 
 class AIEngine;
 class AIStatefulTaskMutex;
@@ -321,6 +326,12 @@ class AIStatefulTask : public AIRefCount
  private:
   duration_type mDuration;            // Total time spent running in the main thread.
 
+#ifdef TRACY_FIBERS
+  char const* m_tracy_fiber_name;     // Set by call to set_tracy_fiber_name. Normally equal to the return value of task_name_impl()
+                                      // called directly after creation (i.e. create or create_from_tuple).
+  static thread_local char const* tl_tracy_fiber_name;  // Set to m_tracy_fiber_name while inside a TracyFiberEnter .. TracyFiberLeave region.
+#endif
+
  public:
   /**
    * Constructor of base class AIStatefulTask.
@@ -341,7 +352,25 @@ class AIStatefulTask : public AIRefCount
 #if CW_DEBUG
   m_may_not_be_deleted(false),
 #endif
-  mDuration(duration_type::zero()) { }
+  mDuration(duration_type::zero())
+#ifdef TRACY_FIBERS
+  , m_tracy_fiber_name(nullptr)
+#endif
+  { }
+
+#ifdef TRACY_FIBERS
+  void set_tracy_fiber_name(char const* tracy_fiber_name)
+  {
+    DoutEntering(dc::always, "set_tracy_fiber_name(\"" << tracy_fiber_name << "\" [" << this << "]");
+    // Only call once.
+    ASSERT(!m_tracy_fiber_name);
+    // Construct the real fiber name, including the this pointer of this task.
+    std::ostringstream oss;
+    oss << '[' << this << "] " << tracy_fiber_name;
+    // This deliberately leaks memory.
+    m_tracy_fiber_name = strndup(oss.str().c_str(), 128);
+  }
+#endif
 
  protected:
   /// Destructor.
@@ -766,6 +795,26 @@ class AIStatefulTask : public AIRefCount
    */
   void multiplex(event_type event, Handler handler = Handler::idle);
 
+  void insert_multiplex(event_type event, Handler handler = Handler::idle)
+  {
+#ifdef TRACY_FIBERS
+    char const* parent_tracy_fiber_name = tl_tracy_fiber_name;
+    if (AI_UNLIKELY(parent_tracy_fiber_name))
+    {
+      TracyFiberLeave;
+      tl_tracy_fiber_name = nullptr;
+    }
+#endif
+    multiplex(event, handler);
+#ifdef TRACY_FIBERS
+    if (AI_UNLIKELY(parent_tracy_fiber_name))
+    {
+      TracyFiberEnter(parent_tracy_fiber_name);
+      tl_tracy_fiber_name = parent_tracy_fiber_name;
+    }
+#endif
+  }
+
   state_type begin_loop();                            // Called from multiplex() at the start of a loop.
   void callback();                                    // Called when the task finished.
   // Count frames if necessary and return true when the task is still sleeping.
@@ -848,6 +897,9 @@ boost::intrusive_ptr<TaskType> create(ARGS&&... args)
       ((LibcwDoutStream << ... << (std::string(", ") + ::NAMESPACE_DEBUG::type_name_of<ARGS>())), ">(") << join(", ", args...) << ')');
   TaskType* task = new TaskType(std::forward<ARGS>(args)...);
   AllocTag2(task, "Created with statefultask::create");
+#ifdef TRACY_FIBERS
+  task->set_tracy_fiber_name(task->task_name());
+#endif
 #ifdef CWDEBUG
   Dout(dc::statefultask|continued_cf, "Returning task pointer " << (void*)task);
   if ((void*)task != (void*)static_cast<AIStatefulTask*>(task))
@@ -865,6 +917,9 @@ boost::intrusive_ptr<TaskType> create_from_tuple(std::tuple<ARGS...>&& args)
       ((LibcwDoutStream << ... << (std::string(", ") + ::NAMESPACE_DEBUG::type_name_of<ARGS>())), ">(") << args << ')');
   TaskType* task = new TaskType(std::make_from_tuple<TaskType>(std::move(args)));
   AllocTag2(task, "Created with statefultask::create_from_tuple");
+#ifdef TRACY_FIBERS
+  task->set_tracy_fiber_name(task->task_name());
+#endif
 #ifdef CWDEBUG
   Dout(dc::statefultask|continued_cf, "Returning task pointer " << (void*)task);
   if ((void*)task != (void*)static_cast<AIStatefulTask*>(task))

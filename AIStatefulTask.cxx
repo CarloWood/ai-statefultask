@@ -41,6 +41,10 @@
 #include "sys.h"
 #include "AIEngine.h"
 #include "threadpool/AIThreadPool.h"
+#include <Tracy.hpp>
+#ifdef TRACY_ENABLE
+#include "utils/at_scope_end.h"
+#endif
 
 //==================================================================
 // Overview
@@ -491,6 +495,21 @@ bool AIStatefulTask::waiting_or_aborting() const
 
 void AIStatefulTask::multiplex(event_type event, Handler handler)
 {
+#ifdef TRACY_FIBERS
+#ifdef CWDEBUG
+  if (tl_tracy_fiber_name)
+    DoutFatal(dc::core, "Calling multiplex recursively from fiber \"" << tl_tracy_fiber_name << "\" without properly calling TracyFiberLeave.");
+#endif
+  tl_tracy_fiber_name = m_tracy_fiber_name;
+//  Dout(dc::always|flush_cf, "Calling TracyFiberEnter(\"" << m_tracy_fiber_name << "\")");
+  TracyFiberEnter(m_tracy_fiber_name);
+  auto&& tracy_fiber_leave = at_scope_end([&](){
+//    Dout(dc::always|flush_cf, "Calling TracyFiberLeave");
+    TracyFiberLeave;
+    tl_tracy_fiber_name = nullptr;
+  });
+#endif // TRACY_FIBERS
+
   // If this fails then you are using a pointer to a stateful task instead of an boost::intrusive_ptr<AIStatefulTask>.
 //  ASSERT(event == initial_run || ref_used());
 
@@ -990,6 +1009,9 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
 //static
 thread_local AIStatefulTask* AIStatefulTask::tl_parent_task;
 
+//static
+thread_local char const* AIStatefulTask::tl_tracy_fiber_name;
+
 void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t const failure_count)
 {
   DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::add_task_to_thread_pool(" << queue_handle << ", " << (int)failure_count << ")");
@@ -1017,7 +1039,7 @@ void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t
             // While if in the meantime current_handler is set to idle, then we need to bail.
             if (!handler)
               return false;
-            task->multiplex(normal_run, handler);
+            task->insert_multiplex(normal_run, handler);
             return task->active(handler);
           }
       );
@@ -1323,7 +1345,7 @@ void AIStatefulTask::reset()
   if (!inside_multiplex)
   {
     // Kickstart the task.
-    multiplex(initial_run);
+    insert_multiplex(initial_run);
   }
 }
 
@@ -1654,10 +1676,12 @@ bool AIStatefulTask::signal(condition_type condition)
     sub_state_w->need_run = true;
   }
   if (!mMultiplexMutex.is_self_locked())
+  {
     // Note that this call to multiplex can be ignored when the task is already running;
     // this is why need_run was set: in that case the thread that is already running this
     // task will start multiplex() from the top once it reaches the end.
-    multiplex(schedule_run);
+    insert_multiplex(schedule_run);
+  }
   return true;
 }
 
@@ -1682,7 +1706,7 @@ void AIStatefulTask::abort()
     sub_state_w->need_run = true;
   }
   if (is_waiting && !mMultiplexMutex.is_self_locked())
-    multiplex(insert_abort);
+    insert_multiplex(insert_abort);
   // Block until the current run finished.
   if (!mRunMutex.try_lock())
   {

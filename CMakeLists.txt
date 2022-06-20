@@ -66,6 +66,13 @@ target_link_libraries(statefultask_ObjLib
     AICxx::evio
 )
 
+if (TRACY_ENABLE)
+  target_link_libraries(statefultask_ObjLib
+    PUBLIC
+     Tracy::TracyClient
+  )
+endif()
+
 # Create an ALIAS target.
 add_library(AICxx::statefultask ALIAS statefultask_ObjLib)
 

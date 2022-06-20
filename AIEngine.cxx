@@ -111,7 +111,7 @@ utils::FuzzyBool AIEngine::mainloop()
       if (!stateful_task.sleep(start, only_task))
       {
         // This runs a task until it is idle or finished.
-        stateful_task.multiplex(AIStatefulTask::normal_run, this);
+        stateful_task.insert_multiplex(AIStatefulTask::normal_run, this);
       }
       clock_type::duration delta = clock_type::now() - start;
       stateful_task.add(delta);
@@ -120,7 +120,7 @@ utils::FuzzyBool AIEngine::mainloop()
     else
     {
       // Just run until this task is idle or finished.
-      stateful_task.multiplex(AIStatefulTask::normal_run, this);
+      stateful_task.insert_multiplex(AIStatefulTask::normal_run, this);
     }
 
     // Still running in this engine?
