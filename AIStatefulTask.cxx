@@ -497,16 +497,14 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
 {
 #ifdef TRACY_FIBERS
 #ifdef CWDEBUG
-  if (tl_tracy_fiber_name)
-    DoutFatal(dc::core, "Calling multiplex recursively from fiber \"" << tl_tracy_fiber_name << "\" without properly calling TracyFiberLeave.");
+  if (AI_UNLIKELY(s_tl_tracy_fiber_name))
+    DoutFatal(dc::core, "Calling multiplex recursively from fiber \"" << s_tl_tracy_fiber_name << "\" without properly calling TracyFiberLeave.");
 #endif
-  tl_tracy_fiber_name = m_tracy_fiber_name;
-//  Dout(dc::always|flush_cf, "Calling TracyFiberEnter(\"" << m_tracy_fiber_name << "\")");
+  s_tl_tracy_fiber_name = m_tracy_fiber_name;
   TracyFiberEnter(m_tracy_fiber_name);
   auto&& tracy_fiber_leave = at_scope_end([&](){
-//    Dout(dc::always|flush_cf, "Calling TracyFiberLeave");
     TracyFiberLeave;
-    tl_tracy_fiber_name = nullptr;
+    s_tl_tracy_fiber_name = nullptr;
   });
 #endif // TRACY_FIBERS
 
@@ -1010,7 +1008,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
 thread_local AIStatefulTask* AIStatefulTask::tl_parent_task;
 
 //static
-thread_local char const* AIStatefulTask::tl_tracy_fiber_name;
+thread_local char const* AIStatefulTask::s_tl_tracy_fiber_name;
 
 void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t const failure_count)
 {
@@ -1842,6 +1840,20 @@ void AIStatefulTask::Conditions::print_on(std::ostream& os) const
     }
   }
 }
+
+#ifdef TRACY_ENABLE
+void AIStatefulTask::set_tracy_fiber_name(char const* tracy_fiber_name)
+{
+  DoutEntering(dc::statefultask, "set_tracy_fiber_name(\"" << tracy_fiber_name << "\" [" << this << "]");
+  // Only call once.
+  ASSERT(!m_tracy_fiber_name);
+  // Construct the real fiber name, including the this pointer of this task.
+  std::ostringstream oss;
+  oss << '[' << this << "] " << tracy_fiber_name;
+  // This deliberately leaks memory.
+  m_tracy_fiber_name = strndup(oss.str().c_str(), 128);
+}
+#endif
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START

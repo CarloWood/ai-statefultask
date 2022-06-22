@@ -327,9 +327,14 @@ class AIStatefulTask : public AIRefCount
   duration_type mDuration;            // Total time spent running in the main thread.
 
 #ifdef TRACY_FIBERS
+ protected:
   char const* m_tracy_fiber_name;     // Set by call to set_tracy_fiber_name. Normally equal to the return value of task_name_impl()
                                       // called directly after creation (i.e. create or create_from_tuple).
-  static thread_local char const* tl_tracy_fiber_name;  // Set to m_tracy_fiber_name while inside a TracyFiberEnter .. TracyFiberLeave region.
+                                      // Made protected to allow a derived class to change the name dynamically: this should happen
+                                      // from multiplex_impl only (otherwise it is not thread-safe) and will change the name for
+                                      // the *next* invocation of multiplex(). The actual fiber is determined by the value of the
+                                      // pointer, not the string that it points to.
+  static thread_local char const* s_tl_tracy_fiber_name;  // Set to m_tracy_fiber_name when entering multiplex().
 #endif
 
  public:
@@ -359,17 +364,7 @@ class AIStatefulTask : public AIRefCount
   { }
 
 #ifdef TRACY_FIBERS
-  void set_tracy_fiber_name(char const* tracy_fiber_name)
-  {
-    DoutEntering(dc::always, "set_tracy_fiber_name(\"" << tracy_fiber_name << "\" [" << this << "]");
-    // Only call once.
-    ASSERT(!m_tracy_fiber_name);
-    // Construct the real fiber name, including the this pointer of this task.
-    std::ostringstream oss;
-    oss << '[' << this << "] " << tracy_fiber_name;
-    // This deliberately leaks memory.
-    m_tracy_fiber_name = strndup(oss.str().c_str(), 128);
-  }
+  void set_tracy_fiber_name(char const* tracy_fiber_name);
 #endif
 
  protected:
@@ -798,19 +793,19 @@ class AIStatefulTask : public AIRefCount
   void insert_multiplex(event_type event, Handler handler = Handler::idle)
   {
 #ifdef TRACY_FIBERS
-    char const* parent_tracy_fiber_name = tl_tracy_fiber_name;
+    char const* parent_tracy_fiber_name = s_tl_tracy_fiber_name;
     if (AI_UNLIKELY(parent_tracy_fiber_name))
     {
       TracyFiberLeave;
-      tl_tracy_fiber_name = nullptr;
+      s_tl_tracy_fiber_name = nullptr;
     }
 #endif
     multiplex(event, handler);
 #ifdef TRACY_FIBERS
     if (AI_UNLIKELY(parent_tracy_fiber_name))
     {
+      s_tl_tracy_fiber_name = parent_tracy_fiber_name;
       TracyFiberEnter(parent_tracy_fiber_name);
-      tl_tracy_fiber_name = parent_tracy_fiber_name;
     }
 #endif
   }
