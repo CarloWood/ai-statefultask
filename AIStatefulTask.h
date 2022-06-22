@@ -50,12 +50,12 @@
 #include "utils/FuzzyBool.h"
 #include "utils/is_power_of_two.h"
 #include "debug.h"
-#include <Tracy.hpp>
 #include <list>
 #include <chrono>
 #include <functional>
 #include <tuple>
 #ifdef TRACY_FIBERS
+#include <Tracy.hpp>
 #include <cstring>
 #include <cstdlib>
 #endif

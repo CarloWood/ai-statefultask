@@ -41,8 +41,8 @@
 #include "sys.h"
 #include "AIEngine.h"
 #include "threadpool/AIThreadPool.h"
+#ifdef TRACY_FIBERS
 #include <Tracy.hpp>
-#ifdef TRACY_ENABLE
 #include "utils/at_scope_end.h"
 #endif
 
@@ -1007,8 +1007,10 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
 //static
 thread_local AIStatefulTask* AIStatefulTask::tl_parent_task;
 
+#ifdef TRACY_FIBERS
 //static
 thread_local char const* AIStatefulTask::s_tl_tracy_fiber_name;
+#endif
 
 void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t const failure_count)
 {
@@ -1841,7 +1843,7 @@ void AIStatefulTask::Conditions::print_on(std::ostream& os) const
   }
 }
 
-#ifdef TRACY_ENABLE
+#ifdef TRACY_FIBERS
 void AIStatefulTask::set_tracy_fiber_name(char const* tracy_fiber_name)
 {
   DoutEntering(dc::statefultask, "set_tracy_fiber_name(\"" << tracy_fiber_name << "\" [" << this << "]");
