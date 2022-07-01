@@ -796,6 +796,7 @@ class AIStatefulTask : public AIRefCount
     char const* parent_tracy_fiber_name = s_tl_tracy_fiber_name;
     if (AI_UNLIKELY(parent_tracy_fiber_name))
     {
+      //Dout(dc::notice, "Calling TracyFiberLeave()");
       TracyFiberLeave;
       s_tl_tracy_fiber_name = nullptr;
     }
@@ -805,6 +806,7 @@ class AIStatefulTask : public AIRefCount
     if (AI_UNLIKELY(parent_tracy_fiber_name))
     {
       s_tl_tracy_fiber_name = parent_tracy_fiber_name;
+      //Dout(dc::notice, "Calling TracyFiberEnter(\"" << parent_tracy_fiber_name << "\")");
       TracyFiberEnter(parent_tracy_fiber_name);
     }
 #endif

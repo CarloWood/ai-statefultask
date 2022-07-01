@@ -501,8 +501,10 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
     DoutFatal(dc::core, "Calling multiplex recursively from fiber \"" << s_tl_tracy_fiber_name << "\" without properly calling TracyFiberLeave.");
 #endif
   s_tl_tracy_fiber_name = m_tracy_fiber_name;
+  //Dout(dc::notice, "Calling TracyFiberEnter(\"" << m_tracy_fiber_name << "\")");
   TracyFiberEnter(m_tracy_fiber_name);
   auto&& tracy_fiber_leave = at_scope_end([&](){
+    //Dout(dc::notice, "Calling TracyFiberLeave()");
     TracyFiberLeave;
     s_tl_tracy_fiber_name = nullptr;
   });
