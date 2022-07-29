@@ -237,6 +237,9 @@ class AIStatefulTask : public AIRefCount
     }
   };
 
+  // Also needs access to condition_str_impl.
+  friend std::ostream& operator<<(std::ostream&, Conditions);
+
   Conditions print_conditions(condition_type conditions)
   {
     return { this, conditions };
