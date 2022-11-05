@@ -32,6 +32,7 @@ class MyTask final : public AIStatefulTask      // Use final unless other tasks 
 
  protected:
   ~MyTask() override;
+  char const* task_name_impl() const override { return "MyTask"; }
   char const* state_str_impl(state_type run_state) const override;
   void multiplex_impl(state_type run_state) override;
   // Optional:
