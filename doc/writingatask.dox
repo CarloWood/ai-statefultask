@@ -40,7 +40,7 @@ class MyTask final : public AIStatefulTask      // Use final unless other tasks 
   void finish_impl() override;		// Default does nothing.
 };
 
-char const* MyTask::state_str_impl(state_type run_state)
+char const* MyTask::state_str_impl(state_type run_state) const
 {
   // Use the following two lines when this class is not final.
   // If this fails then a derived class forgot to add an AI_CASE_RETURN for this state.
