@@ -624,7 +624,7 @@ class AIStatefulTask : public AIRefCount
   /**
    * Abort the task (unsuccessful finish).
    *
-   * This function can be called from @c multiplex_imp, but also by a child task and therefore by any thread.
+   * This function can be called from @c multiplex_impl, but also by a child task and therefore by any thread.
    * The child task should use a <code>boost::intrusive_ptr&lt;AIStatefulTask&gt;</code> to access this task.
    *
    * A call to @c abort and @c finish will cause a task to not call
