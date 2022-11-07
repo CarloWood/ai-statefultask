@@ -1839,7 +1839,7 @@ void AIStatefulTask::Conditions::print_on(std::ostream& os) const
   {
     if ((m_conditions & bit))
     {
-      os << m_task->condition_str_impl(bit);
+      os << prefix << m_task->condition_str_impl(bit);
       prefix = "|";
     }
   }
