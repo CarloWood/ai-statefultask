@@ -56,6 +56,27 @@ char const* AITimer::task_name_impl() const
 void AITimer::expired()
 {
   mHasExpired.store(true, std::memory_order_relaxed);
+  // While expiring we have the mutex mTimer::m_calling_expire locked to prevent destruction while
+  // expiring; however - in immediate mode, if there is only a single reference count left, the
+  // call to signal(1) will cause a destruct and thus a dead-lock.
+  //
+  // It seems unsafe to allow destruction here while this can also be solved by keeping
+  // a reference count for each timer:
+  //
+  // Have a boost::intrusive_ptr<AITimer> m_timer; with a sufficient long life-time,
+  // create it the usual way with:
+  //
+  //   m_timer = statefultask::create<AITimer>(CWDEBUG_ONLY(true));
+  //   m_timer->set_interval(threadpool::Interval<2, std::chrono::seconds>());
+  //   m_timer->run([this](bool success){ do_something(); });
+  //
+  // In order to be sure that the object that do_something is called on
+  // still exists, then destructor of this object must call m_timer->abort()
+  // from its destructor! And in order to be able to call abort() one must
+  // have a boost::intrusive_ptr anyway.
+  //
+  // Or, don't use an immediate handler for the timer.
+  ASSERT(!default_is_immediate() || unique().is_momentary_false());
   signal(1);
 }
 
