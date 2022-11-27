@@ -77,7 +77,7 @@ void AITimer::expired()
   //
   // Or, don't use an immediate handler for the timer.
   ASSERT(!default_is_immediate() || unique().is_momentary_false());
-  signal(1);
+  signal(timer_expired_condition);
 }
 
 void AITimer::multiplex_impl(state_type run_state)
@@ -86,8 +86,10 @@ void AITimer::multiplex_impl(state_type run_state)
   {
     case AITimer_start:
       {
+        // In case the timer was restarted.
+        mHasExpired = false;
         mTimer.start(mInterval);
-	wait_until([&]{ return mHasExpired.load(std::memory_order_relaxed); }, 1, AITimer_expired);
+	wait_until([&]{ return mHasExpired.load(std::memory_order_relaxed); }, timer_expired_condition, AITimer_expired);
         break;
       }
     case AITimer_expired:
@@ -101,4 +103,13 @@ void AITimer::multiplex_impl(state_type run_state)
 void AITimer::abort_impl()
 {
   mTimer.stop();
+}
+
+char const* AITimer::condition_str_impl(condition_type condition) const
+{
+  switch (condition)
+  {
+    AI_CASE_RETURN(timer_expired_condition);
+  }
+  return direct_base_type::condition_str_impl(condition);
 }

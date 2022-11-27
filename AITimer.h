@@ -83,6 +83,7 @@ class AITimer : public AIStatefulTask
  public:
   /// One beyond the largest state of this task.
   static constexpr state_type state_end = AITimer_expired + 1;
+  static constexpr condition_type timer_expired_condition = 1;
 
  private:
   std::atomic_bool mHasExpired;                 ///< Set to true after the timer expired.
@@ -118,6 +119,7 @@ class AITimer : public AIStatefulTask
   ~AITimer() override { DoutEntering(dc::statefultask(mSMDebug), "AITimer::~AITimer() [" << (void*)this << "]"); /* mFrameTimer.cancel(); */ }
 
   /// Implementation of virtual functions of AIStatefulTask.
+  char const* condition_str_impl(condition_type condition) const override;
   char const* state_str_impl(state_type run_state) const override;
   char const* task_name_impl() const override;
 
