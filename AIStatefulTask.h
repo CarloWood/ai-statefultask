@@ -229,7 +229,7 @@ class AIStatefulTask : public AIRefCount
 
     friend std::ostream& operator<<(std::ostream& os, Conditions conditions)
     {
-      os << std::hex << conditions.m_conditions << std::dec << " (";
+      os << "0x" << std::hex << conditions.m_conditions << std::dec << " (";
       if (AI_LIKELY(utils::is_power_of_two(conditions.m_conditions)))
         return os << conditions.m_task->condition_str_impl(conditions.m_conditions) << ')';
       conditions.print_on(os);
