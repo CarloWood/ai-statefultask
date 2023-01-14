@@ -73,6 +73,8 @@ class TaskCounterGate
 
   // Block until all remaining tasks finished / called decrement.
   void wait();
+  // Idem, but with a maximum of milliseconds ms. Returns true iff all remaining tasks finished / called decrement.
+  bool wait_for(long milliseconds);
 };
 
 } // namespace statefultask
