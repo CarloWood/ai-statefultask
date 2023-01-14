@@ -1147,6 +1147,10 @@ void AIStatefulTask::run(Handler default_handler, AIStatefulTask* parent, condit
   ASSERT(default_handler);
 
 #if CW_DEBUG
+  // You can not call run() from the callback of a task when false was passed to that callback.
+  // Doing so would deadlock because we're still holding a write lock on mState, and when false
+  // was passed it means the task was aborted: the caller expects it to BE aborted (not restarted).
+  ASSERT(!(mDebugInsideCallback && mDebugAborted));
   {
     multiplex_state_type::rat state_r(mState);
     // Can only be run when in one of these states.
@@ -1197,6 +1201,10 @@ void AIStatefulTask::run(Handler default_handler, std::function<void (bool)> cb_
   ASSERT(default_handler);
 
 #if CW_DEBUG
+  // You can not call run() from the callback of a task when false was passed to that callback.
+  // Doing so would deadlock because we're still holding a write lock on mState, and when false
+  // was passed it means the task was aborted: the caller expects it to BE aborted (not restarted).
+  ASSERT(!(mDebugInsideCallback && mDebugAborted));
   {
     multiplex_state_type::rat state_r(mState);
     // Can only be run when in one of these states.
@@ -1247,7 +1255,13 @@ void AIStatefulTask::callback()
   }
   if (mCallback)
   {
+#if CW_DEBUG
+    mDebugInsideCallback = true;
+#endif
     mCallback(!aborted);
+#if CW_DEBUG
+    mDebugInsideCallback = false;
+#endif
     if (!sub_state_type::rat(mSubState)->reset) // run() wasn't called from the callback (or before from finish())?
     {
       mCallback = nullptr;
@@ -1707,6 +1721,12 @@ void AIStatefulTask::abort()
     // Mark that a re-entry of multiplex() is necessary.
     sub_state_w->need_run = true;
   }
+#if CW_DEBUG
+  // When abort() returns, it may never run again.
+  // Do this here, so we can use the boolean from the call to insert_multiplex below
+  // to detect that AIStatefulTask::abort is being called.
+  mDebugAborted = true;
+#endif
   if (is_waiting && !mMultiplexMutex.is_self_locked())
     insert_multiplex(insert_abort);
   // Block until the current run finished.
@@ -1716,10 +1736,6 @@ void AIStatefulTask::abort()
     mRunMutex.lock();
   }
   mRunMutex.unlock();
-#if CW_DEBUG
-  // When abort() returns, it may never run again.
-  mDebugAborted = true;
-#endif
 }
 
 void AIStatefulTask::finish()

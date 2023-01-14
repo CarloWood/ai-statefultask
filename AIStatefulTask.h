@@ -313,6 +313,7 @@ class AIStatefulTask : public AIRefCount
   bool mDebugSignalPending;           // True while wait() was called but didn't get idle because of a pending call to signal() that wasn't handled yet.
   bool mDebugSetStatePending;         // True while set_state() was called by not handled yet.
   bool mDebugRefCalled;               // True when ref() is called (or will be called within the critial area of mMultiplexMutex).
+  bool mDebugInsideCallback;          // True while inside the users callback function as a result of reaching bs_callback.
 #endif
 
   static thread_local AIStatefulTask* tl_parent_task;
@@ -352,7 +353,7 @@ class AIStatefulTask : public AIRefCount
   AIStatefulTask(CWDEBUG_ONLY(bool debug)) : mDefaultHandler(Handler::idle), mTargetHandler(Handler::idle), mYield(false),
 #if CW_DEBUG
   mDebugLastState(bs_killed), mDebugShouldRun(false), mDebugAborted(false), mDebugSignalPending(false),
-  mDebugSetStatePending(false), mDebugRefCalled(false),
+  mDebugSetStatePending(false), mDebugRefCalled(false), mDebugInsideCallback(false),
 #endif
 #ifdef CWDEBUG
   mSMDebug(debug),
