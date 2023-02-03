@@ -513,7 +513,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
   // If this fails then you are using a pointer to a stateful task instead of an boost::intrusive_ptr<AIStatefulTask>.
 //  ASSERT(event == initial_run || ref_used());
 
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::multiplex(" << event_str(event) << ", " << handler << ") [" << (void*)this << "]");
+  DoutEntering(dc::stverbose(mSMDebug), "AIStatefulTask::multiplex(" << event_str(event) << ", " << handler << ") [" << (void*)this << "]");
 
   // Paranoia; this can be removed after a while. As a result of this, handler is true when event == normal_run.
   ASSERT(event != normal_run || handler);
@@ -529,13 +529,13 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
     // This would be an almost impossible race condition.
     if (AI_UNLIKELY(event == insert_abort && state_r->base_state != bs_multiplex))
     {
-      Dout(dc::statefultask(mSMDebug), "Leaving because the task finished in the meantime [" << (void*)this << "]");
+      Dout(dc::stinternal(mSMDebug), "Leaving because the task finished in the meantime [" << (void*)this << "]");
       return;
     }
 
     if (!(event != normal_run || handler == state_r->current_handler))
     {
-      Dout(dc::statefultask(mSMDebug), "Leaving because current_handler isn't equal to calling handler [" << (void*)this << "]");
+      Dout(dc::stinternal(mSMDebug), "Leaving because current_handler isn't equal to calling handler [" << (void*)this << "]");
       return;
     }
     // We get here and event == normal_run then handler == state_r->current_handler
@@ -580,7 +580,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
       // If a task can be (attempted to be) run in parallel, then isn't there a race condition
       // in threadpool where the 'active' state of the task is determined by calling active(handler)
       // immediately after returning from multiplex()?
-      Dout(dc::statefultask(mSMDebug), "Leaving because it is already being run [" << (void*)this << "]");
+      Dout(dc::stinternal(mSMDebug), "Leaving because it is already being run [" << (void*)this << "]");
       return;
     }
 
@@ -595,7 +595,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
     if (event == schedule_run && !sub_state_type::rat(mSubState)->need_run)
     {
       mMultiplexMutex.unlock();
-      Dout(dc::statefultask(mSMDebug), "Leaving because it was already being run [" << (void*)this << "]");
+      Dout(dc::stinternal(mSMDebug), "Leaving because it was already being run [" << (void*)this << "]");
       return;
     }
 
@@ -621,12 +621,13 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
       if (state == bs_multiplex)
       {
         if (waiting)
-          Dout(dc::statefultask(mSMDebug), "Testing wait condition... [" << (void*)this << "]");
+          Dout(dc::stinternal(mSMDebug), "Testing wait condition... [" << (void*)this << "]");
         else
           Dout(dc::statefultask(mSMDebug), "Running state bs_multiplex / " << state_str_impl(run_state) << " [" << (void*)this << "]");
       }
       else
-        Dout(dc::statefultask(mSMDebug), "Running state " << state_str(state) << " [" << (void*)this << "]");
+        Dout(dc::stverbose(mSMDebug)|dc::statefultask(mSMDebug && (state == bs_initialize || state == bs_finish || state == bs_callback)),
+            "Running state " << state_str(state) << " [" << (void*)this << "]");
 #endif
 
 #if CW_DEBUG
@@ -687,7 +688,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
         // run of bs_reset is not a problem because it happens to be a NoOp.
         state = (state == bs_initialize) ? bs_reset : bs_abort;
 #ifdef CWDEBUG
-        Dout(dc::statefultask(mSMDebug), "Late abort detected! Running state " << state_str(state) << " instead [" << (void*)this << "]");
+        Dout(dc::stinternal(mSMDebug), "Late abort detected! Running state " << state_str(state) << " instead [" << (void*)this << "]");
 #endif
       }
 #if CW_DEBUG
@@ -873,7 +874,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
 
 #ifdef CWDEBUG
         if (state != state_w->base_state)
-          Dout(dc::statefultask(mSMDebug), "Base state changed from " << state_str(state) << " to " << state_str(state_w->base_state) <<
+          Dout(dc::stverbose(mSMDebug), "Base state changed from " << state_str(state) << " to " << state_str(state_w->base_state) <<
               "; need_new_run = " << (need_new_run ? "true" : "false") << " [" << (void*)this << "]");
 #endif
       }
@@ -913,7 +914,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
         handler = mDefaultHandler;
       }
 
-      Dout(dc::statefultask(mSMDebug && !keep_looping),
+      Dout(dc::stverbose(mSMDebug && !keep_looping),
           (!need_new_run ? state_w->current_handler ? state_w->current_handler.is_engine() ? "No need to run, removing from engine"
                                                                                            : "No need to run, removing from thread pool"
                                                     : "No need to run"
@@ -1016,7 +1017,7 @@ thread_local char const* AIStatefulTask::s_tl_tracy_fiber_name;
 
 void AIStatefulTask::add_task_to_thread_pool(AIQueueHandle queue_handle, uint8_t const failure_count)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::add_task_to_thread_pool(" << queue_handle << ", " << (int)failure_count << ")");
+  DoutEntering(dc::stverbose(mSMDebug), "AIStatefulTask::add_task_to_thread_pool(" << queue_handle << ", " << (int)failure_count << ")");
 
   // Add the task to the thread pool.
   AIThreadPool& thread_pool{AIThreadPool::instance()};
@@ -1167,7 +1168,7 @@ void AIStatefulTask::run(Handler default_handler, AIStatefulTask* parent, condit
     mDefaultHandler = default_handler;
   }
   else
-    Dout(dc::statefultask(mSMDebug), "Keeping " << mDefaultHandler << " as default handler.");
+    Dout(dc::stinternal(mSMDebug), "Keeping " << mDefaultHandler << " as default handler.");
 
   // Initialize sleep timer.
   mSleep = 0;
@@ -1315,7 +1316,7 @@ void AIStatefulTask::force_killed()
 
 void AIStatefulTask::kill()
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::kill() [" << (void*)this << "]");
+  DoutEntering(dc::stinternal(mSMDebug), "AIStatefulTask::kill() [" << (void*)this << "]");
 #if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
@@ -1331,7 +1332,7 @@ void AIStatefulTask::kill()
 
 void AIStatefulTask::reset()
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::reset() [" << (void*)this << "]");
+  DoutEntering(dc::stverbose(mSMDebug), "AIStatefulTask::reset() [" << (void*)this << "]");
 #if CW_DEBUG
   mDebugAborted = false;
   mDebugSignalPending = false;
@@ -1367,7 +1368,7 @@ void AIStatefulTask::reset()
 
 void AIStatefulTask::set_state(state_type new_state)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::set_state(" << state_str_impl(new_state) << ") [" << (void*)this << "]");
+  DoutEntering(dc::stverbose(mSMDebug), "AIStatefulTask::set_state(" << state_str_impl(new_state) << ") [" << (void*)this << "]");
 #if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
@@ -1677,10 +1678,10 @@ bool AIStatefulTask::signal(condition_type condition)
       if (mSMDebug)
       {
         if (prev_idle)
-          Dout(dc::statefultask, "Task is not waiting for " << print_conditions(condition) <<
+          Dout(dc::stinternal, "Task is not waiting for " << print_conditions(condition) <<
               " (idle == " << std::hex << sub_state_w->idle << std::dec << "). Signal queued for possible subsequent wait.");
         else
-          Dout(dc::statefultask, "Task is not waiting. Signal queued for possible subsequent wait.");
+          Dout(dc::stinternal, "Task is not waiting. Signal queued for possible subsequent wait.");
       }
 #endif
       return false;
@@ -1715,7 +1716,7 @@ void AIStatefulTask::abort()
     // No longer say we woke up when signal() is called.
     if (sub_state_w->idle)
     {
-      Dout(dc::statefultask(mSMDebug), "Removing block on mask " << std::hex << sub_state_w->idle << std::dec);
+      Dout(dc::stinternal(mSMDebug), "Removing block on mask " << std::hex << sub_state_w->idle << std::dec);
       sub_state_w->idle = 0;
     }
     // Mark that a re-entry of multiplex() is necessary.
@@ -1763,7 +1764,7 @@ void AIStatefulTask::finish()
 
 void AIStatefulTask::yield()
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield() [" << (void*)this << "]");
+  DoutEntering(dc::stinternal(mSMDebug), "AIStatefulTask::yield() [" << (void*)this << "]");
 #if CW_DEBUG
   {
     multiplex_state_type::rat state_r(mState);
@@ -1779,7 +1780,7 @@ void AIStatefulTask::yield()
 
 void AIStatefulTask::target(Handler handler)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::target(" << handler << ") [" << (void*)this << "]");
+  DoutEntering(dc::stinternal(mSMDebug), "AIStatefulTask::target(" << handler << ") [" << (void*)this << "]");
   // This is not possible. Do not specify Handler::immediate as (yield) target.
   // Use an actual AIEngine or AIQueueHandle. To turn off a target, use target(Handler::idle).
   ASSERT(!handler.is_immediate());
@@ -1798,7 +1799,7 @@ void AIStatefulTask::yield(Handler handler)
   // Only yield to an actual AIEngine or AIQueueHandle.
   // To turn off a target, use target(Handler::idle).
   ASSERT(handler);
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield(" << handler << ") [" << (void*)this << "]");
+  DoutEntering(dc::stinternal(mSMDebug), "AIStatefulTask::yield(" << handler << ") [" << (void*)this << "]");
   target(handler);
   yield();
 }
@@ -1815,7 +1816,7 @@ bool AIStatefulTask::yield_if_not(Handler handler)
 
 void AIStatefulTask::yield_frame(AIEngine* engine, unsigned int frames)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield_frame(" << engine->name() << ", " << frames << ") [" << (void*)this << "]");
+  DoutEntering(dc::stinternal(mSMDebug), "AIStatefulTask::yield_frame(" << engine->name() << ", " << frames << ") [" << (void*)this << "]");
   mSleep = -static_cast<AIEngine::clock_type::rep>(frames);       // Frames are stored as a negative number.
   // Sleeping is always done from an engine with mMaxDuration set.
   ASSERT(engine->hasMaxDuration());
@@ -1824,7 +1825,7 @@ void AIStatefulTask::yield_frame(AIEngine* engine, unsigned int frames)
 
 void AIStatefulTask::yield_ms(AIEngine* engine, unsigned int ms)
 {
-  DoutEntering(dc::statefultask(mSMDebug), "AIStatefulTask::yield_ms(" << engine->name() << ", " << ms << ") [" << (void*)this << "]");
+  DoutEntering(dc::stinternal(mSMDebug), "AIStatefulTask::yield_ms(" << engine->name() << ", " << ms << ") [" << (void*)this << "]");
   AIEngine::duration_type sleep_duration = std::chrono::duration_cast<AIEngine::duration_type>(std::chrono::duration<unsigned int, std::milli>(ms));
   mSleep = (AIEngine::clock_type::now() + sleep_duration).time_since_epoch().count();
   // Sleeping is always done from an engine with mMaxDuration set.
@@ -1864,7 +1865,7 @@ void AIStatefulTask::Conditions::print_on(std::ostream& os) const
 #ifdef TRACY_FIBERS
 void AIStatefulTask::set_tracy_fiber_name(char const* tracy_fiber_name)
 {
-  DoutEntering(dc::statefultask, "set_tracy_fiber_name(\"" << tracy_fiber_name << "\" [" << this << "]");
+  DoutEntering(dc::stinternal, "set_tracy_fiber_name(\"" << tracy_fiber_name << "\" [" << this << "]");
   // Only call once.
   ASSERT(!m_tracy_fiber_name);
   // Construct the real fiber name, including the this pointer of this task.
@@ -1878,5 +1879,7 @@ void AIStatefulTask::set_tracy_fiber_name(char const* tracy_fiber_name)
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 channel_ct statefultask("STATEFULTASK");
+channel_ct stverbose("STVERBOSE");
+channel_ct stinternal("STINTERNAL");
 NAMESPACE_DEBUG_CHANNELS_END
 #endif

@@ -129,7 +129,7 @@ utils::FuzzyBool AIEngine::mainloop()
     // Note: new elements can have been added to the end of the list; so it is possible that we encounter them here when incrementing queued_element.
     if (!active)
     {
-      Dout(dc::statefultask(stateful_task.mSMDebug), "Erasing stateful task [" << (void*)&stateful_task << "] from engine \"" << mName << "\".");
+      Dout(dc::stverbose(stateful_task.mSMDebug), "Erasing stateful task [" << (void*)&stateful_task << "] from engine \"" << mName << "\".");
       engine_state_w->list.erase(queued_element++);
     }
     else
@@ -147,7 +147,7 @@ utils::FuzzyBool AIEngine::mainloop()
         // It's taking too long. Leave mainloop().
         if (number_of_tasks_left > 2)
         {
-          Dout(dc::statefultask, "Sorting " << engine_state_w->list.size() << " stateful tasks.");
+          Dout(dc::stinternal, "Sorting " << engine_state_w->list.size() << " stateful tasks.");
           engine_state_w->list.sort(QueueElementComp());
         }
         // Return true if there are remaining tasks.

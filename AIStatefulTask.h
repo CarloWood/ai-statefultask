@@ -373,7 +373,7 @@ class AIStatefulTask : public AIRefCount
 
  protected:
   /// Destructor.
-  virtual ~AIStatefulTask()
+  ~AIStatefulTask() override
   {
 #if CW_DEBUG
     base_state_type state = multiplex_state_type::rat(mState)->base_state;
@@ -851,6 +851,8 @@ concept TaskType = std::is_base_of_v<AIStatefulTask, Type>;
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
 extern channel_ct statefultask;
+extern channel_ct stverbose;
+extern channel_ct stinternal;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
