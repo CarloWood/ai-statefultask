@@ -1294,7 +1294,7 @@ char const* AIStatefulTask::state_str_impl(state_type) const
 
 void AIStatefulTask::initialize_impl()
 {
-  Dout(dc::statefultask, "Calling default initialize_impl() [" << (void*)this << "]");
+  Dout(dc::statefultask(mSMDebug), "Calling default initialize_impl() [" << (void*)this << "]");
   // Start with the first state of the derived class.
   set_state(state_end);
 }
