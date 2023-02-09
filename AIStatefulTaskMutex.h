@@ -228,16 +228,6 @@ class AIStatefulTaskMutex
   /// Undo one (succcessful) call to lock.
   void unlock();
 
-  Node const* lock_blocking(AIStatefulTask* task)
-  {
-    Node const* node = lock(task, 0);
-    if (node)
-      return node;
-    //FIXME
-    ASSERT(false);
-    return nullptr;
-  }
-
 #if CW_DEBUG
   // This is obviously a racy condition, unless called by the only consumer thread;
   // which would be the thread running the task that currently has the lock, so if
