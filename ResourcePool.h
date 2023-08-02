@@ -72,7 +72,7 @@ class ResourcePool
       m_task(task), m_number_of_needed_resources(number_of_needed_resources), m_condition(condition) { }
   };
   using event_requests_container_type = std::vector<EventRequest>;
-  using event_requests_type = aithreadsafe::Wrapper<event_requests_container_type, aithreadsafe::policy::Primitive<std::mutex>>;
+  using event_requests_type = threadsafe::Unlocked<event_requests_container_type, threadsafe::policy::Primitive<std::mutex>>;
 
  private:
   size_t m_max_allocations;                             // A limit on the allowed number of allocations.

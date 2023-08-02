@@ -28,7 +28,7 @@
 #ifndef AISTATEFULTASKMUTEX_H
 #define AISTATEFULTASKMUTEX_H
 
-#include "threadsafe/aithreadsafe.h"
+#include "threadsafe/threadsafe.h"
 #include "utils/NodeMemoryResource.h"
 #include "utils/threading/MpscQueue.h"
 #include "utils/FuzzyBool.h"

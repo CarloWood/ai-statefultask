@@ -42,7 +42,7 @@
 #define AISTATEFULTASK_H
 
 #include "threadpool/Timer.h"
-#include "threadsafe/aithreadsafe.h"
+#include "threadsafe/threadsafe.h"
 #include "threadsafe/AIMutex.h"
 #include "threadpool/AIQueueHandle.h"
 #include "utils/AIRefCount.h"
@@ -271,12 +271,12 @@ class AIStatefulTask : public AIRefCount
 
  private:
   // Base state.
-  using multiplex_state_type = aithreadsafe::Wrapper<multiplex_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
+  using multiplex_state_type = threadsafe::Unlocked<multiplex_state_st, threadsafe::policy::Primitive<std::mutex>>;
   multiplex_state_type mState;
 
  protected:
   // Sub state.
-  using sub_state_type = aithreadsafe::Wrapper<sub_state_st, aithreadsafe::policy::Primitive<std::mutex>>;
+  using sub_state_type = threadsafe::Unlocked<sub_state_st, threadsafe::policy::Primitive<std::mutex>>;
   sub_state_type mSubState;
 #endif // DOXYGEN
 

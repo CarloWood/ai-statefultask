@@ -20,11 +20,11 @@ namespace statefultask {
 class RunningTasksTracker
 {
  public:
-  using index_type = aithreadsafe::VoidPointerStorage::index_type;
+  using index_type = threadsafe::VoidPointerStorage::index_type;
   static constexpr index_type s_aborted = std::numeric_limits<index_type>::max();
 
  private:
-  aithreadsafe::PointerStorage<AIStatefulTask> m_tasks;
+  threadsafe::PointerStorage<AIStatefulTask> m_tasks;
   bool m_aborted{false};
 
  public:

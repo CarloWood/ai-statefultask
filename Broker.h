@@ -79,7 +79,7 @@ class Broker : public AIStatefulTask
       TaskPointerAndCallbackQueue,
       statefultask::BrokerKeyHash,
       statefultask::BrokerKeyEqual>;
-  using map_type = aithreadsafe::Wrapper<unordered_map_type, aithreadsafe::policy::ReadWrite<AIReadWriteMutex>>;
+  using map_type = threadsafe::Unlocked<unordered_map_type, threadsafe::policy::ReadWrite<AIReadWriteMutex>>;
 
   map_type m_key2task;
   bool m_is_immediate;

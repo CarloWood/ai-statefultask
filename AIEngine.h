@@ -40,7 +40,7 @@
 
 #pragma once
 
-#include "threadsafe/aithreadsafe.h"
+#include "threadsafe/threadsafe.h"
 #include "threadsafe/ConditionVariable.h"
 #include "AIStatefulTask.h"
 #include "utils/FuzzyBool.h"
@@ -136,7 +136,7 @@ class AIEngine
     engine_state_st() : waiting(false) { }
   };
 
-  using engine_state_type = aithreadsafe::Wrapper<engine_state_st, aithreadsafe::policy::Primitive<aithreadsafe::ConditionVariable>>;
+  using engine_state_type = threadsafe::Unlocked<engine_state_st, threadsafe::policy::Primitive<threadsafe::ConditionVariable>>;
 
 #ifndef DOXYGEN
  public:       // Used by AIStatefulTask.

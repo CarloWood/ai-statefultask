@@ -34,7 +34,7 @@ class TaskEvent
  private:
   using data_type = std::pair<boost::intrusive_ptr<AIStatefulTask>, AIStatefulTask::condition_type>;
   using container_type = std::deque<data_type, utils::DequeAllocator<data_type>>;
-  using registered_tasks_t = aithreadsafe::Wrapper<container_type, aithreadsafe::policy::Primitive<std::mutex>>;
+  using registered_tasks_t = threadsafe::Unlocked<container_type, threadsafe::policy::Primitive<std::mutex>>;
 
   mutable utils::NodeMemoryResource m_nmr{AIMemoryPagePool::instance()};
   mutable registered_tasks_t m_registered_tasks{utils::DequeAllocator<data_type>(m_nmr)};
