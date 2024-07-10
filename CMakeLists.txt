@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12...3.16)
+cmake_minimum_required(VERSION 3.15...3.30)
 
 project(statefultask
    DESCRIPTION "Asynchronous, Stateful Task Scheduler library"
@@ -15,12 +15,6 @@ add_subdirectory(doc)
 
 # This project is an OBJECT-library, used by other git submodules and the main project.
 add_library(statefultask_ObjLib OBJECT)
-
-# Set SOURCE_DIR to the current directory.
-set_property(
-  TARGET statefultask_ObjLib
-  PROPERTY SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
-)
 
 # The list of source files.
 target_sources(statefultask_ObjLib
