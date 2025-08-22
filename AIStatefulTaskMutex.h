@@ -29,7 +29,7 @@
 #define AISTATEFULTASKMUTEX_H
 
 #include "threadsafe/threadsafe.h"
-#include "utils/NodeMemoryResource.h"
+#include "memory/NodeMemoryResource.h"
 #include "utils/threading/MpscQueue.h"
 #include "utils/FuzzyBool.h"
 #include "utils/cpu_relax.h"
@@ -59,7 +59,7 @@ struct AIStatefulTaskMutexNode : public utils::threading::MpscNode
  * For example,
  *
  *   // Required memory management.
- *   utils::MemoryPagePool mpp(0x8000);
+ *   memory::MemoryPagePool mpp(0x8000);
  *   // A task mutex.
  *   AIStatefulTaskMutex m;
  *
@@ -205,8 +205,8 @@ class AIStatefulTaskMutex
   /// Returns the size of the nodes that will be allocated from s_node_memory_resource.
   static constexpr size_t node_size() { return sizeof(Node); }
   /// This must be called once before using a AIStatefulTaskMutex.
-  static void init(utils::MemoryPagePool* mpp_ptr) { s_node_memory_resource.init(mpp_ptr, node_size()); }
-  static utils::NodeMemoryResource s_node_memory_resource;      ///< Memory resource to allocate Node's from.
+  static void init(memory::MemoryPagePool* mpp_ptr) { s_node_memory_resource.init(mpp_ptr, node_size()); }
+  static memory::NodeMemoryResource s_node_memory_resource;      ///< Memory resource to allocate Node's from.
 
  private:
   Queue m_queue;
@@ -240,7 +240,7 @@ class AIStatefulTaskMutex
   {
     AIStatefulTaskMutexNode const* next = static_cast<AIStatefulTaskMutexNode const*>(m_queue.peek());
     // next might get deallocated right here, but even if that is the case then this still
-    // isn't UB since it is allocated from a utils::SimpleSegregatedStorage which never
+    // isn't UB since it is allocated from a memory::SimpleSegregatedStorage which never
     // *actually* frees memory. At most next->m_task is a non-sensical value, although the
     // chance for that is extremely small.
     return next ? next->m_task : nullptr;

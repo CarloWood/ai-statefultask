@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include "utils/MemoryPagePool.h"
+#include "memory/MemoryPagePool.h"
 #include "AIStatefulTaskMutex.h"
 
 namespace statefultask {
@@ -36,10 +36,10 @@ namespace statefultask {
 class DefaultMemoryPagePoolBase
 {
  protected:
-  static utils::MemoryPagePool* s_instance;
+  static memory::MemoryPagePool* s_instance;
 
  protected:
-  static void init(utils::MemoryPagePool* mpp)
+  static void init(memory::MemoryPagePool* mpp)
   {
     // Only create one DefaultMemoryPagePool object (at the top of main()).
     ASSERT(s_instance == nullptr);
@@ -64,7 +64,7 @@ class DefaultMemoryPagePoolBase
  * to the fact that most memory pools, if not all, of a process can use
  * this singleton as their MemoryPagePool. Unless you know what you are doing
  * you're advised to use the default constructor and have all memory pools
- * that are based on an @c{utils::MemoryPagePool} use
+ * that are based on an @c{memory::MemoryPagePool} use
  * @link statefultask::DefaultMemoryPagePool::instance AIMemoryPagePool::instance() @endlink.
  *
  * DefaultMemoryPagePool must be initialized at the start of main before
@@ -92,7 +92,7 @@ class DefaultMemoryPagePoolBase
  * statefultask::DefaultMemoryPagePool mpp(0x8000);
  *     // unless you pass at least one argument,
  *
- * statefultask::DefaultMemoryPagePool<utils::MemoryPagePool> mpp;
+ * statefultask::DefaultMemoryPagePool<memory::MemoryPagePool> mpp;
  *     // or specify the (default) template parameter explicitly.
  * @endcode
  *
@@ -109,23 +109,23 @@ class DefaultMemoryPagePoolBase
  *     default_memory_page_pool(constructor arguments of MyMPP);
  * @endcode
  *
- * where `MyMPP` must be derived from @c{utils::MemoryPagePool}.
+ * where `MyMPP` must be derived from @c{memory::MemoryPagePool}.
  */
-template<typename MPP = utils::MemoryPagePool>
+template<typename MPP = memory::MemoryPagePool>
 class DefaultMemoryPagePool : private DefaultMemoryPagePoolBase
 {
  public:
-  /// Constructor with the same (default) arguments as @c{utils::MemoryPagePool}.
-  DefaultMemoryPagePool(size_t block_size = 0x8000, utils::MemoryPagePool::blocks_t minimum_chunk_size = 0, utils::MemoryPagePool::blocks_t maximum_chunk_size = 0)
+  /// Constructor with the same (default) arguments as @c{memory::MemoryPagePool}.
+  DefaultMemoryPagePool(size_t block_size = 0x8000, memory::MemoryPagePool::blocks_t minimum_chunk_size = 0, memory::MemoryPagePool::blocks_t maximum_chunk_size = 0)
   {
     init(new MPP(block_size, minimum_chunk_size, maximum_chunk_size));
   }
 
   /**
    * Constructor to be used for non-default template parameter @tt{MPP} when that
-   * class takes different arguments than @c{utils::MemoryPagePool}.
+   * class takes different arguments than @c{memory::MemoryPagePool}.
    *
-   * Note that @c{MPP} still must be derived from @c{utils::MemoryPagePool}.
+   * Note that @c{MPP} still must be derived from @c{memory::MemoryPagePool}.
    */
   template<typename... ArgT>
   DefaultMemoryPagePool(ArgT&&... args)
@@ -134,12 +134,12 @@ class DefaultMemoryPagePool : private DefaultMemoryPagePoolBase
   }
 
   /**
-   * Returns a reference to the default @c{utils::MemoryPagePool}.
+   * Returns a reference to the default @c{memory::MemoryPagePool}.
    *
    * This is the singleton that is initialized at the top of @c{main()}.
    * @sa DefaultMemoryPagePool
    */
-  static utils::MemoryPagePool& instance()
+  static memory::MemoryPagePool& instance()
   {
     // Create a statefultask::DefaultMemoryPagePool at the top of main,
     // and/or don't use anything from statefultask in constructors/destructors
@@ -152,8 +152,8 @@ class DefaultMemoryPagePool : private DefaultMemoryPagePoolBase
 } // namespace statefultask
 
 /**
- * Short version of `statefultask::DefaultMemoryPagePool<utils::MemoryPagePool>`.
+ * Short version of `statefultask::DefaultMemoryPagePool<memory::MemoryPagePool>`.
  *
  * See statefultask::DefaultMemoryPagePool for a description of the constructor.
  */
-using AIMemoryPagePool = statefultask::DefaultMemoryPagePool<utils::MemoryPagePool>;
+using AIMemoryPagePool = statefultask::DefaultMemoryPagePool<memory::MemoryPagePool>;

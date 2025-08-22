@@ -60,4 +60,4 @@ void AIStatefulTaskMutex::unlock()
 }
 
 //static
-utils::NodeMemoryResource AIStatefulTaskMutex::s_node_memory_resource;
+memory::NodeMemoryResource AIStatefulTaskMutex::s_node_memory_resource;

@@ -2,7 +2,7 @@
 
 #include "AIStatefulTask.h"
 #include "statefultask/DefaultMemoryPagePool.h"
-#include "utils/DequeAllocator.h"
+#include "memory/DequeAllocator.h"
 #include <deque>
 #include "debug.h"
 
@@ -33,11 +33,11 @@ class TaskEvent
 {
  private:
   using data_type = std::pair<boost::intrusive_ptr<AIStatefulTask>, AIStatefulTask::condition_type>;
-  using container_type = std::deque<data_type, utils::DequeAllocator<data_type>>;
+  using container_type = std::deque<data_type, memory::DequeAllocator<data_type>>;
   using registered_tasks_t = threadsafe::Unlocked<container_type, threadsafe::policy::Primitive<std::mutex>>;
 
-  mutable utils::NodeMemoryResource m_nmr{AIMemoryPagePool::instance()};
-  mutable registered_tasks_t m_registered_tasks{utils::DequeAllocator<data_type>(m_nmr)};
+  mutable memory::NodeMemoryResource m_nmr{AIMemoryPagePool::instance()};
+  mutable registered_tasks_t m_registered_tasks{memory::DequeAllocator<data_type>(m_nmr)};
   std::atomic_bool m_triggered = false;
 
   void trigger(container_type const& waiting_tasks) const
@@ -68,7 +68,7 @@ class TaskEvent
         // m_triggered at the top of this function and locking m_registered_tasks:
         if (AI_UNLIKELY(m_triggered.load(memory_order::relaxed)))
         {
-          waiting_tasks = new container_type(utils::DequeAllocator<data_type>(m_nmr));
+          waiting_tasks = new container_type(memory::DequeAllocator<data_type>(m_nmr));
           waiting_tasks->swap(*registered_tasks_w);
           need_trigger = true;
         }

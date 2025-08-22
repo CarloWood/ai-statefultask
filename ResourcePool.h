@@ -60,7 +60,7 @@ class ResourcePool
  public:
   using resource_factory_type = RF;
   using resource_type = typename resource_factory_type::resource_type;
-  using free_list_type = std::deque<resource_type, utils::DequeAllocator<resource_type>>;
+  using free_list_type = std::deque<resource_type, memory::DequeAllocator<resource_type>>;
 
   struct EventRequest
   {
@@ -85,10 +85,10 @@ class ResourcePool
 
  public:
   // The deque allocator is kept outside of the ResourcePool class so that it can be shared with other objects (it is thread-safe).
-  // Any utils::DequeAllocator that allocates objects with a size equal to the size of resource_type can be used, provided it
+  // Any memory::DequeAllocator that allocates objects with a size equal to the size of resource_type can be used, provided it
   // has a lifetime that exceeds that of the ResourcePool.
   template<typename T, typename... Args>
-  ResourcePool(size_t max_allocations, utils::DequeAllocator<T>& allocator, Args const&... factory_args) :
+  ResourcePool(size_t max_allocations, memory::DequeAllocator<T>& allocator, Args const&... factory_args) :
     m_max_allocations(max_allocations), m_allocations(0), m_acquires(0), m_factory(factory_args...), m_allocator_ref(allocator), m_free_list(allocator)
   {
     static_assert(sizeof(T) == sizeof(resource_type), "The allocation passed must allocate chunks of the right size.");
