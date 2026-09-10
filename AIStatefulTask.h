@@ -850,9 +850,9 @@ concept TaskType = std::is_base_of_v<AIStatefulTask, Type>;
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
-extern channel_ct statefultask;
-extern channel_ct stverbose;
-extern channel_ct stinternal;
+extern Channel statefultask;
+extern Channel stverbose;
+extern Channel stinternal;
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
 
@@ -899,7 +899,6 @@ boost::intrusive_ptr<TaskType> create(ARGS&&... args)
   DoutEntering(dc::statefultask, "statefultask::create<" << ::NAMESPACE_DEBUG::type_name_of<TaskType>() <<
       ((LibcwDoutStream << ... << (std::string(", ") + ::NAMESPACE_DEBUG::type_name_of<ARGS>())), ">(") << join(", ", args...) << ')');
   TaskType* task = new TaskType(std::forward<ARGS>(args)...);
-  AllocTag2(task, "Created with statefultask::create");
 #ifdef TRACY_FIBERS
   task->set_tracy_fiber_name(task->task_name());
 #endif
@@ -919,7 +918,6 @@ boost::intrusive_ptr<TaskType> create_from_tuple(std::tuple<ARGS...>&& args)
   DoutEntering(dc::statefultask, "statefultask::create_from_tuple<" << ::NAMESPACE_DEBUG::type_name_of<TaskType>() <<
       ((LibcwDoutStream << ... << (std::string(", ") + ::NAMESPACE_DEBUG::type_name_of<ARGS>())), ">(") << args << ')');
   TaskType* task = new TaskType(std::make_from_tuple<TaskType>(std::move(args)));
-  AllocTag2(task, "Created with statefultask::create_from_tuple");
 #ifdef TRACY_FIBERS
   task->set_tracy_fiber_name(task->task_name());
 #endif

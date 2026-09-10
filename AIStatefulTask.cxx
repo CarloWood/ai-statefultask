@@ -612,7 +612,7 @@ void AIStatefulTask::multiplex(event_type event, Handler handler)
   do
   {
 #ifdef CWDEBUG
-    debug::Mark __mark;
+    libcwd::Mark __mark;
 #endif
 
     if (event == normal_run)
@@ -1878,8 +1878,8 @@ void AIStatefulTask::set_tracy_fiber_name(char const* tracy_fiber_name)
 
 #if defined(CWDEBUG) && !defined(DOXYGEN)
 NAMESPACE_DEBUG_CHANNELS_START
-channel_ct statefultask("STATEFULTASK");
-channel_ct stverbose("STVERBOSE");
-channel_ct stinternal("STINTERNAL");
+Channel statefultask("STATEFULTASK");
+Channel stverbose("STVERBOSE");
+Channel stinternal("STINTERNAL");
 NAMESPACE_DEBUG_CHANNELS_END
 #endif
